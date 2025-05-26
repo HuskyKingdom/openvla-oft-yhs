@@ -1036,6 +1036,8 @@ def finetune(cfg: FinetuneConfig) -> None:
             
 
             print(batch)
+            for k,v in batch.items():
+                print(v.shape)
             assert 1==2
 
             # Compute training metrics and loss
