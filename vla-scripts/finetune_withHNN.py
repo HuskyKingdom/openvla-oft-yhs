@@ -50,7 +50,7 @@ from prismatic.training.train_utils import (
     get_current_action_mask,
     get_next_actions_mask,
 )
-from prismatic.training.hnn_utils import(
+from .hnn_utils import(
     Time_Derivative,
     compute_h_loss,
 )
