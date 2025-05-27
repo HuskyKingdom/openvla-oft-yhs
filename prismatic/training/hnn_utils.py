@@ -7,13 +7,13 @@ from prismatic.vla.constants import ACTION_DIM, ACTION_TOKEN_BEGIN_IDX, IGNORE_I
 
 
 def compute_h_loss(action_tokenizer, predicted_token_ids, ground_truth_token_ids, labels, n_embd,hnn_head,time_d):
-    pred_continuous_actions = torch.tensor(
-        action_tokenizer.decode_token_ids_to_actions(predicted_token_ids[mask].cpu().numpy())
-    )
-    true_continuous_actions = torch.tensor(
-        action_tokenizer.decode_token_ids_to_actions(ground_truth_token_ids[mask].cpu().numpy())
-    )
-    l1_loss = torch.nn.functional.l1_loss(pred_continuous_actions, true_continuous_actions)
+    # pred_continuous_actions = torch.tensor(
+    #     action_tokenizer.decode_token_ids_to_actions(predicted_token_ids[mask].cpu().numpy())
+    # )
+    # true_continuous_actions = torch.tensor(
+    #     action_tokenizer.decode_token_ids_to_actions(ground_truth_token_ids[mask].cpu().numpy())
+    # )
+    # l1_loss = torch.nn.functional.l1_loss(pred_continuous_actions, true_continuous_actions)
 
     h_lambda = 0.5
 
