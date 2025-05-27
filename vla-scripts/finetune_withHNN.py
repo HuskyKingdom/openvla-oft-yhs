@@ -67,33 +67,28 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 
-def compute_h_loss(pred_actions, ground_actions, labels, n_embd,hnn_head,time_d):
-    # pred_continuous_actions = torch.tensor(
-    #     action_tokenizer.decode_token_ids_to_actions(predicted_token_ids[mask].cpu().numpy())
-    # )
-    # true_continuous_actions = torch.tensor(
-    #     action_tokenizer.decode_token_ids_to_actions(ground_truth_token_ids[mask].cpu().numpy())
-    # )
-    # l1_loss = torch.nn.functional.l1_loss(pred_continuous_actions, true_continuous_actions)
+def compute_h_loss(pred_actions, ground_actions, n_embd,hnn_head,time_d):
+   
 
     h_lambda = 0.5
 
     # extract action predictions from model output
     
+    z = pred_actions[:, :-2, :]  # (B, T-2, D)  [0,1,...,T-3]
+    z_g = ground_actions[:, :-2,  :]   # as z_next (B, T-2, D)  align to [2,3,...,T-1]
 
-    print(pred_actions.shape,pred_actions)
-    assert 1==2
-    
-    z = pred_actions
-    dz_dt = None
-    z_next = None
-    dz_next_dt = None
+    z_next   = pred_actions[:, 1:-1, :]         # (B, T-2, D)
+    z_g_next = z_g[:, 1:-1, :]         # (B, T-2, D)
+
+    dz_dt = z_next - z # (B, T-2, D)
+    dz_g_dt = z_g_next - z_g # (B, T-2, D)
 
 
-    z_qp = torch.cat((z, dz_dt), dim=-1) # Shape: (B, T-2, 2*D)
+    z_qp       = torch.cat([z,  dz_dt],  dim=-1)  # (B, T-2, 2*D)
     z_qp_flat = z_qp.reshape(-1, n_embd * 2) # Shape: (B*(T-2), 2*D)
-    z_next_qp = torch.cat((z_next, dz_next_dt), dim=-1) # Shape: (B, T-2, 2*D)
+    z_next_qp  = torch.cat([z_g,   dz_g_dt],  dim=-1)  # (B, T-2, 2*D)
     z_next_qp_flat = z_next_qp.reshape(-1, n_embd * 2) # Shape: (B*(T-2), 2*D)
+
 
     F1_F2_for_z = hnn_head(z_qp_flat)
     F1 = F1_F2_for_z.reshape(-1, 2)[:, 0] # Shape: (N,)
@@ -106,8 +101,7 @@ def compute_h_loss(pred_actions, ground_actions, labels, n_embd,hnn_head,time_d)
 
     hnn_reg_loss_val = h_lambda * hnn_loss.mean()
     
-
-    return None
+    return hnn_reg_loss_val
 
 
 
@@ -492,7 +486,7 @@ def run_forward_pass(
         # h loss computation
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
         h_loss = compute_h_loss(
-            predicted_actions, ground_truth_actions, labels=batch["labels"].to(device_id), n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
+            predicted_actions, ground_truth_actions, n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
         )
 
         if use_l1_regression:
