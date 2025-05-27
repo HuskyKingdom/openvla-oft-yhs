@@ -68,7 +68,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def compute_h_loss(pred_actions, ground_actions,
-                   n_embd, hnn_head, time_derivative):
+                   n_embd, hnn_head, time_d):
     """
     pred_actions / ground_actions: Tensor of shape (B, T, D)
     n_embd: D
@@ -110,7 +110,7 @@ def compute_h_loss(pred_actions, ground_actions,
     F1, F2 = F1_F2[:,0], F1_F2[:,1]            # (N,), (N,)
 
     # 6) 计算 vector field
-    z_qp_hat_next_flat = z_qp_flat + time_derivative(z_qp_flat, F1, F2)  # (N, 2D)
+    z_qp_hat_next_flat = z_qp_flat + time_d(z_qp_flat, F1, F2)  # (N, 2D)
     z_qp_hat_next      = z_qp_hat_next_flat.view(B, T-2, 2*D)            # (B, T-2, 2D)
 
     # 7) 用 ground-truth 相空间做目标
@@ -1046,8 +1046,21 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
+    # Initialize HNN parameters 
+    hnn_potential_mlp_head = nn.Sequential(
+        nn.Linear(ACTION_DIM * 2, 64, bias=True),
+        nn.ReLU(),
+        nn.Linear(64,2,bias = True)
+    )
+    time_d = Time_Derivative(2 * ACTION_DIM)
+
+
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
+
+    trainable_params += [param for param in hnn_potential_mlp_head.parameters() if param.requires_grad] # HNN parameters 
+    trainable_params += [param for param in time_d.parameters() if param.requires_grad] # HNN parameters 
+
     if cfg.use_l1_regression or cfg.use_diffusion:
         trainable_params += [param for param in action_head.parameters() if param.requires_grad]
     if cfg.use_diffusion:
@@ -1152,13 +1165,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     }
 
 
-    # Initialize HNN parameters 
-    hnn_potential_mlp_head = nn.Sequential(
-        nn.Linear(ACTION_DIM * 2, 64, bias=True),
-        nn.ReLU(),
-        nn.Linear(64,2,bias = True)
-    )
-    time_d = Time_Derivative(2 * ACTION_DIM)
+    
 
 
     # Start training
