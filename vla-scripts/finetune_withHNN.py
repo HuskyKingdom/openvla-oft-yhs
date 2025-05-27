@@ -545,6 +545,8 @@ def run_forward_pass(
             )
 
     # Return both the loss tensor (with gradients) and the metrics dictionary (with detached values)
+
+    loss += h_loss  # h_loss
     return loss, metrics
 
 
