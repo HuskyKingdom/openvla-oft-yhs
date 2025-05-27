@@ -102,7 +102,7 @@ def compute_h_loss(pred_actions, ground_actions,
 
     # 5) flatten 并送进 HNN head
     N = B * (T-2)
-    z_qp_flat      = z_qp.reshape(N, 2*D)
+    z_qp_flat      = z_qp.reshape(N, 2*D).to(pred_actions.device)
     z_next_qp_flat = z_next_qp.reshape(N, 2*D)
     z_g_next_qp_flat = z_g_next_qp.reshape(N, 2*D)
 
