@@ -67,7 +67,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 
-def compute_h_loss(action_tokenizer, predicted_token_ids, ground_truth_token_ids, labels, n_embd,hnn_head,time_d):
+def compute_h_loss(pred_actions, ground_actions, labels, n_embd,hnn_head,time_d):
     # pred_continuous_actions = torch.tensor(
     #     action_tokenizer.decode_token_ids_to_actions(predicted_token_ids[mask].cpu().numpy())
     # )
@@ -79,14 +79,12 @@ def compute_h_loss(action_tokenizer, predicted_token_ids, ground_truth_token_ids
     h_lambda = 0.5
 
     # extract action predictions from model output
-    decoded_ids = action_tokenizer.decode_token_ids_to_actions(predicted_token_ids.cpu().numpy())
-    action_mask = labels != -100
-    filtered_ids = decoded_ids[action_mask]
+    
 
-    print(filtered_ids.shape,filtered_ids)
+    print(pred_actions.shape,pred_actions)
     assert 1==2
     
-    z = filtered_ids
+    z = pred_actions
     dz_dt = None
     z_next = None
     dz_next_dt = None
@@ -461,9 +459,6 @@ def run_forward_pass(
         curr_action_l1_loss = compute_actions_l1_loss(
             action_tokenizer, predicted_token_ids, ground_truth_token_ids, mask=current_action_mask
         )
-        h_loss = compute_h_loss(
-            action_tokenizer, predicted_token_ids, ground_truth_token_ids, labels=batch["labels"].to(device_id), n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
-        )
         next_actions_accuracy = compute_token_accuracy(
             predicted_token_ids, ground_truth_token_ids, mask=next_actions_mask
         )
@@ -475,7 +470,6 @@ def run_forward_pass(
                 "loss_value": loss.item(),  # Detached value for logging
                 "curr_action_accuracy": curr_action_accuracy.item(),
                 "curr_action_l1_loss": curr_action_l1_loss.item(),
-                "h_loss": h_loss.item(),
                 "next_actions_accuracy": next_actions_accuracy.item(),
                 "next_actions_l1_loss": next_actions_l1_loss.item(),
             }
@@ -493,6 +487,13 @@ def run_forward_pass(
             .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
+
+
+        # h loss computation
+        predicted_actions = action_head.module.predict_action(actions_hidden_states)
+        h_loss = compute_h_loss(
+            predicted_actions, ground_truth_actions, labels=batch["labels"].to(device_id), n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
+        )
 
         if use_l1_regression:
             # Predict action
@@ -545,6 +546,7 @@ def run_forward_pass(
                 {
                     "curr_action_l1_loss": curr_action_l1_loss.item(),
                     "next_actions_l1_loss": next_actions_l1_loss.item(),
+                    "h_loss": h_loss.item(),
                 }
             )
 
