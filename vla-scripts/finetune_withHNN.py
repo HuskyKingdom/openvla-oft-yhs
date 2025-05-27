@@ -1051,8 +1051,8 @@ def finetune(cfg: FinetuneConfig) -> None:
         nn.Linear(ACTION_DIM * 2, 64, bias=True),
         nn.ReLU(),
         nn.Linear(64,2,bias = True)
-    )
-    time_d = Time_Derivative(2 * ACTION_DIM)
+    ).to(device_id)
+    time_d = Time_Derivative(2 * ACTION_DIM).to(device_id)
 
 
     # Instantiate optimizer
