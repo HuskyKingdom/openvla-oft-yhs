@@ -49,6 +49,8 @@ from prismatic.training.train_utils import (
     compute_token_accuracy,
     get_current_action_mask,
     get_next_actions_mask,
+    Time_Derivative,
+    compute_h_loss
 )
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
 from prismatic.vla.action_tokenizer import ActionTokenizer
@@ -281,6 +283,8 @@ def run_forward_pass(
     num_patches,
     compute_diffusion_l1=False,
     num_diffusion_steps_train=None,
+    hnn_head = None,
+    time_d = None
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
     """
     Compute model forward pass and metrics for both training and validation.
@@ -354,6 +358,9 @@ def run_forward_pass(
         curr_action_l1_loss = compute_actions_l1_loss(
             action_tokenizer, predicted_token_ids, ground_truth_token_ids, mask=current_action_mask
         )
+        h_loss = compute_h_loss(
+            action_tokenizer, predicted_token_ids, ground_truth_token_ids, labels=batch["labels"].to(device_id), n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
+        )
         next_actions_accuracy = compute_token_accuracy(
             predicted_token_ids, ground_truth_token_ids, mask=next_actions_mask
         )
@@ -365,6 +372,7 @@ def run_forward_pass(
                 "loss_value": loss.item(),  # Detached value for logging
                 "curr_action_accuracy": curr_action_accuracy.item(),
                 "curr_action_l1_loss": curr_action_l1_loss.item(),
+                "h_loss": h_loss.item(),
                 "next_actions_accuracy": next_actions_accuracy.item(),
                 "next_actions_l1_loss": next_actions_l1_loss.item(),
             }
@@ -1028,6 +1036,16 @@ def finetune(cfg: FinetuneConfig) -> None:
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
+
+    # Initialize HNN parameters 
+    hnn_potential_mlp_head = nn.Sequential(
+        nn.Linear(ACTION_DIM * 2, 64, bias=True),
+        nn.ReLU(),
+        nn.Linear(64,2,bias = True)
+    )
+    time_d = Time_Derivative(2 * ACTION_DIM)
+
+
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
@@ -1051,6 +1069,8 @@ def finetune(cfg: FinetuneConfig) -> None:
                 num_patches=NUM_PATCHES,
                 compute_diffusion_l1=compute_diffusion_l1,
                 num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
+                hnn_head = hnn_potential_mlp_head,
+                time_d = time_d,
             )
 
             # Normalize loss to account for gradient accumulation
