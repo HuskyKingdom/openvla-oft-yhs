@@ -49,7 +49,7 @@ from prismatic.training.train_utils import (
     compute_token_accuracy,
     get_current_action_mask,
     get_next_actions_mask,
-    compute_h_loss
+    compute_h_loss,
 )
 from prismatic.training.train_utils import Time_Derivative
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
