@@ -67,42 +67,56 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 
-def compute_h_loss(pred_actions, ground_actions, n_embd,hnn_head,time_d):
-   
-
+def compute_h_loss(pred_actions, ground_actions,
+                   n_embd, hnn_head, time_derivative):
+    """
+    pred_actions / ground_actions: Tensor of shape (B, T, D)
+    n_embd: D
+    hnn_head: nn.Module mapping (2D) -> (2,)
+    time_derivative: the HNN time_derivative module
+    """
     h_lambda = 0.5
+    B, T, D = pred_actions.size()
 
-    # extract action predictions from model output
-    
-    z = pred_actions[:, :-2, :]  # (B, T-2, D)  [0,1,...,T-3]
-    z_g = ground_actions[:, :-2,  :]   # as z_next (B, T-2, D)  align to [2,3,...,T-1]
+    # 1) 从预测里 slice 出三个对齐的子序列
+    z       = pred_actions[:,    :-2, :]   # (B, T-2, D)
+    z_next  = pred_actions[:, 1:-1,   :]   # (B, T-2, D)
+    z_next2 = pred_actions[:,    2:,   :]  # (B, T-2, D)
 
-    z_next   = pred_actions[:, 1:-1, :]         # (B, T-2, D)
-    z_g_next = z_g[:, 1:-1, :]         # (B, T-2, D)
+    # 2) 用同样的方式对 ground truth slice
+    z_g       = ground_actions[:,    :-2, :]  # (B, T-2, D)
+    z_g_next  = ground_actions[:, 1:-1,   :]  # (B, T-2, D)
+    z_g_next2 = ground_actions[:,    2:,   :] # (B, T-2, D)
 
-    dz_dt = z_next - z # (B, T-2, D)
-    dz_g_dt = z_g_next - z_g # (B, T-2, D)
+    # 3) 计算速度
+    dz_dt        = z_next   - z        # (B, T-2, D)
+    dz_next_dt   = z_next2  - z_next   # (B, T-2, D)
+    dz_g_dt      = z_g_next   - z_g    # (B, T-2, D)
+    dz_g_next_dt = z_g_next2  - z_g_next# (B, T-2, D)
 
+    # 4) 拼成相空间向量
+    z_qp       = torch.cat([z,        dz_dt],      dim=-1)  # (B, T-2, 2D)
+    z_next_qp  = torch.cat([z_next,   dz_next_dt], dim=-1)  # (B, T-2, 2D)
+    z_g_qp     = torch.cat([z_g,      dz_g_dt],    dim=-1)  # (B, T-2, 2D)
+    z_g_next_qp= torch.cat([z_g_next, dz_g_next_dt],dim=-1) # (B, T-2, 2D)
 
-    z_qp       = torch.cat([z,  dz_dt],  dim=-1)  # (B, T-2, 2*D)
-    z_qp_flat = z_qp.reshape(-1, n_embd * 2) # Shape: (B*(T-2), 2*D)
-    z_next_qp  = torch.cat([z_g,   dz_g_dt],  dim=-1)  # (B, T-2, 2*D)
-    z_next_qp_flat = z_next_qp.reshape(-1, n_embd * 2) # Shape: (B*(T-2), 2*D)
+    # 5) flatten 并送进 HNN head
+    N = B * (T-2)
+    z_qp_flat      = z_qp.reshape(N, 2*D)
+    z_next_qp_flat = z_next_qp.reshape(N, 2*D)
+    z_g_next_qp_flat = z_g_next_qp.reshape(N, 2*D)
 
+    F1_F2 = hnn_head(z_qp_flat)                # (N, 2)
+    F1, F2 = F1_F2[:,0], F1_F2[:,1]            # (N,), (N,)
 
-    F1_F2_for_z = hnn_head(z_qp_flat)
-    F1 = F1_F2_for_z.reshape(-1, 2)[:, 0] # Shape: (N,)
-    F2 = F1_F2_for_z.reshape(-1, 2)[:, 1] # Shape: (N,)
+    # 6) 计算 vector field
+    z_qp_hat_next_flat = z_qp_flat + time_derivative(z_qp_flat, F1, F2)  # (N, 2D)
+    z_qp_hat_next      = z_qp_hat_next_flat.view(B, T-2, 2*D)            # (B, T-2, 2D)
 
-    # hnn vector field loss
-    z_qp_hat_next_flat = z_qp_flat + time_d(z_qp_flat, F1, F2) # Shape: (N, 2*D)
-    z_qp_hat_next = z_qp_hat_next_flat.view(b, t-2, 2 * n_embd) # Shape: (B, T-2, 2*D)
-    hnn_loss = ((z_next_qp - z_qp_hat_next)**2).mean(-1) # Shape: (B, T-1)
+    # 7) 用 ground-truth 相空间做目标
+    hnn_loss = ((z_g_next_qp - z_qp_hat_next)**2).mean()  # scalar
 
-    hnn_reg_loss_val = h_lambda * hnn_loss.mean()
-    
-    return hnn_reg_loss_val
-
+    return h_lambda * hnn_loss
 
 
 class Time_Derivative(nn.Module):
