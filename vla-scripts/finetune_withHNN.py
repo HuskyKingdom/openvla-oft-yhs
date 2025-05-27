@@ -49,9 +49,11 @@ from prismatic.training.train_utils import (
     compute_token_accuracy,
     get_current_action_mask,
     get_next_actions_mask,
+)
+from prismatic.training.hnn_utils import(
+    Time_Derivative,
     compute_h_loss,
 )
-from prismatic.training.train_utils import Time_Derivative
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.constants import (
