@@ -75,7 +75,7 @@ def compute_h_loss(pred_actions, ground_actions,
     hnn_head: nn.Module mapping (2D) -> (2,)
     time_derivative: the HNN time_derivative module
     """
-    h_lambda = 0.9
+    h_lambda = 0.3
     B, T, D = pred_actions.size()
 
     # 1) 从预测里 slice 出三个对齐的子序列
