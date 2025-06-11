@@ -503,6 +503,9 @@ def run_forward_pass(
             predicted_actions, ground_truth_actions, n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
         )
 
+        print(predicted_actions.shape,ground_truth_actions.shape)
+        assert 1==2
+
         if use_l1_regression:
             # Predict action
             predicted_actions = action_head.module.predict_action(actions_hidden_states)
