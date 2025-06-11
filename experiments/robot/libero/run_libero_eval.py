@@ -340,8 +340,8 @@ def run_episode(
                 )
                 action_queue.extend(actions)
                 
-            print(actions.shape)
-            assert 1==2
+            print(actions)
+            log_message(f"---------------- Actions: {actions}", log_file)
             
 
             # Get action from queue
