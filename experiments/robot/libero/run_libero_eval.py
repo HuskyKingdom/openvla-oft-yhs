@@ -339,6 +339,9 @@ def run_episode(
                     use_film=cfg.use_film,
                 )
                 action_queue.extend(actions)
+                print(actions.shape)
+                assert 1==2
+
 
             # Get action from queue
             action = action_queue.popleft()
