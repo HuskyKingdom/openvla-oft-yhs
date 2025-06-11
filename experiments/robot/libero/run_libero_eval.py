@@ -350,7 +350,8 @@ def run_episode(
                 flag = 1
                 import matplotlib.pyplot as plt
                 m, I, g = 1.0, 1.0, 9.81
-                pr_arr = np.stack(actions_accum,  axis=0)
+                flat = [a for chunk in actions_accum for a in chunk]
+                pr_arr = np.stack(flat,  axis=0)
                 pos_pr    = pr_arr[:, :3]
                 orient_pr = pr_arr[:, 3:6]
 
