@@ -312,6 +312,7 @@ def run_episode(
 
     # Drawing Utils
     actions_accum = []
+    flag = 0
 
     # Run episode
     success = False
@@ -345,7 +346,8 @@ def run_episode(
                 actions_accum.append(actions)
                 
             # Get energy curve (16 timesteps)
-            if len(actions_accum) == 16:
+            if len(actions_accum) == 16 and flag == 0:
+                flag = 1
                 import matplotlib.pyplot as plt
                 m, I, g = 1.0, 1.0, 9.81
                 pr_arr = np.stack(actions_accum,  axis=0)
