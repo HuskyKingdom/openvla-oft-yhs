@@ -17,7 +17,7 @@ E_hnn = ours
 dE_base = E_base - E_base[0]
 dE_hnn  = E_hnn  - E_hnn[0]
 
-ts = np.arange(len(dE_base))
+ts = np.arange(len(dE_base)/2)
 plt.figure()
 plt.plot(ts, dE_base, label='Baseline ΔE')
 plt.plot(ts, dE_hnn,  label='With HNN ΔE')
