@@ -24,5 +24,7 @@ plt.plot(ts, dE_hnn,  label='With HNN ΔE')
 plt.xlabel('Timestep')
 plt.ylabel('ΔDynamic Energy')
 plt.legend()
-plt.savefig('dynamic_energy_drift.pdf')
+plt.savefig('/mnt/nfs/sgyson10/openvla-oft-yhs/dynamic_energy_drift.pdf')
 plt.close()
+
+print("saved")
