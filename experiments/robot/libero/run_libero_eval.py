@@ -346,7 +346,7 @@ def run_episode(
                 actions_accum.append(actions)
                 
             # Get energy curve (16 timesteps)
-            if len(actions_accum) == 16 and flag == 0:
+            if len(actions_accum) == 2 and flag == 0:
                 flag = 1
                 import matplotlib.pyplot as plt
                 m, I, g = 1.0, 1.0, 9.81
