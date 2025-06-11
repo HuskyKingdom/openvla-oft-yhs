@@ -345,10 +345,10 @@ def run_episode(
                 actions_accum.append(actions)
                 
             # Get energy curve (16 timesteps)
-            if len(actions_accum) >= 16:
+            if len(actions_accum) == 16:
                 import matplotlib.pyplot as plt
                 m, I, g = 1.0, 1.0, 9.81
-                pr_arr = np.stack(actions,  axis=0)
+                pr_arr = np.stack(actions_accum,  axis=0)
                 pos_pr    = pr_arr[:, :3]
                 orient_pr = pr_arr[:, 3:6]
 
