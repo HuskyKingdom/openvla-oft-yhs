@@ -312,7 +312,6 @@ def run_episode(
 
     # Run episode
     success = False
-    assert 1==2
     try:
         while t < max_steps + cfg.num_steps_wait:
             # Do nothing for the first few timesteps to let objects stabilize
