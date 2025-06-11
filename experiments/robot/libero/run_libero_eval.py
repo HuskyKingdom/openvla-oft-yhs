@@ -361,15 +361,19 @@ def run_episode(
                 # V_pr  = m*g*pos_pr[:-1,2]
                 H_pr  = Tt_pr + Tr_pr  
 
-                ts = np.arange(len(H_pr))  # 0…6
-                plt.figure(figsize=(6,4))
-                plt.plot(ts, H_pr,'--', label='Pred Energy')
-                plt.xlabel('Timestep')
-                plt.ylabel('Energy')
-                plt.legend()
-                plt.tight_layout()
-                plt.savefig('energy_comparison.pdf', format='pdf', bbox_inches='tight')
-                plt.close()   
+                import pickle
+                with open('ours.pkl', 'wb') as f:
+                    pickle.dump(H_pr, f)
+
+                # ts = np.arange(len(H_pr))  # 0…6
+                # plt.figure(figsize=(6,4))
+                # plt.plot(ts, H_pr,'--', label='Pred Energy')
+                # plt.xlabel('Timestep')
+                # plt.ylabel('Energy')
+                # plt.legend()
+                # plt.tight_layout()
+                # plt.savefig('energy_comparison.pdf', format='pdf', bbox_inches='tight')
+                # plt.close()   
             
 
             # Get action from queue
