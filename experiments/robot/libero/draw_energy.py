@@ -19,8 +19,8 @@ dE_hnn  = E_hnn  - E_hnn[0]
 
 ts = np.arange(len(dE_base)/2)
 plt.figure()
-plt.plot(ts, dE_base, label='Baseline ΔE')
-plt.plot(ts, dE_hnn,  label='With HNN ΔE')
+plt.plot(ts, dE_base[:8], label='Baseline ΔE')
+plt.plot(ts, dE_hnn[:8],  label='With HNN ΔE')
 plt.xlabel('Timestep')
 plt.ylabel('ΔDynamic Energy')
 plt.legend()
