@@ -345,23 +345,21 @@ def run_episode(
                 action_queue.extend(actions)
                 actions_accum.append(actions)
                 
-            # Get energy curve (16 timesteps)
+            # Get energy curve (2*8=16 timesteps)
             if len(actions_accum) == 2 and flag == 0:
                 flag = 1
                 import matplotlib.pyplot as plt
                 m, I, g = 1.0, 1.0, 9.81
                 flat = [a for chunk in actions_accum for a in chunk]
                 pr_arr = np.stack(flat,  axis=0)
-                pos_pr    = pr_arr[:, :3]
-                orient_pr = pr_arr[:, 3:6]
 
-                vel_pr  = np.diff(pos_pr,    axis=0)
-                omega_pr= np.diff(orient_pr, axis=0)
+                vel_pr   = pr_arr[:, :3]   
+                omega_pr = pr_arr[:,3:6]
 
                 Tt_pr = 0.5*m*np.sum(vel_pr**2,   axis=1)
                 Tr_pr = 0.5*I*np.sum(omega_pr**2, axis=1)
-                V_pr  = m*g*pos_pr[:-1,2]
-                H_pr  = Tt_pr + Tr_pr + V_pr   
+                # V_pr  = m*g*pos_pr[:-1,2]
+                H_pr  = Tt_pr + Tr_pr  
 
                 ts = np.arange(len(H_pr))  # 0…6
                 plt.figure(figsize=(6,4))
