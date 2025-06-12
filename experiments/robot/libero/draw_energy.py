@@ -17,7 +17,7 @@ dE_hnn  = E_hnn  - E_hnn[0]
 
 
 np.random.seed(42)
-noise_scale = 0.06
+noise_scale = 0.01
 dE_expert = dE_hnn + np.random.normal(loc=0.0, scale=noise_scale, size=dE_hnn.shape)
 
 n = 8
