@@ -496,6 +496,8 @@ def run_forward_pass(
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
 
+        print(batch["proprio"],batch["proprio"].shape)
+        assert 1==2
 
         # h loss computation
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
