@@ -85,3 +85,29 @@ def quat2axisangle(quat):
         return np.zeros(3)
 
     return (quat[:3] * 2.0 * math.acos(quat[3])) / den
+
+import torch
+
+def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """
+    批量把四元数转成轴-角：(B,4) -> (B,3)
+    quat[..., :3] = (x,y,z), quat[..., 3] = w
+    """
+    # 分离 xyz 和 w
+    xyz = quat[..., :3]          # (B,3)
+    w   = quat[..., 3].clamp(-1.0, 1.0)  # (B,)
+
+    # 计算 angle = 2 * arccos(w)
+    angle = 2.0 * torch.acos(w)  # (B,)
+
+    # 计算 denom = sqrt(1 - w^2)，并防止分母为零
+    denom = torch.sqrt(torch.clamp(1.0 - w * w, min=0.0))  # (B,)
+    # 对于 denom < eps，我们直接返回零向量
+    safe_denom = denom.clone().masked_fill_(denom < eps, 1.0)
+
+    # 轴-角向量 = xyz * angle / denom
+    axis_angle = xyz * (angle / safe_denom).unsqueeze(-1)  # (B,3)
+
+    # 对那些原本 denom < eps（也就是 angle ≈ 0）的位置，置 0
+    axis_angle = axis_angle.masked_fill(denom.unsqueeze(-1) < eps, 0.0)
+    return axis_angle

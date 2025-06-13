@@ -34,6 +34,10 @@ from experiments.robot.openvla_utils import (
     update_auto_map,
 )
 
+from experiments.robot.libero.libero_utils import(
+    quat2axisangle_torch
+)
+
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
@@ -65,16 +69,27 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-
-
 def compute_h_loss(pred_actions, ground_actions,
-                   n_embd, hnn_head, time_d):
+                   n_embd, hnn_head, time_d,props):
     """
     pred_actions / ground_actions: Tensor of shape (B, T, D)
     n_embd: D
     hnn_head: nn.Module mapping (2D) -> (2,)
     time_derivative: the HNN time_derivative module
     """
+
+    # retriving positions
+    ori_pos = props[:,:3]
+    ori_rot = props[:,3:7]
+    ori_rot = quat2axisangle_torch(ori_rot) # convert quaternion to axis-angle
+    ori_coords = torch.cat([ori_pos, ori_rot], dim=-1)  # (B, 6)
+
+
+    # applying to deltas to get raw coordinates
+
+    pred_actions = ori_coords + pred_actions
+    ground_actions = ori_coords + ground_actions
+
     h_lambda = 0.3
     B, T, D = pred_actions.size()
 
@@ -103,8 +118,6 @@ def compute_h_loss(pred_actions, ground_actions,
     # 5) flatten 并送进 HNN head
     N = B * (T-2)
     z_qp_flat      = z_qp.reshape(N, 2*D).to(pred_actions.device)
-    z_next_qp_flat = z_next_qp.reshape(N, 2*D)
-    z_g_next_qp_flat = z_g_next_qp.reshape(N, 2*D)
 
     F1_F2 = hnn_head(z_qp_flat)                # (N, 2)
     F1, F2 = F1_F2[:,0], F1_F2[:,1]            # (N,), (N,)
@@ -117,6 +130,60 @@ def compute_h_loss(pred_actions, ground_actions,
     hnn_loss = ((z_g_next_qp - z_qp_hat_next)**2).mean()  # scalar
 
     return h_lambda * hnn_loss
+
+
+
+# def compute_h_loss(pred_actions, ground_actions,
+#                    n_embd, hnn_head, time_d,props):
+#     """
+#     pred_actions / ground_actions: Tensor of shape (B, T, D)
+#     n_embd: D
+#     hnn_head: nn.Module mapping (2D) -> (2,)
+#     time_derivative: the HNN time_derivative module
+#     """
+
+#     h_lambda = 0.3
+#     B, T, D = pred_actions.size()
+
+#     # 1) 从预测里 slice 出三个对齐的子序列
+#     z       = pred_actions[:,    :-2, :]   # (B, T-2, D)
+#     z_next  = pred_actions[:, 1:-1,   :]   # (B, T-2, D)
+#     z_next2 = pred_actions[:,    2:,   :]  # (B, T-2, D)
+
+#     # 2) 用同样的方式对 ground truth slice
+#     z_g       = ground_actions[:,    :-2, :]  # (B, T-2, D)
+#     z_g_next  = ground_actions[:, 1:-1,   :]  # (B, T-2, D)
+#     z_g_next2 = ground_actions[:,    2:,   :] # (B, T-2, D)
+
+#     # 3) 计算速度
+#     dz_dt        = z_next   - z        # (B, T-2, D)
+#     dz_next_dt   = z_next2  - z_next   # (B, T-2, D)
+#     dz_g_dt      = z_g_next   - z_g    # (B, T-2, D)
+#     dz_g_next_dt = z_g_next2  - z_g_next# (B, T-2, D)
+
+#     # 4) 拼成相空间向量
+#     z_qp       = torch.cat([z,        dz_dt],      dim=-1)  # (B, T-2, 2D)
+#     z_next_qp  = torch.cat([z_next,   dz_next_dt], dim=-1)  # (B, T-2, 2D)
+#     z_g_qp     = torch.cat([z_g,      dz_g_dt],    dim=-1)  # (B, T-2, 2D)
+#     z_g_next_qp= torch.cat([z_g_next, dz_g_next_dt],dim=-1) # (B, T-2, 2D)
+
+#     # 5) flatten 并送进 HNN head
+#     N = B * (T-2)
+#     z_qp_flat      = z_qp.reshape(N, 2*D).to(pred_actions.device)
+#     z_next_qp_flat = z_next_qp.reshape(N, 2*D)
+#     z_g_next_qp_flat = z_g_next_qp.reshape(N, 2*D)
+
+#     F1_F2 = hnn_head(z_qp_flat)                # (N, 2)
+#     F1, F2 = F1_F2[:,0], F1_F2[:,1]            # (N,), (N,)
+
+#     # 6) 计算 vector field
+#     z_qp_hat_next_flat = z_qp_flat + time_d(z_qp_flat, F1, F2)  # (N, 2D)
+#     z_qp_hat_next      = z_qp_hat_next_flat.view(B, T-2, 2*D)            # (B, T-2, 2D)
+
+#     # 7) 用 ground-truth 相空间做目标
+#     hnn_loss = ((z_g_next_qp - z_qp_hat_next)**2).mean()  # scalar
+
+#     return h_lambda * hnn_loss
 
 
 class Time_Derivative(nn.Module):
@@ -496,13 +563,11 @@ def run_forward_pass(
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
 
-        print(batch["proprio"],batch["proprio"].shape)
-        assert 1==2
 
         # h loss computation
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
         h_loss = compute_h_loss(
-            predicted_actions, ground_truth_actions, n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d
+            predicted_actions, ground_truth_actions, n_embd=ACTION_DIM, hnn_head=hnn_head, time_d=time_d, props=batch["proprio"]
         )
 
         
