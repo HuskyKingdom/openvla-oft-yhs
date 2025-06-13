@@ -70,67 +70,66 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def compute_h_loss(pred_actions, ground_actions,
-                   n_embd, hnn_head, time_d,props):
+                   n_embd, hnn_head, time_d, props):
     """
-    pred_actions / ground_actions: Tensor of shape (B, T, D)
-    n_embd: D
-    hnn_head: nn.Module mapping (2D) -> (2,)
-    time_derivative: the HNN time_derivative module
+    pred_actions / ground_actions: Tensor of shape (B, T, D), representing per-step deltas
+    props: Tensor of shape (B, 8) = [x, y, z, qx, qy, qz, qw, grip]
+
+    Returns:
+        scalar HNN regularization loss
     """
+    # Reconstruct absolute end-effector coords from cumulative deltas
+    # First extract initial absolute position + rotation (axis-angle) from props
+    ori_pos   = props[:, :3]               # (B, 3)  
+    ori_quat  = props[:, 3:7]              # (B, 4)
+    ori_rot   = quat2axisangle_torch(ori_quat)  # (B, 3)
+    ori_coords= torch.cat([ori_pos, ori_rot], dim=-1)  # (B, 6)
 
-    # retriving positions
-    ori_pos = props[:,:3]
-    ori_rot = props[:,3:7]
-    ori_rot = quat2axisangle_torch(ori_rot) # convert quaternion to axis-angle
-    ori_coords = torch.cat([ori_pos, ori_rot], dim=-1)  # (B, 6)
+    # Then cumulatively sum each step's delta to get absolute trajectory
+    # and add the initial pose at t=0
+    abs_pred = torch.cumsum(pred_actions, dim=1) + ori_coords.unsqueeze(1)   # (B, T, D)
+    abs_gt   = torch.cumsum(ground_actions, dim=1) + ori_coords.unsqueeze(1)
 
-
-    # applying to deltas to get raw coordinates
-
-    pred_actions = ori_coords + pred_actions
-    ground_actions = ori_coords + ground_actions
-
+    # Unpack batch & time dimensions after reconstruction
     h_lambda = 0.3
-    B, T, D = pred_actions.size()
+    B, T, D  = abs_pred.size()
 
-    # 1) 从预测里 slice 出三个对齐的子序列
-    z       = pred_actions[:,    :-2, :]   # (B, T-2, D)
-    z_next  = pred_actions[:, 1:-1,   :]   # (B, T-2, D)
-    z_next2 = pred_actions[:,    2:,   :]  # (B, T-2, D)
+    # Slice aligned triple windows for velocity estimation
+    z       = abs_pred[:,     :-2, :]  # (B, T-2, D)
+    z_next  = abs_pred[:, 1:-1,    :]
+    z_next2 = abs_pred[:,     2:,    :]
 
-    # 2) 用同样的方式对 ground truth slice
-    z_g       = ground_actions[:,    :-2, :]  # (B, T-2, D)
-    z_g_next  = ground_actions[:, 1:-1,   :]  # (B, T-2, D)
-    z_g_next2 = ground_actions[:,    2:,   :] # (B, T-2, D)
+    z_g      = abs_gt[:,     :-2, :]
+    z_g_next = abs_gt[:, 1:-1,    :]
+    z_g_next2= abs_gt[:,     2:,    :]
 
-    # 3) 计算速度
+    # Compute finite-difference velocities
     dz_dt        = z_next   - z        # (B, T-2, D)
     dz_next_dt   = z_next2  - z_next   # (B, T-2, D)
     dz_g_dt      = z_g_next   - z_g    # (B, T-2, D)
     dz_g_next_dt = z_g_next2  - z_g_next# (B, T-2, D)
 
-    # 4) 拼成相空间向量
-    z_qp       = torch.cat([z,        dz_dt],      dim=-1)  # (B, T-2, 2D)
-    z_next_qp  = torch.cat([z_next,   dz_next_dt], dim=-1)  # (B, T-2, 2D)
-    z_g_qp     = torch.cat([z_g,      dz_g_dt],    dim=-1)  # (B, T-2, 2D)
-    z_g_next_qp= torch.cat([z_g_next, dz_g_next_dt],dim=-1) # (B, T-2, 2D)
+    # Build phase-space vectors [position; velocity]
+    z_qp       = torch.cat([z,       dz_dt],      dim=-1)  # (B, T-2, 2D)
+    z_next_qp  = torch.cat([z_next,  dz_next_dt], dim=-1)  # (B, T-2, 2D)
+    z_g_qp     = torch.cat([z_g,     dz_g_dt],     dim=-1)  # (B, T-2, 2D)
+    z_g_next_qp= torch.cat([z_g_next,dz_g_next_dt],dim=-1)  # (B, T-2, 2D)
 
-    # 5) flatten 并送进 HNN head
-    N = B * (T-2)
-    z_qp_flat      = z_qp.reshape(N, 2*D).to(pred_actions.device)
+    # Flatten and send into HNN MLP head
+    N = B * (T - 2)
+    z_qp_flat = z_qp.reshape(N, 2 * D).to(abs_pred.device)  # (N, 2D)
 
-    F1_F2 = hnn_head(z_qp_flat)                # (N, 2)
-    F1, F2 = F1_F2[:,0], F1_F2[:,1]            # (N,), (N,)
+    F1_F2     = hnn_head(z_qp_flat)      # (N, 2)
+    F1, F2    = F1_F2[:, 0], F1_F2[:, 1]  # each (N,)
 
-    # 6) 计算 vector field
+    # Compute vector-field update via Time_Derivative and do one Euler step
     z_qp_hat_next_flat = z_qp_flat + time_d(z_qp_flat, F1, F2)  # (N, 2D)
-    z_qp_hat_next      = z_qp_hat_next_flat.view(B, T-2, 2*D)            # (B, T-2, 2D)
+    z_qp_hat_next      = z_qp_hat_next_flat.view(B, T-2, 2*D)   # (B, T-2, 2D)
 
-    # 7) 用 ground-truth 相空间做目标
-    hnn_loss = ((z_g_next_qp - z_qp_hat_next)**2).mean()  # scalar
+    # Compare predicted vs. ground-truth next phase-space
+    hnn_loss = ((z_g_next_qp - z_qp_hat_next) ** 2).mean()
 
     return h_lambda * hnn_loss
-
 
 
 # def compute_h_loss(pred_actions, ground_actions,
