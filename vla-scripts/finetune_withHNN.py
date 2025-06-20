@@ -34,9 +34,6 @@ from experiments.robot.openvla_utils import (
     update_auto_map,
 )
 
-from experiments.robot.libero.libero_utils import(
-    quat2axisangle_torch
-)
 
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
@@ -67,6 +64,28 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """
+    quat2axisangle： (B,4) -> (B,3)
+    quat[..., :3] = (x,y,z), quat[..., 3] = w
+    """
+ 
+    xyz = quat[..., :3]          # (B,3)
+    w   = quat[..., 3].clamp(-1.0, 1.0)  # (B,)
+
+
+    angle = 2.0 * torch.acos(w)  # (B,)
+
+    denom = torch.sqrt(torch.clamp(1.0 - w * w, min=0.0))  # (B,)
+    safe_denom = denom.clone().masked_fill_(denom < eps, 1.0)
+
+    axis_angle = xyz * (angle / safe_denom).unsqueeze(-1)  # (B,3)
+
+    axis_angle = axis_angle.masked_fill(denom.unsqueeze(-1) < eps, 0.0)
+    return axis_angle
+
 
 
 def compute_h_loss(pred_actions, ground_actions,
