@@ -104,6 +104,10 @@ def compute_h_loss(pred_actions, ground_actions,
     ori_rot   = quat2axisangle_torch(ori_quat)  # (B, 3)
     ori_coords= torch.cat([ori_pos, ori_rot], dim=-1)  # (B, 6)
 
+
+    pred_actions = pred_actions[:, :, :6]
+    ground_actions = ground_actions[:, :, :6]
+
     # Then cumulatively sum each step's delta to get absolute trajectory
     # and add the initial pose at t=0
     abs_pred = torch.cumsum(pred_actions, dim=1) + ori_coords.unsqueeze(1)   # (B, T, D)
