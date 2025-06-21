@@ -97,6 +97,8 @@ def compute_h_loss(pred_actions, ground_actions,
     Returns:
         scalar HNN regularization loss
     """
+
+    props = props.to(pred_actions.device).to(pred_actions.dtype)
     # Reconstruct absolute end-effector coords from cumulative deltas
     # First extract initial absolute position + rotation (axis-angle) from props
     ori_pos   = props[:, :3]               # (B, 3)  
