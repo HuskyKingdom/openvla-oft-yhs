@@ -1140,11 +1140,11 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Initialize HNN parameters 
     hnn_potential_mlp_head = nn.Sequential(
-        nn.Linear(ACTION_DIM * 2, 64, bias=True),
+        nn.Linear(6 * 2, 64, bias=True),
         nn.ReLU(),
         nn.Linear(64,2,bias = True)
     ).to(device_id).to(torch.bfloat16)
-    time_d = Time_Derivative(2 * ACTION_DIM).to(device_id).to(torch.bfloat16)
+    time_d = Time_Derivative(2 * 6).to(device_id).to(torch.bfloat16)
 
 
     # Instantiate optimizer
