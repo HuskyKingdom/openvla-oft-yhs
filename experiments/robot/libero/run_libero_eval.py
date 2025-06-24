@@ -392,7 +392,7 @@ def run_episode(
     except Exception as e:
         log_message(f"Episode error: {e}", log_file)
 
-    assert 1==2
+
     return success, replay_images
 
 
