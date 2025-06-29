@@ -110,6 +110,9 @@ def compute_h_loss(pred_actions, ground_actions,
     pred_actions = pred_actions[:, :, :6]
     ground_actions = ground_actions[:, :, :6]
 
+    print(pred_actions.shape,ground_actions.shape)
+    assert 1==2
+
     # Then cumulatively sum each step's delta to get absolute trajectory
     # and add the initial pose at t=0
     abs_pred = torch.cumsum(pred_actions, dim=1) + ori_coords.unsqueeze(1)   # (B, T, D)
