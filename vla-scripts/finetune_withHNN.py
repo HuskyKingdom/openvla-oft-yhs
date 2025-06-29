@@ -110,7 +110,7 @@ def compute_h_loss(pred_actions, ground_actions,
     pred_actions = pred_actions[:, :, :6]
     ground_actions = ground_actions[:, :, :6]
 
-    print(pred_actions.shape,ground_actions.shape)
+    print(pred_actions,ground_actions)
     assert 1==2
 
     # Then cumulatively sum each step's delta to get absolute trajectory
