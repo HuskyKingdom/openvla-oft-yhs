@@ -590,7 +590,8 @@ def run_forward_pass(
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
 
-        print(output.hidden_states)
+
+        print(len(output.hidden_states),output.hidden_states)
         assert 1==2
 
 
