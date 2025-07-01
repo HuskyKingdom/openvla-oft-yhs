@@ -110,8 +110,6 @@ def compute_h_loss(pred_actions, ground_actions,
     pred_actions = pred_actions[:, :, :6]
     ground_actions = ground_actions[:, :, :6]
 
-    print(pred_actions,ground_actions)
-    assert 1==2
 
     # Then cumulatively sum each step's delta to get absolute trajectory
     # and add the initial pose at t=0
@@ -578,6 +576,8 @@ def run_forward_pass(
         )
     # Compute metrics for continuous action representations (L1 regression | diffusion)
     else:
+
+
         # Get last layer hidden states
         last_hidden_states = output.hidden_states[-1]  # (B, seq_len, D)
         # Get hidden states for text portion of prompt+response (after the vision patches)
@@ -589,6 +589,9 @@ def run_forward_pass(
             .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
+
+        print(output.hidden_states.shape)
+        assert 1==2
 
 
         # h loss computation
