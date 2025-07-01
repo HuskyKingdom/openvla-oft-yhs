@@ -593,7 +593,7 @@ def run_forward_pass(
         
         # retrive the action outputs from different layers
         action_pred_layer = []
-        for layer_i in range(1,32):
+        for layer_i in range(1,33):
             current_pred = output.hidden_states[layer_i]
             text_hidden_states_layer = current_pred[:, num_patches:-1]
             actions_hidden_states_layer = (
@@ -606,7 +606,7 @@ def run_forward_pass(
 
 
 
-        print(len(action_pred_layer),action_pred_layer)
+        print(len(action_pred_layer),action_pred_layer[0].shape,action_pred_layer)
         assert 1==2
 
 
