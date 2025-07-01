@@ -590,8 +590,23 @@ def run_forward_pass(
             .to(torch.bfloat16)
         )  # (B, act_chunk_len, D)
 
+        
+        # retrive the action outputs from different layers
+        action_pred_layer = []
+        for layer_i in range(1,32):
+            current_pred = output.hidden_states[layer_i]
+            text_hidden_states_layer = current_pred[:, num_patches:-1]
+            actions_hidden_states_layer = (
+            text_hidden_states_layer[current_action_mask | next_actions_mask]
+            .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
+            .to(torch.bfloat16)
+             )  # (B, act_chunk_len, D)
+            
+            action_pred_layer.append(action_head.module.predict_action(actions_hidden_states_layer))
 
-        print(len(output.hidden_states),output.hidden_states)
+
+
+        print(len(action_pred_layer),action_pred_layer)
         assert 1==2
 
 
