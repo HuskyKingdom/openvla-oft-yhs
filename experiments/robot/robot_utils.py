@@ -140,7 +140,6 @@ def get_action(
                 noisy_action_projector=noisy_action_projector,
                 use_film=use_film,
             )
-            assert 1==2
         else:
             raise ValueError(f"Unsupported model family: {cfg.model_family}")
 

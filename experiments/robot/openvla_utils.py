@@ -795,7 +795,6 @@ def get_vla_action(
             )
 
         print(hiddens.shape,hiddens)
-        assert 1==2
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]
