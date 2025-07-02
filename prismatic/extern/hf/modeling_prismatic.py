@@ -929,7 +929,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             c_normalized_actions = action_head.predict_action(current_hidden)
             c_normalized_actions = c_normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
             c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
-            layer_actions.append[c_normalized_actions]
+            layer_actions.append(c_normalized_actions)
 
         print(len(layer_actions),layer_actions[0].shape)
 
