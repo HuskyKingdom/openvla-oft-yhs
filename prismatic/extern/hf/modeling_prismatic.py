@@ -918,7 +918,20 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         ]  # (B, act_chunk_len, D)
 
         # Extract outputs of all layers
-        print(len(language_model_output.hidden_states))
+        all_out = language_model_output.hidden_states
+        layer_actions = []
+        for layer_index in range(1,len(all_out)):
+            current_hidden = all_out[layer_index][
+            :,
+            NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+            :,
+            ]
+            c_normalized_actions = action_head.predict_action(current_hidden)
+            c_normalized_actions = c_normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
+            c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
+            layer_actions.append[c_normalized_actions]
+
+        print(len(layer_actions),layer_actions[0].shape)
 
 
 
