@@ -917,8 +917,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             :,
         ]  # (B, act_chunk_len, D)
 
-        print(language_model_output.hidden_states.shape)
+        # Extract outputs of all layers
+        print(len(language_model_output))
         
+
+
 
         # Handle different prediction methods
         if action_head is not None:
