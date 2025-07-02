@@ -47,6 +47,10 @@ from experiments.robot.robot_utils import (
     normalize_gripper_action,
     set_seed_everywhere,
 )
+
+print(get_model.__file__)
+assert 1==2
+
 from prismatic.vla.constants import NUM_ACTIONS_CHUNK
 
 
