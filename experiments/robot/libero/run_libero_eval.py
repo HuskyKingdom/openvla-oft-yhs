@@ -48,9 +48,6 @@ from experiments.robot.robot_utils import (
     set_seed_everywhere,
 )
 
-import experiments.robot.robot_utils as ru
-print(ru.__file__)
-assert 1==2
 
 from prismatic.vla.constants import NUM_ACTIONS_CHUNK
 
