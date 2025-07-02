@@ -783,7 +783,7 @@ def get_vla_action(
             action, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
         else:
             # Custom action head for continuous actions
-            action, _ = vla.predict_action(
+            action, hiddens = vla.predict_action(
                 **inputs,
                 unnorm_key=cfg.unnorm_key,
                 do_sample=False,
@@ -793,6 +793,9 @@ def get_vla_action(
                 action_head=action_head,
                 use_film=use_film,
             )
+
+            print(hiddens.shape,hiddens)
+            assert 1==2
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]
