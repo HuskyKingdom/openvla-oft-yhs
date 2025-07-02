@@ -917,6 +917,9 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             :,
         ]  # (B, act_chunk_len, D)
 
+        print(language_model_output.hidden_states.shape)
+        
+
         # Handle different prediction methods
         if action_head is not None:
             # L1 regression prediction
