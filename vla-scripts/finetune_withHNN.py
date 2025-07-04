@@ -591,23 +591,20 @@ def run_forward_pass(
         )  # (B, act_chunk_len, D)
 
         
-        # retrive the action outputs from different layers
-        action_pred_layer = []
-        for layer_i in range(1,33):
-            current_pred = output.hidden_states[layer_i]
-            text_hidden_states_layer = current_pred[:, num_patches:-1]
-            actions_hidden_states_layer = (
-            text_hidden_states_layer[current_action_mask | next_actions_mask]
-            .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
-            .to(torch.bfloat16)
-             )  # (B, act_chunk_len, D)
+        # # retrive the action outputs from different layers
+        # action_pred_layer = []
+        # for layer_i in range(1,33):
+        #     current_pred = output.hidden_states[layer_i]
+        #     text_hidden_states_layer = current_pred[:, num_patches:-1]
+        #     actions_hidden_states_layer = (
+        #     text_hidden_states_layer[current_action_mask | next_actions_mask]
+        #     .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
+        #     .to(torch.bfloat16)
+        #      )  # (B, act_chunk_len, D)
             
-            action_pred_layer.append(action_head.module.predict_action(actions_hidden_states_layer))
+        #     action_pred_layer.append(action_head.module.predict_action(actions_hidden_states_layer))
 
 
-
-        print(len(action_pred_layer),action_pred_layer[0].shape,action_pred_layer)
-        assert 1==2
 
 
         # h loss computation
@@ -819,6 +816,7 @@ def save_training_checkpoint(
     action_head,
     train_dataset,
     distributed_state,
+    h_head,
 ) -> None:
     """
     Save all training checkpoints including model components, LoRA adapter, and dataset statistics.
@@ -875,6 +873,10 @@ def save_training_checkpoint(
 
         if (cfg.use_l1_regression or cfg.use_diffusion) and action_head is not None:
             torch.save(action_head.state_dict(), checkpoint_dir / f"action_head--{checkpoint_name_suffix}")
+
+        if h_head != None:
+            torch.save(h_head.state_dict(), checkpoint_dir / f"h_head--{checkpoint_name_suffix}")
+
 
         if cfg.use_film:
             # To be safe, just save the entire vision backbone (not just FiLM components)
@@ -1280,9 +1282,6 @@ def finetune(cfg: FinetuneConfig) -> None:
     }
 
 
-    
-
-
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
@@ -1369,6 +1368,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                     action_head=action_head if (cfg.use_l1_regression or cfg.use_diffusion) else None,
                     train_dataset=train_dataset,
                     distributed_state=distributed_state,
+                    h_head = hnn_potential_mlp_head,
                 )
 
             # Test model on validation set
