@@ -801,7 +801,7 @@ def get_vla_action(
         f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
         selected_layer = select_layer_index(f_list)
 
-        print(selected_layer)
+        print(action)
   
 
 
