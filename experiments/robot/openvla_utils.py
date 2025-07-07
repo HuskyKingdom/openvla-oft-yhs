@@ -829,7 +829,7 @@ def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
 
 def compute_hamitonians(layer_actions, props, h_head):
 
-    props = torch.from_numpy(props).to(layer_actions[0].device).float()
+    props = torch.from_numpy(props).to(h_head.device).float()
 
     # compute_raw_coordinates
     ori_pos   = props[:3]               # (3)  
