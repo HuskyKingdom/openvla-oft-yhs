@@ -801,7 +801,10 @@ def get_vla_action(
         f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
         selected_layer = select_layer_index(f_list)
 
-        action = action + residule_coef * layer_actions[selected_layer]
+        contrast = layer_actions[-1] - layer_actions[selected_layer]
+        print(f"before {action}")
+        action = action + residule_coef * contrast
+        print(f"after {action}")
 
   
   
