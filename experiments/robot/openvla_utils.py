@@ -798,7 +798,7 @@ def get_vla_action(
 
 
         h_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
-        print(h_list)
+        print(len(h_list))
   
 
 
@@ -851,7 +851,6 @@ def compute_hamitonians(layer_actions, props, h_head,DEVICE):
         z  = abs_pred[:-2, :]  # (T-2, D)
         z_next  = abs_pred[1:-1,    :]
         dz_dt   = z_next   - z   # (T-2, D)
-        print(z.shape,dz_dt.shape)
         z_qp  = torch.cat([z, dz_dt],   dim=-1)  # (T-2, 2D)
         
         F1_F2   = h_head(z_qp)      # (T-2, 2)
