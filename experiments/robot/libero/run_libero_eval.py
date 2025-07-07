@@ -290,6 +290,7 @@ def run_episode(
     noisy_action_projector=None,
     initial_state=None,
     log_file=None,
+    head = None,
 ):
     """Run a single episode in the environment."""
     # Reset environment
@@ -344,6 +345,7 @@ def run_episode(
                     proprio_projector=proprio_projector,
                     noisy_action_projector=noisy_action_projector,
                     use_film=cfg.use_film,
+                    h_head=head,
                 )
                 action_queue.extend(actions)
                 actions_accum.append(actions)
@@ -456,8 +458,6 @@ def run_task(
         hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/h_head--150000_checkpoint.pt"))
         hnn_potential_mlp_head.to(model.device)
 
-       
-        assert 1==2
 
         # Run episode
         success, replay_images = run_episode(
@@ -472,6 +472,7 @@ def run_task(
             noisy_action_projector,
             initial_state,
             log_file,
+            hnn_potential_mlp_head,
         )
 
         # Update counters

@@ -722,6 +722,7 @@ def get_vla_action(
     proprio_projector: Optional[torch.nn.Module] = None,
     noisy_action_projector: Optional[torch.nn.Module] = None,
     use_film: bool = False,
+    h_head = None,
 ) -> List[np.ndarray]:
     """
     Generate action predictions with the VLA policy.
@@ -794,7 +795,10 @@ def get_vla_action(
                 use_film=use_film,
             )
 
-        
+        print(proprio,proprio.shape)
+        assert 1==2
+
+
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]
