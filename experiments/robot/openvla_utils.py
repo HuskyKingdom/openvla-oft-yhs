@@ -843,12 +843,14 @@ def compute_hamitonians(layer_actions, props, h_head):
         # raw action coordinates
         pred_actions = layer_actions[i][:, :6]
         pred_actions = torch.from_numpy(pred_actions).float() # to tensor
+        print(pred_actions.shape,ori_coords.shape)
         abs_pred = torch.cumsum(pred_actions, dim=0) + ori_coords.unsqueeze(1)   # (T, D)
 
         # position and velocities
         z  = abs_pred[:-2, :]  # (T-2, D)
         z_next  = abs_pred[1:-1,    :]
         dz_dt   = z_next   - z   # (T-2, D)
+        print(z.shape,dz_dt.shape)
         z_qp  = torch.cat([z, dz_dt],   dim=-1)  # (T-2, 2D)
         
         F1_F2   = h_head(z_qp)      # (T-2, 2)
