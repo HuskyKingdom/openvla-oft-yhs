@@ -797,7 +797,7 @@ def get_vla_action(
             )
 
 
-        residule_coef = 0.2
+        residule_coef = 0.05
         f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
         selected_layer = select_layer_index(f_list)
 
