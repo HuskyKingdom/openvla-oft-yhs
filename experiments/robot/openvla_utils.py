@@ -14,6 +14,7 @@ import numpy as np
 import requests
 import tensorflow as tf
 import torch
+import torch.nn.functional as F
 from huggingface_hub import HfApi, hf_hub_download
 from PIL import Image
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
@@ -797,8 +798,10 @@ def get_vla_action(
 
 
 
-        h_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
-        print(len(h_list),h_list[0].shape)
+        f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
+        selected_layer = select_layer_index(f_list)
+
+        print(selected_layer)
   
 
 
@@ -857,6 +860,21 @@ def compute_hamitonians(layer_actions, props, h_head,DEVICE):
         f1f2_list.append(F1_F2) # list of (T-2,2)
     
     return f1f2_list
+
+def select_layer_index(f_list):
+
+    # select layer with maximum H difference and returns the layer index
+
+    target = f_list[-1]
+    mses = []
+    for idx, t in enumerate(f_list[:-1]):
+        # mse = mean((t - target)^2)
+        mse = F.mse_loss(t, target, reduction='mean')
+        mses.append(mse)
+
+    mses_tensor = torch.stack(mses)
+    min_idx = torch.argmin(mses_tensor).item()
+    return min_idx
 
     
 
