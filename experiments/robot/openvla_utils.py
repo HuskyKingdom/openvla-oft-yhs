@@ -784,7 +784,7 @@ def get_vla_action(
             action, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
         else:
             # Custom action head for continuous actions
-            action, hiddens = vla.predict_action(
+            action, hiddens, layer_actions = vla.predict_action(
                 **inputs,
                 unnorm_key=cfg.unnorm_key,
                 do_sample=False,
@@ -796,8 +796,8 @@ def get_vla_action(
             )
 
 
-        print(proprio,proprio.shape)
-        assert 1==2
+        print(proprio,proprio.shape, layer_actions, layer_actions[0].shape) # (8,)
+        # assert 1==2
 
 
 

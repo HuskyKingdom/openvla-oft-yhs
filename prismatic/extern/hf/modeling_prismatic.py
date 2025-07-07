@@ -1077,9 +1077,9 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         for layer_index in range(len(layer_actions)):
             layer_actions[layer_index] = self._unnormalize_actions(layer_actions[layer_index], unnorm_key)
         
-        print(layer_actions,layer_actions[0].shape)
+        
 
-        return actions, actions_hidden_states
+        return actions, actions_hidden_states, layer_actions
 
     @staticmethod
     def _check_unnorm_key(norm_stats: Dict[str, Dict[str, Any]], unnorm_key: Optional[str]) -> str:
