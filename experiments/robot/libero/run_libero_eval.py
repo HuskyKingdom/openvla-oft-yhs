@@ -447,14 +447,16 @@ def run_task(
 
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
-
+        # loading h model
         hnn_potential_mlp_head = nn.Sequential(
             nn.Linear(6 * 2, 64, bias=True),
             nn.ReLU(),
             nn.Linear(64,2,bias = True)
         ).to(model.device).to(torch.bfloat16)
+        hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "h_head--150000_checkpoint.pt"))
+        hnn_potential_mlp_head.to(model.device)
 
-        print(cfg.pretrained_checkpoint)
+       
         assert 1==2
 
         # Run episode
