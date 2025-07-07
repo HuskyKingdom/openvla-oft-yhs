@@ -797,7 +797,7 @@ def get_vla_action(
 
 
 
-        h_list = compute_hamitonians(layer_actions,proprio,h_head)
+        h_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
         print(h_list)
   
 
@@ -827,9 +827,9 @@ def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     axis_angle = axis_angle.masked_fill(denom.unsqueeze(-1) < eps, 0.0)
     return axis_angle
 
-def compute_hamitonians(layer_actions, props, h_head):
+def compute_hamitonians(layer_actions, props, h_head,DEVICE):
 
-    props = torch.from_numpy(props).float()
+    props = torch.from_numpy(props).to(DEVICE).float()
 
     # compute_raw_coordinates
     ori_pos   = props[:3]               # (3)  
@@ -842,7 +842,8 @@ def compute_hamitonians(layer_actions, props, h_head):
 
         # raw action coordinates
         pred_actions = layer_actions[i][:, :6]
-        pred_actions = torch.from_numpy(pred_actions).float() # to tensor
+        pred_actions = torch.from_numpy(pred_actions).to(DEVICE).float() # to tensor
+
 
         abs_pred = torch.cumsum(pred_actions, dim=0) + ori_coords.unsqueeze(0)   # (T, D)
 
