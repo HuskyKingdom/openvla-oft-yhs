@@ -798,7 +798,7 @@ def get_vla_action(
 
 
         h_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
-        print(len(h_list))
+        print(len(h_list),h_list[0].shape)
   
 
 
