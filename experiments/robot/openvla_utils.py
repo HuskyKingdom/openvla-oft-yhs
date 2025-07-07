@@ -797,11 +797,13 @@ def get_vla_action(
             )
 
 
-
+        residule_coef = 0.2
         f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
         selected_layer = select_layer_index(f_list)
 
-        print(action)
+        action = action + residule_coef * layer_actions[selected_layer]
+
+  
   
 
 
