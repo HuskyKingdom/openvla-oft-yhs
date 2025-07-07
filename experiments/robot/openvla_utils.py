@@ -796,13 +796,67 @@ def get_vla_action(
             )
 
 
-        print(proprio,proprio.shape, layer_actions, layer_actions[0].shape) # (8,)
-        # assert 1==2
+
+        h_list = compute_hamitonians(layer_actions,proprio,h_head)
+        print(h_list)
+  
 
 
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]
+
+
+def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+    """
+    quat2axisangle： (B,4) -> (B,3)
+    quat[..., :3] = (x,y,z), quat[..., 3] = w
+    """
+ 
+    xyz = quat[..., :3]          # (B,3)
+    w   = quat[..., 3].clamp(-1.0, 1.0)  # (B,)
+
+
+    angle = 2.0 * torch.acos(w)  # (B,)
+
+    denom = torch.sqrt(torch.clamp(1.0 - w * w, min=0.0))  # (B,)
+    safe_denom = denom.clone().masked_fill_(denom < eps, 1.0)
+
+    axis_angle = xyz * (angle / safe_denom).unsqueeze(-1)  # (B,3)
+
+    axis_angle = axis_angle.masked_fill(denom.unsqueeze(-1) < eps, 0.0)
+    return axis_angle
+
+def compute_hamitonians(layer_actions, props, h_head):
+
+    # compute_raw_coordinates
+
+    ori_pos   = props[:3]               # (3)  
+    ori_quat  = props[3:7]              # (4)
+    ori_rot   = quat2axisangle_torch(ori_quat)  # (3)
+    ori_coords= torch.cat([ori_pos, ori_rot], dim=-1)  # (6)
+    f1f2_list = []
+
+    for i in range(len(layer_actions)):
+
+        # raw action coordinates
+        pred_actions = layer_actions[i][:, :6]
+        abs_pred = torch.cumsum(pred_actions, dim=0) + ori_coords.unsqueeze(1)   # (T, D)
+
+        # position and velocities
+        z  = abs_pred[:-2, :]  # (T-2, D)
+        z_next  = abs_pred[1:-1,    :]
+        dz_dt   = z_next   - z   # (T-2, D)
+        z_qp  = torch.cat([z, dz_dt],   dim=-1)  # (T-2, 2D)
+        
+        F1_F2   = h_head(z_qp)      # (N, 2)
+        f1f2_list.append(F1_F2) # list of (T,D)
+    
+    return f1f2_list
+
+    
+
+    
 
 
 def get_action_from_server(
