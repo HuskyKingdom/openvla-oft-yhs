@@ -795,6 +795,7 @@ def get_vla_action(
                 use_film=use_film,
             )
 
+
         print(proprio,proprio.shape)
         assert 1==2
 

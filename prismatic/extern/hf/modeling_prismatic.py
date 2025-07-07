@@ -931,7 +931,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
             layer_actions.append(c_normalized_actions)
 
-        print(layer_actions)
+        # print(layer_actions)
 
 
 
@@ -958,7 +958,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = self.bin_centers[discretized_actions]
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
 
-        return normalized_actions, actions_hidden_states
+        return normalized_actions, actions_hidden_states, layer_actions
 
     def predict_action(
         self,
@@ -1060,7 +1060,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             )
         else:
             # Run regression or discrete token-based prediction
-            normalized_actions, actions_hidden_states = self._regression_or_discrete_prediction(
+            normalized_actions, actions_hidden_states, layer_actions = self._regression_or_discrete_prediction(
                 input_embeddings,
                 all_actions_mask,
                 projected_patch_embeddings,
@@ -1073,6 +1073,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)
+
+        for layer_index in range(len(layer_actions)):
+            layer_actions[layer_index] = self._unnormalize_actions(layer_actions[layer_index], unnorm_key)
+        
+        print(layer_actions,layer_actions[0].shape)
 
         return actions, actions_hidden_states
 
