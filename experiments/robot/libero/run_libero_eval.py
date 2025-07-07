@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Optional, Union
-
+import torch
+import torch.nn as nn
 import draccus
 import numpy as np
 import tqdm
@@ -445,6 +446,16 @@ def run_task(
             initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
 
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
+
+
+        hnn_potential_mlp_head = nn.Sequential(
+            nn.Linear(6 * 2, 64, bias=True),
+            nn.ReLU(),
+            nn.Linear(64,2,bias = True)
+        ).to(model.device).to(torch.bfloat16)
+
+        print(cfg.pretrained_checkpoint)
+        assert 1==2
 
         # Run episode
         success, replay_images = run_episode(
