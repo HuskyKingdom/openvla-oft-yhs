@@ -796,15 +796,15 @@ def get_vla_action(
                 use_film=use_film,
             )
 
+        if cfg.h_decoding:
+            residule_coef = 0.01
+            f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
+            selected_layer = select_layer_index(f_list)
 
-        residule_coef = 0.01
-        f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
-        selected_layer = select_layer_index(f_list)
-
-        contrast = layer_actions[-1] - layer_actions[selected_layer]
-        print(f"before {action}")
-        action = action + residule_coef * contrast
-        print(f"after {action}")
+            contrast = layer_actions[-1] - layer_actions[selected_layer]
+            print(f"before {action}")
+            action = action + residule_coef * contrast
+            print(f"after {action}")
 
   
   
