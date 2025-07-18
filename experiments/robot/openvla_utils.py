@@ -802,9 +802,7 @@ def get_vla_action(
             selected_layer = select_layer_index(f_list)
 
             contrast = layer_actions[-1] - layer_actions[selected_layer]
-            print(f"before {action}")
             action = action + residule_coef * contrast
-            print(f"after {action}")
 
   
   
