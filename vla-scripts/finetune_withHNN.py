@@ -117,7 +117,7 @@ def compute_h_loss(pred_actions, ground_actions,
     abs_gt   = torch.cumsum(ground_actions, dim=1) + ori_coords.unsqueeze(1)
 
     # Unpack batch & time dimensions after reconstruction
-    h_lambda = 0.3
+    h_lambda = 0.15
     B, T, D  = abs_pred.size()
 
     # Slice aligned triple windows for velocity estimation
