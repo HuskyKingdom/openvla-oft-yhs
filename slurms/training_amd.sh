@@ -12,7 +12,6 @@ export WANDB_API_KEY=0bdbd99b1136358467ed2d03e9a6ba5a5b2a11a8
 export HF_HOME=/work1/aiginternal/yuhang/
 
 
-ml load  openmpi/5.0.7-rocm6.4.1
 
 FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --nproc-per-node 4 vla-scripts/finetune_withHNN.py \
   --vla_path openvla/openvla-7b \
