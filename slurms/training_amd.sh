@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
 #SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task 92
+#SBATCH --cpus-per-task 128
 
 cd /work1/aiginternal/yuhang/openvla-oft-yhs
 export WANDB_API_KEY=0bdbd99b1136358467ed2d03e9a6ba5a5b2a11a8
