@@ -23,7 +23,7 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --use_film False \
   --num_images_in_input 2 \
   --use_proprio True \
-  --batch_size 30 \
+  --batch_size 26 \
   --learning_rate 5e-4 \
   --num_steps_before_decay 100000 \
   --max_steps 250005 \
