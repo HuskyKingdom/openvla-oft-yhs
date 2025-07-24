@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=debug
-#SBATCH --time=01:00:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=vlm
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:4
