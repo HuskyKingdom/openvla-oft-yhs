@@ -885,6 +885,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         NUM_PROMPT_TOKENS,
         action_head=None,
     ):
+        print("running here!!!!!!!11111")
         """Run L1 regression-based continuous action prediction or discrete action tokens prediction."""
         # Zero out action token embeddings
         all_actions_mask = all_actions_mask.unsqueeze(-1)  # (B, seq_len, 1)
@@ -1060,6 +1061,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             )
         else:
             # Run regression or discrete token-based prediction
+            print("running here!!!!!!!0000")
             normalized_actions, actions_hidden_states, layer_actions = self._regression_or_discrete_prediction(
                 input_embeddings,
                 all_actions_mask,
