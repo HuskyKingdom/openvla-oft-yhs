@@ -785,16 +785,29 @@ def get_vla_action(
             action, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
         else:
             # Custom action head for continuous actions
-            action, hiddens, layer_actions = vla.predict_action(
-                **inputs,
-                unnorm_key=cfg.unnorm_key,
-                do_sample=False,
-                proprio=proprio,
-                proprio_projector=proprio_projector,
-                noisy_action_projector=noisy_action_projector,
-                action_head=action_head,
-                use_film=use_film,
-            )
+            if cfg.h_decoding:
+                action, hiddens, layer_actions = vla.predict_action(
+                    **inputs,
+                    unnorm_key=cfg.unnorm_key,
+                    do_sample=False,
+                    proprio=proprio,
+                    proprio_projector=proprio_projector,
+                    noisy_action_projector=noisy_action_projector,
+                    action_head=action_head,
+                    use_film=use_film,
+                )
+            else:
+                action, hiddens = vla.predict_action(
+                    **inputs,
+                    unnorm_key=cfg.unnorm_key,
+                    do_sample=False,
+                    proprio=proprio,
+                    proprio_projector=proprio_projector,
+                    noisy_action_projector=noisy_action_projector,
+                    action_head=action_head,
+                    use_film=use_film,
+                )
+
 
         if cfg.h_decoding:
             residule_coef = 0.01
