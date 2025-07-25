@@ -322,82 +322,82 @@ def run_episode(
 
     # Run episode
     success = False
-    try:
-        while t < max_steps + cfg.num_steps_wait:
-            # Do nothing for the first few timesteps to let objects stabilize
-            if t < cfg.num_steps_wait:
-                obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
-                t += 1
-                continue
-
-            # Prepare observation
-            observation, img = prepare_observation(obs, resize_size)
-            replay_images.append(img)
-
-            # If action queue is empty, requery model
-            if len(action_queue) == 0:
-                # Query model to get action
-                actions = get_action(
-                    cfg,
-                    model,
-                    observation,
-                    task_description,
-                    processor=processor,
-                    action_head=action_head,
-                    proprio_projector=proprio_projector,
-                    noisy_action_projector=noisy_action_projector,
-                    use_film=cfg.use_film,
-                    h_head=head,
-                )
-                action_queue.extend(actions)
-                actions_accum.append(actions)
-                
-            # # Get energy curve (2*8=16 timesteps)
-            # if len(actions_accum) == 2 and flag == 0:
-            #     flag = 1
-            #     import matplotlib.pyplot as plt
-            #     m, I, g = 1.0, 1.0, 9.81
-            #     flat = [a for chunk in actions_accum for a in chunk]
-            #     pr_arr = np.stack(flat,  axis=0)
-
-            #     vel_pr   = pr_arr[:, :3]   
-            #     omega_pr = pr_arr[:,3:6]
-
-            #     Tt_pr = 0.5*m*np.sum(vel_pr**2,   axis=1)
-            #     Tr_pr = 0.5*I*np.sum(omega_pr**2, axis=1)
-            #     # V_pr  = m*g*pos_pr[:-1,2]
-            #     H_pr  = Tt_pr + Tr_pr  
-
-            #     import pickle
-            #     with open('ours.pkl', 'wb') as f:
-            #         pickle.dump(H_pr, f)
-
-            #     # ts = np.arange(len(H_pr))  # 0…6
-            #     # plt.figure(figsize=(6,4))
-            #     # plt.plot(ts, H_pr,'--', label='Pred Energy')
-            #     # plt.xlabel('Timestep')
-            #     # plt.ylabel('Energy')
-            #     # plt.legend()
-            #     # plt.tight_layout()
-            #     # plt.savefig('energy_comparison.pdf', format='pdf', bbox_inches='tight')
-            #     # plt.close()   
-            
-
-            # Get action from queue
-            action = action_queue.popleft()
-
-            # Process action
-            action = process_action(action, cfg.model_family)
-
-            # Execute action in environment
-            obs, reward, done, info = env.step(action.tolist())
-            if done:
-                success = True
-                break
+    # try:
+    while t < max_steps + cfg.num_steps_wait:
+        # Do nothing for the first few timesteps to let objects stabilize
+        if t < cfg.num_steps_wait:
+            obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
             t += 1
+            continue
 
-    except Exception as e:
-        log_message(f"Episode error: {e}", log_file)
+        # Prepare observation
+        observation, img = prepare_observation(obs, resize_size)
+        replay_images.append(img)
+
+        # If action queue is empty, requery model
+        if len(action_queue) == 0:
+            # Query model to get action
+            actions = get_action(
+                cfg,
+                model,
+                observation,
+                task_description,
+                processor=processor,
+                action_head=action_head,
+                proprio_projector=proprio_projector,
+                noisy_action_projector=noisy_action_projector,
+                use_film=cfg.use_film,
+                h_head=head,
+            )
+            action_queue.extend(actions)
+            actions_accum.append(actions)
+            
+        # # Get energy curve (2*8=16 timesteps)
+        # if len(actions_accum) == 2 and flag == 0:
+        #     flag = 1
+        #     import matplotlib.pyplot as plt
+        #     m, I, g = 1.0, 1.0, 9.81
+        #     flat = [a for chunk in actions_accum for a in chunk]
+        #     pr_arr = np.stack(flat,  axis=0)
+
+        #     vel_pr   = pr_arr[:, :3]   
+        #     omega_pr = pr_arr[:,3:6]
+
+        #     Tt_pr = 0.5*m*np.sum(vel_pr**2,   axis=1)
+        #     Tr_pr = 0.5*I*np.sum(omega_pr**2, axis=1)
+        #     # V_pr  = m*g*pos_pr[:-1,2]
+        #     H_pr  = Tt_pr + Tr_pr  
+
+        #     import pickle
+        #     with open('ours.pkl', 'wb') as f:
+        #         pickle.dump(H_pr, f)
+
+        #     # ts = np.arange(len(H_pr))  # 0…6
+        #     # plt.figure(figsize=(6,4))
+        #     # plt.plot(ts, H_pr,'--', label='Pred Energy')
+        #     # plt.xlabel('Timestep')
+        #     # plt.ylabel('Energy')
+        #     # plt.legend()
+        #     # plt.tight_layout()
+        #     # plt.savefig('energy_comparison.pdf', format='pdf', bbox_inches='tight')
+        #     # plt.close()   
+        
+
+        # Get action from queue
+        action = action_queue.popleft()
+
+        # Process action
+        action = process_action(action, cfg.model_family)
+
+        # Execute action in environment
+        obs, reward, done, info = env.step(action.tolist())
+        if done:
+            success = True
+            break
+        t += 1
+
+    # except Exception as e:
+    #     log_message(f"Episode error: {e}", log_file)
 
 
     return success, replay_images
