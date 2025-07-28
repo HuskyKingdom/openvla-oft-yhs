@@ -797,7 +797,7 @@ def get_vla_action(
                     use_film=use_film,
                 )
             else:
-                action, hiddens, layer_actions = vla.predict_action(  # change for different lines 
+                action, hiddens = vla.predict_action(  # change for different lines 
                     **inputs,
                     unnorm_key=cfg.unnorm_key,
                     do_sample=False,
