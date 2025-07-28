@@ -797,16 +797,28 @@ def get_vla_action(
                     use_film=use_film,
                 )
             else:
-                action, hiddens = vla.predict_action(  # change for different lines 
-                    **inputs,
-                    unnorm_key=cfg.unnorm_key,
-                    do_sample=False,
-                    proprio=proprio,
-                    proprio_projector=proprio_projector,
-                    noisy_action_projector=noisy_action_projector,
-                    action_head=action_head,
-                    use_film=use_film,
-                )
+                try:
+                    action, hiddens, layer_actions = vla.predict_action(  # in case of our implementation
+                        **inputs,
+                        unnorm_key=cfg.unnorm_key,
+                        do_sample=False,
+                        proprio=proprio,
+                        proprio_projector=proprio_projector,
+                        noisy_action_projector=noisy_action_projector,
+                        action_head=action_head,
+                        use_film=use_film,
+                    )
+                except ValueError as e:
+                    action, hiddens = vla.predict_action(  # in case of baseline
+                        **inputs,
+                        unnorm_key=cfg.unnorm_key,
+                        do_sample=False,
+                        proprio=proprio,
+                        proprio_projector=proprio_projector,
+                        noisy_action_projector=noisy_action_projector,
+                        action_head=action_head,
+                        use_film=use_film,
+                    )
 
 
         if cfg.h_decoding:
