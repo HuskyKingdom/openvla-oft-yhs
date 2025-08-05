@@ -713,6 +713,25 @@ def prepare_images_for_vla(images: List[np.ndarray], cfg: Any) -> List[Image.Ima
     return processed_images
 
 
+def action_contrastive_fusion(selected_layer,final_layer,coffes):
+
+    u = final_layer
+    v = selected_layer
+
+    # parallel decomp.
+    dot_product = torch.dot(u,v)
+    v_norm_sq = torch.dot(v,v)
+    u_parallel = (dot_product / v_norm_sq) * v
+
+    # parpendicular decomp.
+    u_perp = u - u_parallel
+
+    # apply fusion
+    refined_vector = u + coffes * u_perp
+
+
+    return refined_vector
+
 def get_vla_action(
     cfg: Any,
     vla: torch.nn.Module,
@@ -822,12 +841,27 @@ def get_vla_action(
 
 
         if cfg.h_decoding:
-            residule_coef = 0.01
+            residule_coef = 0.2
             f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
-            selected_layer = select_layer_index(f_list)
+            selected_index = select_layer_index(f_list)
 
-            contrast = layer_actions[-1] - layer_actions[selected_layer]
-            action = action + residule_coef * contrast
+            # prevs
+            # contrast = layer_actions[-1] - layer_actions[selected_index]
+            # action = action + residule_coef * contrast
+
+            # hiddent contrast
+            # contrast = hiddens[-1] - hiddens[selected_index]
+            # final_hidden = hiddens[-1] + residule_coef * contrast
+            # action = action_head.predict_action(final_hidden)
+
+            # ACF on actions on space and orientation
+            candidate_actions = layer_actions[selected_index]
+            model_actions = layer_actions[-1]
+
+            print(candidate_actions.shape)
+            assert 1==2
+            # refined_pos = action_contrastive_fusion()
+            
 
   
   
