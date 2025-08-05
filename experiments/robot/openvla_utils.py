@@ -713,10 +713,10 @@ def prepare_images_for_vla(images: List[np.ndarray], cfg: Any) -> List[Image.Ima
     return processed_images
 
 
-def action_contrastive_fusion(selected_layer,final_layer,coffes):
+def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
-    u = final_layer
-    v = selected_layer
+    u = final_layer_action
+    v = selected_layer_action
 
     # parallel decomp.
     dot_product = torch.dot(u,v)
@@ -841,6 +841,7 @@ def get_vla_action(
 
 
         if cfg.h_decoding:
+
             residule_coef = 0.2
             f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
             selected_index = select_layer_index(f_list)
@@ -855,14 +856,24 @@ def get_vla_action(
             # action = action_head.predict_action(final_hidden)
 
             # ACF on actions on space and orientation
-            candidate_actions = layer_actions[selected_index]
+            candidate_actions = layer_actions[selected_index] # (8,7)
             model_actions = layer_actions[-1]
 
-            print(candidate_actions.shape)
-            assert 1==2
-            # refined_pos = action_contrastive_fusion()
-            
+            candidate_pos = candidate_actions[:,:3] # (8,3)
+            model_pos = model_actions[:,:3] # (8,3)
+            candidate_rot = candidate_actions[:,3:6] # (8,3)
+            model_rot = model_actions[:,3:6] # (8,3)
 
+            num_action_chunk = candidate_pos.shape[0]
+
+            for i in range(num_action_chunk):
+                model_pos[i] = action_contrastive_fusion(candidate_pos[i],model_pos[i],residule_coef)
+                model_rot[i] = action_contrastive_fusion(candidate_rot[i],model_rot[i],residule_coef)
+            
+            model_actions[:,:3] = model_pos
+            model_actions[:,3:6] = model_rot
+
+            action = model_actions
   
   
 
