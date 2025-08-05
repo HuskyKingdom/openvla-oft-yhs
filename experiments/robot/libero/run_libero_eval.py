@@ -428,7 +428,7 @@ def run_task(
                 nn.ReLU(),
                 nn.Linear(64,2,bias = True)
             ).to(model.device).to(torch.bfloat16)
-            hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/h_head--150000_checkpoint.pt"))
+            hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/h_head--200000_checkpoint.pt"))
             hnn_potential_mlp_head.to(model.device)
         else:
             hnn_potential_mlp_head = None
