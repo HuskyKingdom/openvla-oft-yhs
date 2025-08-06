@@ -719,9 +719,6 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
     u = torch.from_numpy(final_layer_action).float()
     v = torch.from_numpy(selected_layer_action).float()
 
-    u = final_layer_action
-    v = selected_layer_action
-
     # parallel decomp.
     dot_product = torch.dot(u,v)
     v_norm_sq = torch.dot(v,v)
