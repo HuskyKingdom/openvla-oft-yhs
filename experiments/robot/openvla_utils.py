@@ -843,7 +843,7 @@ def get_vla_action(
 
         if cfg.h_decoding:
 
-            residule_coef = 0.2
+            residule_coef = 0.5
             f_list = compute_hamitonians(layer_actions,proprio,h_head,DEVICE)
             selected_index = select_layer_index(f_list)
 
