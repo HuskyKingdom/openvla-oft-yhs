@@ -715,6 +715,10 @@ def prepare_images_for_vla(images: List[np.ndarray], cfg: Any) -> List[Image.Ima
 
 def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
+
+    u = torch.from_numpy(final_layer_action).float()
+    v = torch.from_numpy(selected_layer_action).float()
+
     u = final_layer_action
     v = selected_layer_action
 
@@ -730,7 +734,7 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
     refined_vector = u + coffes * u_perp
 
 
-    return refined_vector
+    return refined_vector.numpy()
 
 def get_vla_action(
     cfg: Any,
