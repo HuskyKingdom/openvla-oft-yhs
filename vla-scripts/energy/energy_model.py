@@ -77,6 +77,7 @@ class EnergyModel(nn.Module):
         act_dim: int,
         hidden: int = 256,
         n_layers: int = 2,
+        NUM_ACTIONS_CHUNK = 8,
     ):
         super().__init__()
         in_dim = hidden * 2
@@ -91,7 +92,11 @@ class EnergyModel(nn.Module):
             num_blocks=n_layers, input_dim=in_dim, hidden_dim=hidden, output_dim=1
         )
 
-    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="mean", gamma=None) -> torch.Tensor:
+
+        # pos emb
+        self.pos_emb = nn.Embedding(NUM_ACTIONS_CHUNK, hidden)
+
+    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
         """
         hN: [B, S, D_h], a: [B, H,  D_a]
         return: energy [B, 1]
@@ -104,7 +109,13 @@ class EnergyModel(nn.Module):
 
         a = self.action_proj_act(self.action_proj(a)) # [B,H,Hd]
 
-        x = torch.cat([c, a], dim=-1)    # [B,H,2Hd]
+        # pos emb
+        feats = [c, a]
+        pos_ids = torch.arange(H, device=a.device).unsqueeze(0).expand(B, H)  # [B,H]
+        p = self.pos_emb(pos_ids)                                             # [B,H,Hid]
+        feats.append(p)
+        x = torch.cat(feats, dim=-1)         
+
         E_steps = self.model(x)           # [B,H,1]
 
         if reduce == "sum":

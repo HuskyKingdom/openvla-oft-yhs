@@ -118,6 +118,7 @@ class FinetuneConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
+    energy_warm_steps = 50000
 
     # fmt: on
 
@@ -420,8 +421,7 @@ def run_forward_pass(
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
-        print(f"pos loss mean {L_pos_mean}; neg loss {L_neg}; L1 loss {loss}")
-        assert 1==2
+        energy_loss = L_pos_mean + L_neg
         
         if use_diffusion:
             # Predict noise
@@ -468,11 +468,12 @@ def run_forward_pass(
                 {
                     "curr_action_l1_loss": curr_action_l1_loss.item(),
                     "next_actions_l1_loss": next_actions_l1_loss.item(),
+                    "energy_loss": energy_loss.item(),
                 }
             )
 
     # Return both the loss tensor (with gradients) and the metrics dictionary (with detached values)
-    return loss, metrics
+    return loss, metrics, energy_loss
 
 
 def run_diffusion_sampling(
@@ -960,10 +961,10 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.module.llm_dim,7,512,2).to(device_id).to(torch.bfloat16)
+    energy_model = EnergyModel(vla.module.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
-    trainable_params += [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 
+    energy_trainable_params = [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 
     if cfg.use_l1_regression or cfg.use_diffusion:
         trainable_params += [param for param in action_head.parameters() if param.requires_grad]
     if cfg.use_diffusion:
@@ -971,7 +972,9 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_proprio:
         trainable_params += [param for param in proprio_projector.parameters() if param.requires_grad]
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
+    print(f"# total energy trainable params: {sum(p.numel() for p in energy_trainable_params)}")
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
+    energy_optimizer = AdamW(energy_trainable_params, lr=cfg.learning_rate)
 
     # Record original learning rate
     original_lr = optimizer.param_groups[0]["lr"]
@@ -1072,11 +1075,12 @@ def finetune(cfg: FinetuneConfig) -> None:
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
+
         for batch_idx, batch in enumerate(dataloader):
 
             # Compute training metrics and loss
             compute_diffusion_l1 = cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0
-            loss, metrics = run_forward_pass(
+            loss, metrics, energy_loss = run_forward_pass(
                 vla=vla,
                 action_head=action_head,
                 noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
@@ -1096,9 +1100,14 @@ def finetune(cfg: FinetuneConfig) -> None:
 
             # Normalize loss to account for gradient accumulation
             normalized_loss = loss / cfg.grad_accumulation_steps
+            normalized_energy_loss = energy_loss / cfg.grad_accumulation_steps
 
             # Backward pass
             normalized_loss.backward()
+
+            if cfg.energy_warm_steps > 0 and batch_idx >= cfg.energy_warm_steps:
+                energy_optimizer.zero_grad()
+            normalized_energy_loss.backward()
 
             # Store recent train metrics
             for metric_name, value in metrics.items():
@@ -1137,6 +1146,9 @@ def finetune(cfg: FinetuneConfig) -> None:
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
                 optimizer.step()
                 scheduler.step()
+                if cfg.energy_warm_steps > 0 and batch_idx >= cfg.energy_warm_steps:
+                    energy_optimizer.step()
+                    energy_optimizer.zero_grad()
                 optimizer.zero_grad()
                 progress.update()
 
