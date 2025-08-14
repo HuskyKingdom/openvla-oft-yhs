@@ -91,7 +91,7 @@ class EnergyModel(nn.Module):
             num_blocks=n_layers, input_dim=in_dim, hidden_dim=hidden, output_dim=1
         )
 
-    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
+    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="mean", gamma=None) -> torch.Tensor:
         """
         hN: [B, S, D_h], a: [B, H,  D_a]
         return: energy [B, 1]
