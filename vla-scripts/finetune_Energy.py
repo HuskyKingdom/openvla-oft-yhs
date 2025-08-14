@@ -65,7 +65,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, one_step_energy_correction
+from energy.energy_model import EnergyModel, compute_negative_energy
 
 @dataclass
 class FinetuneConfig:
@@ -388,10 +388,30 @@ def run_forward_pass(
 
         
         # compute energy loss ————————
-        predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
+        context_hidden = output.hidden_states[-1] # (B, seq_len, D)
         # positive loss
-        pos_loss = energy_model(last_hidden_states,predicted_actions)
+        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions)
+        L_pos_mean = L_pos.mean()
+
+
+        # negative loss
+        all_hiddents = output.hidden_states
+        layer_actions = []
+
+        for layer_idx in range(len(all_hiddents)): # retrive layer actions
+            hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
+            hiddents_actions = (
+                hiddents_text[current_action_mask | next_actions_mask]
+                .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
+                .to(torch.bfloat16)
+            )  # (B, act_chunk_len, D)
+            current_actions = action_head.module.predict_action(hiddents_actions)
+            layer_actions.append(current_actions)
+
+        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,all_hiddents,L_pos)
+
+       
         
 
         if use_l1_regression:
@@ -400,6 +420,9 @@ def run_forward_pass(
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
+        print(f"pos loss mean {L_pos_mean}; neg loss {L_neg}; L1 loss {loss}")
+        assert 1==2
+        
         if use_diffusion:
             # Predict noise
             noise_pred = action_head.module.predict_noise(actions_hidden_states)

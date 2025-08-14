@@ -4,6 +4,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class SeqPool(nn.Module):
+    def __init__(self, mode="mean"):
+        super().__init__()
+        assert mode in ["cls", "mean"]
+        self.mode = mode
+
+    def forward(self, h):  # h: [B,S,Dh]
+        if self.mode == "cls":
+            return h[:, 0, :]                       
+        else:
+            return h.mean(dim=1)
+        
+
 
 class MLPResNetBlock(nn.Module):
     """One MLP ResNet block with a residual connection."""
@@ -55,7 +68,7 @@ class MLPResNet(nn.Module):
 class EnergyModel(nn.Module):
     """
     E_phi(s, a):
-    input: hN(s) [B, D_h], a [B, D_a] 
+    input: hN(s) [B, seq, D_h], a [B, chunk, D_a] 
     output: energy [B, 1]
     """
     def __init__(
@@ -66,22 +79,47 @@ class EnergyModel(nn.Module):
         n_layers: int = 2,
     ):
         super().__init__()
-        in_dim = state_dim + hidden
+        in_dim = hidden * 2
         self.action_proj = nn.Linear(act_dim, hidden)
         self.action_proj_act = nn.SiLU()
+        
+        self.state_dim = state_dim
+        self.pool = SeqPool(mode="mean")
+        self.proj_hidden  = nn.Linear(state_dim, hidden)
+
         self.model = MLPResNet(
             num_blocks=n_layers, input_dim=in_dim, hidden_dim=hidden, output_dim=1
         )
 
-    def forward(self, hN: torch.Tensor, a: torch.Tensor) -> torch.Tensor:
+    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
         """
-        hN: [B, D_h], a: [B, D_a]
+        hN: [B, S, D_h], a: [B, H,  D_a]
         return: energy [B, 1]
         """
-        a = self.action_proj_act(self.action_proj(a))
-        x = torch.cat([hN, a], dim=-1)
-        E = self.model(x)
-        return E
+
+        B, H, Da = a.shape
+        c = self.pool(hN) # [B, 1]
+        c = self.proj_hidden(c) # [B, Hd]
+        c = c.unsqueeze(1).expand(B, H, c.shape[-1])  # [B,H,Hd]
+
+        a = self.action_proj_act(self.action_proj(a)) # [B,H,Hd]
+
+        x = torch.cat([c, a], dim=-1)    # [B,H,2Hd]
+        E_steps = self.model(x)           # [B,H,1]
+
+        if reduce == "sum":
+            if gamma is None:
+                E = E_steps.sum(dim=1)        # [B,1]
+            else:
+                w = torch.pow(gamma, torch.arange(H, device=a.device)).view(1,H,1)  # discount
+                E = (E_steps * w).sum(dim=1)
+        elif reduce == "mean":
+            E = E_steps.mean(dim=1)
+        else:
+            raise ValueError("reduce must be 'sum' or 'mean'")
+
+
+        return E, E_steps
     
 
 
@@ -89,46 +127,88 @@ class EnergyModel(nn.Module):
 
 
 @torch.no_grad()
-def one_step_energy_correction(
-    energy_head: EnergyModel,
-    hN: torch.Tensor,
-    a_bc: torch.Tensor,
-    alpha: float = 0.1,
-    clip_frac: float = 0.2,
-    act_range: Optional[torch.Tensor] = None,
-    correct_dims: Optional[List[int]] = None,
-) -> torch.Tensor:
+def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
+                                   act_range=None, correct_first_only=False):
     """
-      a_ref = a_bc - alpha * ∇_a E(s, a_bc)
-    in:
-      hN:        [B, D_h]
-      a_bc:      [B, D_a]（
-      alpha:     step magnitude
-      clip_frac:  clip
-      act_range: [D_a] 每维动作量程（上界-下界），用于裁剪；若为 None 则按 a_bc 的范数做全局裁剪
-      correct_dims: 只校正这些维度（如末端位姿维度），None 表示全维校正
-    返回:
-      a_ref: [B, D_a]
+    对整块或仅第1步动作做能量梯度校正
+    h:  [B,S,Dh], A_bc: [B,H,Da]
     """
-    # 需要对 a 求梯度，因此以下不加 no_grad
-    a = a_bc.detach().requires_grad_(True)          # [B, D_a]
-    E = energy_head(hN, a).sum()                    # 标量化以便 grad
-    grad_a = torch.autograd.grad(E, a, create_graph=False, retain_graph=False)[0]  # [B, D_a]
+    B, H, Da = A_bc.shape
+    A = A_bc.detach().clone().requires_grad_(True)      # [B,H,Da]
+    E, _ = energy_head(h, A, reduce="sum")              # 标量能量（对整块）
+    grad_A = torch.autograd.grad(E.sum(), A)[0]         # [B,H,Da]
 
-    step = alpha * grad_a
+    if correct_first_only:
+        mask = torch.zeros_like(grad_A); mask[:,0,:] = 1.0
+        grad_A = grad_A * mask
 
-    if correct_dims is not None:
-        mask = torch.zeros_like(step)
-        mask[..., correct_dims] = 1.0
-        step = step * mask
-
+    step = alpha * grad_A
     if act_range is not None:
-        max_step = clip_frac * act_range.to(step.device)
+        max_step = clip_frac * act_range.view(1,1,-1).to(step.device)
         step = torch.clamp(step, -max_step, max_step)
     else:
-        max_norm = (a_bc.detach().norm(dim=-1, keepdim=True) * clip_frac) + 1e-6
-        step_norm = step.norm(dim=-1, keepdim=True) + 1e-6
-        step = step * torch.minimum(torch.ones_like(step_norm), max_norm / step_norm)
+        # 全局范数裁剪
+        step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+        base_norm = A_bc.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+        coef = torch.minimum(torch.ones_like(step_norm), (clip_frac*base_norm)/step_norm)
+        step = step * coef.view(B,1,1)
 
-    a_ref = a - step
-    return a_ref.detach()
+    A_ref = A - step
+    return A_ref.detach()
+
+
+
+
+
+def compute_negative_energy(energy_head, A_star,layer_actions,delta,all_hiddens, P_loss, topk=2,kappa=1):
+
+    B, H, Da = A_star.shape
+    cand_idx, cand_A, cand_dist = [], [], []
+    
+    with torch.no_grad():
+        for A_j in layer_actions:
+            dist = torch.norm((A_j - A_star).reshape(B, -1), dim=-1)  # [B]
+            mask = dist > delta
+            if mask.any():
+                idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
+                cand_idx.append(idx)
+                cand_A.append(A_j[idx])                # [B_sel,H,Da]
+                cand_dist.append(dist[idx])
+
+    if len(cand_idx) == 0:
+        return None
+
+    idx_cat = torch.cat(cand_idx, dim=0)           # [B']
+    A_cat   = torch.cat(cand_A,   dim=0)           # [B',H,Da]
+    d_cat   = torch.cat(cand_dist, dim=0)          # [B']
+
+    per_i_rows = [[] for _ in range(B)]
+    for row, i in enumerate(idx_cat.tolist()):
+        per_i_rows[i].append(row)
+
+    keep_rows = []
+    for rows in per_i_rows:
+        if not rows:
+            continue
+        rows_sorted = sorted(rows, key=lambda r: float(d_cat[r]), reverse=True)[:topk]
+        keep_rows.extend(rows_sorted)
+
+    if len(keep_rows) == 0:
+        return None
+
+    keep_rows = torch.tensor(keep_rows, dtype=torch.long, device=A_star.device)
+    A_neg = A_cat[keep_rows]                        # [B'',H,Da]
+    idx   = idx_cat[keep_rows]                      # [B'']
+
+    h_seq = all_hiddens[-1] # later layer hidden
+    E_neg, _ = energy_head(h_seq[idx], A_neg)  # [B'',1]
+
+    with torch.no_grad():
+        # 块级动态间隔：对整块展平后的 L2
+        margin = kappa * torch.norm((A_neg - A_star[idx]).reshape(A_neg.shape[0], -1),
+                                    dim=-1, keepdim=True)         # [B'',1]
+
+    # E_pos detach
+    L_neg = F.relu(margin + P_loss.detach()[idx] - E_neg).mean()
+
+    return L_neg
