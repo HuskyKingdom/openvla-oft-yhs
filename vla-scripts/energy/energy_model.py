@@ -80,7 +80,7 @@ class EnergyModel(nn.Module):
         NUM_ACTIONS_CHUNK = 8,
     ):
         super().__init__()
-        in_dim = hidden * 2
+        in_dim = hidden * 3
         self.action_proj = nn.Linear(act_dim, hidden)
         self.action_proj_act = nn.SiLU()
         
