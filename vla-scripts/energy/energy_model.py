@@ -171,7 +171,7 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
 
 
 
-def compute_negative_energy(energy_head, A_star,layer_actions,delta,all_hiddens, P_loss, topk=2,kappa=1):
+def compute_negative_energy(energy_head, A_star,layer_actions,delta,hidden_N, P_loss, topk=2,kappa=1):
 
     B, H, Da = A_star.shape
     cand_idx, cand_A, cand_dist = [], [], []
@@ -211,8 +211,7 @@ def compute_negative_energy(energy_head, A_star,layer_actions,delta,all_hiddens,
     A_neg = A_cat[keep_rows]                        # [B'',H,Da]
     idx   = idx_cat[keep_rows]                      # [B'']
 
-    h_seq = all_hiddens[-1] # later layer hidden
-    E_neg, _ = energy_head(h_seq[idx], A_neg)  # [B'',1]
+    E_neg, _ = energy_head(hidden_N[idx], A_neg)  # [B'',1]
 
     with torch.no_grad():
         # 块级动态间隔：对整块展平后的 L2

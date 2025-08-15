@@ -390,7 +390,7 @@ def run_forward_pass(
         
         # compute energy loss ————————
 
-        context_hidden = output.hidden_states[-1] # (B, seq_len, D)
+        context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
         # positive loss
         L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions)
         L_pos_mean = L_pos.mean()
@@ -400,17 +400,19 @@ def run_forward_pass(
         all_hiddents = output.hidden_states
         layer_actions = []
 
-        for layer_idx in range(len(all_hiddents)): # retrive layer actions
-            hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
-            hiddents_actions = (
-                hiddents_text[current_action_mask | next_actions_mask]
-                .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
-                .to(torch.bfloat16)
-            )  # (B, act_chunk_len, D)
-            current_actions = action_head.module.predict_action(hiddents_actions)
-            layer_actions.append(current_actions)
+        with torch.no_grad():      
+            for layer_idx in range(len(all_hiddents)): # retrive layer actions
+                hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
+                hiddents_actions = (
+                    hiddents_text[current_action_mask | next_actions_mask]
+                    .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
+                    .to(torch.bfloat16)
+                )  # (B, act_chunk_len, D)
+                current_actions = action_head.module.predict_action(hiddents_actions)
+                layer_actions.append(current_actions)
 
-        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,all_hiddents,L_pos)
+        
+        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
 
        
         
