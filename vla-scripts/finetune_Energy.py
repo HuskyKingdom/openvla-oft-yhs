@@ -423,7 +423,7 @@ def run_forward_pass(
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
-        energy_loss = L_neg
+        energy_loss = L_neg + L_pos
         
         if use_diffusion:
             # Predict noise
