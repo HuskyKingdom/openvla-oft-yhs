@@ -1107,7 +1107,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             # Backward pass
             normalized_loss.backward()
 
-            if cfg.energy_warm_steps > 0 and batch_idx >= cfg.energy_warm_steps:
+            if batch_idx >= cfg.energy_warm_steps:
                 energy_optimizer.zero_grad()
             normalized_energy_loss.backward()
 
@@ -1148,7 +1148,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
                 optimizer.step()
                 scheduler.step()
-                if cfg.energy_warm_steps > 0 and batch_idx >= cfg.energy_warm_steps:
+                if batch_idx >= cfg.energy_warm_steps:
                     energy_optimizer.step()
                     energy_optimizer.zero_grad()
                 optimizer.zero_grad()
