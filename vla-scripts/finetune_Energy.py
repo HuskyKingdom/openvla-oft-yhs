@@ -118,7 +118,7 @@ class FinetuneConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
-    energy_warm_steps = 0 # 50000
+    energy_warm_steps = 25000 # 50000
 
     # fmt: on
 
