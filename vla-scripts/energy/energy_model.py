@@ -214,11 +214,11 @@ def compute_negative_energy(energy_head, A_star,layer_actions,delta,hidden_N, P_
     E_neg, _ = energy_head(hidden_N[idx], A_neg)  # [B'',1]
 
     with torch.no_grad():
-        # 块级动态间隔：对整块展平后的 L2
+
         margin = kappa * torch.norm((A_neg - A_star[idx]).reshape(A_neg.shape[0], -1),
                                     dim=-1, keepdim=True)         # [B'',1]
 
     # E_pos detach
-    L_neg = F.relu(margin + P_loss.detach()[idx] - E_neg).mean()
+    L_neg = F.relu(margin + P_loss[idx] - E_neg).mean()
 
     return L_neg

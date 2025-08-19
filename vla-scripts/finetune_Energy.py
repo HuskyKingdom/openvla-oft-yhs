@@ -408,7 +408,7 @@ def run_forward_pass(
                     .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
                     .to(torch.bfloat16)
                 )  # (B, act_chunk_len, D)
-                current_actions = action_head.module.predict_action(hiddents_actions)
+                current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
 
         
@@ -423,7 +423,7 @@ def run_forward_pass(
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
-        energy_loss = L_neg
+        energy_loss = L_neg + L_pos
         
         if use_diffusion:
             # Predict noise
