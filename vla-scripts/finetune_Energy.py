@@ -412,9 +412,9 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
 
         
-        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos_mean)
+        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
 
-       
+        energy_loss = L_neg + L_pos_mean
         
 
         if use_l1_regression:
@@ -423,8 +423,7 @@ def run_forward_pass(
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
-        print(L_neg,L_pos_mean)
-        energy_loss = L_neg + L_pos_mean
+        
         
         if use_diffusion:
             # Predict noise

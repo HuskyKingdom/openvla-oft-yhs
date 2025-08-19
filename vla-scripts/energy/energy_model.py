@@ -96,6 +96,7 @@ class EnergyModel(nn.Module):
         # pos emb
         self.pos_emb = nn.Embedding(NUM_ACTIONS_CHUNK, hidden)
 
+
     def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
         """
         hN: [B, S, D_h], a: [B, H,  D_a]
@@ -117,6 +118,7 @@ class EnergyModel(nn.Module):
         x = torch.cat(feats, dim=-1)         
 
         E_steps = self.model(x)           # [B,H,1]
+        E_steps = F.softplus(E_steps) # reg
 
         if reduce == "sum":
             if gamma is None:
