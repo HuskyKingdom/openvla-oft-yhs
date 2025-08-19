@@ -171,54 +171,66 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
 
 
 
-def compute_negative_energy(energy_head, A_star,layer_actions,delta,hidden_N, P_loss, topk=2,kappa=1):
+# def compute_negative_energy(energy_head, A_star,layer_actions,delta,hidden_N, P_loss, topk=2,kappa=1):
 
-    B, H, Da = A_star.shape
-    cand_idx, cand_A, cand_dist = [], [], []
+#     B, H, Da = A_star.shape
+#     cand_idx, cand_A, cand_dist = [], [], []
     
+#     with torch.no_grad():
+#         for A_j in layer_actions:
+#             dist = torch.norm((A_j - A_star).reshape(B, -1), dim=-1)  # [B]
+#             mask = dist > delta
+#             if mask.any():
+#                 idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
+#                 cand_idx.append(idx)
+#                 cand_A.append(A_j[idx])                # [B_sel,H,Da]
+#                 cand_dist.append(dist[idx])
+
+#     if len(cand_idx) == 0:
+#         return None
+
+#     idx_cat = torch.cat(cand_idx, dim=0)           # [B']
+#     A_cat   = torch.cat(cand_A,   dim=0)           # [B',H,Da]
+#     d_cat   = torch.cat(cand_dist, dim=0)          # [B']
+
+#     per_i_rows = [[] for _ in range(B)]
+#     for row, i in enumerate(idx_cat.tolist()):
+#         per_i_rows[i].append(row)
+
+#     keep_rows = []
+#     for rows in per_i_rows:
+#         if not rows:
+#             continue
+#         rows_sorted = sorted(rows, key=lambda r: float(d_cat[r]), reverse=True)[:topk]
+#         keep_rows.extend(rows_sorted)
+
+#     if len(keep_rows) == 0:
+#         return None
+
+#     keep_rows = torch.tensor(keep_rows, dtype=torch.long, device=A_star.device)
+#     A_neg = A_cat[keep_rows]                        # [B'',H,Da]
+#     idx   = idx_cat[keep_rows]                      # [B'']
+
+#     E_neg, _ = energy_head(hidden_N[idx], A_neg)  # [B'',1]
+
+#     with torch.no_grad():
+
+#         margin = kappa * torch.norm((A_neg - A_star[idx]).reshape(A_neg.shape[0], -1),
+#                                     dim=-1, keepdim=True)         # [B'',1]
+
+#     # E_pos detach
+#     L_neg = F.relu(margin + P_loss[idx] - E_neg).mean()
+
+#     return L_neg
+
+
+def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, topk=2, kappa=1):
+    A_neg = layer_actions[1]   # 简化：只取某一层
+    E_neg, _ = energy_head(hidden_N, A_neg)  # 保留 [B,1]
+
     with torch.no_grad():
-        for A_j in layer_actions:
-            dist = torch.norm((A_j - A_star).reshape(B, -1), dim=-1)  # [B]
-            mask = dist > delta
-            if mask.any():
-                idx = torch.nonzero(mask, as_tuple=False).squeeze(-1)
-                cand_idx.append(idx)
-                cand_A.append(A_j[idx])                # [B_sel,H,Da]
-                cand_dist.append(dist[idx])
+        margin = kappa * torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1),
+                                    dim=-1, keepdim=True)  # [B,1]
 
-    if len(cand_idx) == 0:
-        return None
-
-    idx_cat = torch.cat(cand_idx, dim=0)           # [B']
-    A_cat   = torch.cat(cand_A,   dim=0)           # [B',H,Da]
-    d_cat   = torch.cat(cand_dist, dim=0)          # [B']
-
-    per_i_rows = [[] for _ in range(B)]
-    for row, i in enumerate(idx_cat.tolist()):
-        per_i_rows[i].append(row)
-
-    keep_rows = []
-    for rows in per_i_rows:
-        if not rows:
-            continue
-        rows_sorted = sorted(rows, key=lambda r: float(d_cat[r]), reverse=True)[:topk]
-        keep_rows.extend(rows_sorted)
-
-    if len(keep_rows) == 0:
-        return None
-
-    keep_rows = torch.tensor(keep_rows, dtype=torch.long, device=A_star.device)
-    A_neg = A_cat[keep_rows]                        # [B'',H,Da]
-    idx   = idx_cat[keep_rows]                      # [B'']
-
-    E_neg, _ = energy_head(hidden_N[idx], A_neg)  # [B'',1]
-
-    with torch.no_grad():
-
-        margin = kappa * torch.norm((A_neg - A_star[idx]).reshape(A_neg.shape[0], -1),
-                                    dim=-1, keepdim=True)         # [B'',1]
-
-    # E_pos detach
-    L_neg = F.relu(margin + P_loss[idx] - E_neg).mean()
-
+    L_neg = F.relu(margin + P_loss - E_neg).mean()
     return L_neg

@@ -412,7 +412,7 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
 
         
-        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos_mean)
 
        
         
