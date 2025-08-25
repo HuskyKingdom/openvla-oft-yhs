@@ -34,6 +34,8 @@ from prismatic.vla.constants import (
 )
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
+
+
 # Initialize important constants
 DATE = time.strftime("%Y_%m_%d")
 DATE_TIME = time.strftime("%Y_%m_%d-%H_%M_%S")
@@ -733,6 +735,37 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
     return refined_vector.numpy()
 
+
+@torch.no_grad()
+def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
+                                   act_range=None, correct_first_only=False):
+    """
+    对整块或仅第1步动作做能量梯度校正
+    h:  [B,S,Dh], A_bc: [B,H,Da]
+    """
+    B, H, Da = A_bc.shape
+    A = A_bc.detach().clone().requires_grad_(True)      # [B,H,Da]
+    E, _ = energy_head(h, A, reduce="sum")              # 标量能量（对整块）
+    grad_A = torch.autograd.grad(E.sum(), A)[0]         # [B,H,Da]
+
+    if correct_first_only:
+        mask = torch.zeros_like(grad_A); mask[:,0,:] = 1.0
+        grad_A = grad_A * mask
+
+    step = alpha * grad_A
+    if act_range is not None:
+        max_step = clip_frac * act_range.view(1,1,-1).to(step.device)
+        step = torch.clamp(step, -max_step, max_step)
+    else:
+        # 全局范数裁剪
+        step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+        base_norm = A_bc.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+        coef = torch.minimum(torch.ones_like(step_norm), (clip_frac*base_norm)/step_norm)
+        step = step * coef.view(B,1,1)
+
+    A_ref = A - step
+    return A_ref.detach()
+
 def get_vla_action(
     cfg: Any,
     vla: torch.nn.Module,
@@ -875,6 +908,12 @@ def get_vla_action(
             model_actions[:,3:6] = model_rot
 
             action = model_actions
+        
+        if cfg.e_decoding:
+
+            action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
+
+            pass
   
   
 
