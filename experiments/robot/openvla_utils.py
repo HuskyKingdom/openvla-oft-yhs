@@ -738,32 +738,39 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 @torch.no_grad()
 def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
-                                          act_range=None, correct_first_only=False):
+                                   act_range=None, correct_first_only=False):
     """
-    单序列版: A_bc: [H, Da]
+    单序列版: A_bc: [H, Da] (numpy array or torch tensor)
     """
+    if isinstance(A_bc, np.ndarray):
+        A_bc = torch.tensor(A_bc, dtype=torch.float32, device=h.device)
+
     H, Da = A_bc.shape
     A = A_bc.detach().clone().requires_grad_(True)   # [H,Da]
+
     E, _ = energy_head(h, A, reduce="sum")
     grad_A = torch.autograd.grad(E.sum(), A)[0]      # [H,Da]
+
 
     if correct_first_only:
         mask = torch.zeros_like(grad_A); mask[0,:] = 1.0
         grad_A = grad_A * mask
 
+    # updates
     step = alpha * grad_A
     if act_range is not None:
-        max_step = clip_frac * act_range.view(1,-1).to(step.device)  # [1,Da]
+        max_step = clip_frac * torch.tensor(act_range, device=step.device).view(1,-1)
         step = torch.clamp(step, -max_step, max_step)
     else:
-        # 全局范数裁剪
+
         step_norm = step.flatten().norm() + 1e-6
         base_norm = A_bc.flatten().norm() + 1e-6
         coef = min(1.0, (clip_frac*base_norm/step_norm).item())
         step = step * coef
 
     A_ref = A - step
-    return A_ref.detach()
+
+    return A_ref.detach().cpu().numpy()
 
 def get_vla_action(
     cfg: Any,
