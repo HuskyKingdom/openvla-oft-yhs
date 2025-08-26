@@ -737,7 +737,7 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 
 @torch.no_grad()
-def one_step_energy_correction_seq_single(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
+def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
                                           act_range=None, correct_first_only=False):
     """
     单序列版: A_bc: [H, Da]
