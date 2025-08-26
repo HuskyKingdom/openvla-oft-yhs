@@ -919,11 +919,11 @@ def get_vla_action(
 
             action = model_actions
         
-        if cfg.e_decoding:
+    if cfg.e_decoding:
 
-            action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
-            
-  
+        action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
+        
+
 
 
 
