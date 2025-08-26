@@ -737,31 +737,30 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 
 @torch.no_grad()
-def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
-                                   act_range=None, correct_first_only=False):
+def one_step_energy_correction_seq_single(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
+                                          act_range=None, correct_first_only=False):
     """
-    对整块或仅第1步动作做能量梯度校正
-    h:  [B,S,Dh], A_bc: [B,H,Da]
+    单序列版: A_bc: [H, Da]
     """
-    B, H, Da = A_bc.shape
-    A = A_bc.detach().clone().requires_grad_(True)      # [B,H,Da]
-    E, _ = energy_head(h, A, reduce="sum")              # 标量能量（对整块）
-    grad_A = torch.autograd.grad(E.sum(), A)[0]         # [B,H,Da]
+    H, Da = A_bc.shape
+    A = A_bc.detach().clone().requires_grad_(True)   # [H,Da]
+    E, _ = energy_head(h, A, reduce="sum")
+    grad_A = torch.autograd.grad(E.sum(), A)[0]      # [H,Da]
 
     if correct_first_only:
-        mask = torch.zeros_like(grad_A); mask[:,0,:] = 1.0
+        mask = torch.zeros_like(grad_A); mask[0,:] = 1.0
         grad_A = grad_A * mask
 
     step = alpha * grad_A
     if act_range is not None:
-        max_step = clip_frac * act_range.view(1,1,-1).to(step.device)
+        max_step = clip_frac * act_range.view(1,-1).to(step.device)  # [1,Da]
         step = torch.clamp(step, -max_step, max_step)
     else:
         # 全局范数裁剪
-        step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
-        base_norm = A_bc.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
-        coef = torch.minimum(torch.ones_like(step_norm), (clip_frac*base_norm)/step_norm)
-        step = step * coef.view(B,1,1)
+        step_norm = step.flatten().norm() + 1e-6
+        base_norm = A_bc.flatten().norm() + 1e-6
+        coef = min(1.0, (clip_frac*base_norm/step_norm).item())
+        step = step * coef
 
     A_ref = A - step
     return A_ref.detach()
