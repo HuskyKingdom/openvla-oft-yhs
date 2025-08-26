@@ -748,7 +748,7 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
     单序列版: A_bc: [H, Da] (numpy array or torch tensor)
     """
     if isinstance(A_bc, np.ndarray):
-        A_bc = torch.tensor(A_bc, dtype=torch.float32, device=h.device).unsqueeze(0)
+        A_bc = torch.tensor(A_bc, dtype=torch.bfloat16, device=h.device).unsqueeze(0)
 
     B, H, Da = A_bc.shape
     A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
