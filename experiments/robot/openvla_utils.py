@@ -912,9 +912,7 @@ def get_vla_action(
         if cfg.e_decoding:
 
             action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
-
-            pass
-  
+            
   
 
 
