@@ -774,7 +774,8 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
 
     A_ref = A - step
 
-    return A_ref.squeeze(0).detach().cpu().numpy()
+    return A_ref.squeeze(0).detach().cpu().to(torch.float32).numpy()
+
 
 def get_vla_action(
     cfg: Any,
@@ -920,7 +921,6 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-
         action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
         
 
