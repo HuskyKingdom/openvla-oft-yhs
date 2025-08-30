@@ -119,6 +119,7 @@ class FinetuneConfig:
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
     energy_warm_steps = 0 # 50000
+    energy_learning_rate = 5e-2 
 
     # fmt: on
 
@@ -976,7 +977,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
     print(f"# total energy trainable params: {sum(p.numel() for p in energy_trainable_params)}")
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
-    energy_optimizer = AdamW(energy_trainable_params, lr=cfg.learning_rate)
+    energy_optimizer = AdamW(energy_trainable_params, lr=cfg.energy_learning_rate)
 
     # Record original learning rate
     original_lr = optimizer.param_groups[0]["lr"]
