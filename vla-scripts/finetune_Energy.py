@@ -118,8 +118,8 @@ class FinetuneConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
-    energy_warm_steps = 50000 # 50000
-    energy_learning_rate = 5e-4
+    energy_warm_steps = 0 # 50000
+    energy_learning_rate = 5e-2
 
     # fmt: on
 
@@ -401,7 +401,8 @@ def run_forward_pass(
         all_hiddents = output.hidden_states
         layer_actions = []
 
-        with torch.no_grad():      
+        with torch.no_grad(): 
+            action_head.eval()     
             for layer_idx in range(len(all_hiddents)): # retrive layer actions
                 hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
                 hiddents_actions = (
@@ -411,6 +412,7 @@ def run_forward_pass(
                 )  # (B, act_chunk_len, D)
                 current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
+            action_head.train() 
 
         
         L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
