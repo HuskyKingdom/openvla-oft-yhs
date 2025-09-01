@@ -226,8 +226,46 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
 #     return L_neg
 
 
+def add_gaussian_noise(x: torch.Tensor,
+                       sigma: float,
+                       mu: float = 0.0,
+                       clamp: tuple | None = None,   # 例如 (0, 1)
+                       per_channel: bool = False,     # True=按通道共享同一噪声
+                       generator: torch.Generator | None = None):
+    """
+    x: tensor in any shape
+    sigma: for noise
+    mu: for noise
+    clamp: optional
+    per_channel: 对4D(N,C,H,W)等按通道共享噪声；其他shape按第1维视为通道
+    generator: 传入就能复现随机性
+    """
+
+    # 解决半精度(bfloat16/float16)在GPU上直采样质量差的问题：先用fp32采样再转回
+    noise_dtype = torch.float32
+    dev = x.device
+
+    if per_channel:
+        if x.ndim >= 2:
+            shape = [1, x.shape[1]] + [1] * (x.ndim - 2)
+        else:
+            shape = [1] * x.ndim
+        noise = torch.randn(shape, dtype=noise_dtype, device=dev, generator=generator)
+        noise = noise.expand_as(x)
+    else:
+        noise = torch.randn_like(x, dtype=noise_dtype, device=dev, generator=generator)
+
+    y = x + noise.to(x.dtype) * sigma + torch.as_tensor(mu, dtype=x.dtype, device=dev)
+
+    if clamp is not None:
+        y = y.clamp(*clamp)
+    return y
+
 def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, topk=2, kappa=1):
-    A_neg = layer_actions[1]  
+
+    # A_neg = layer_actions[1]  
+    A_neg = add_gaussian_noise(A_star,0.1)  # guassians noise on expert actions
+
     E_neg, _ = energy_head(hidden_N, A_neg)  
 
     with torch.no_grad():
