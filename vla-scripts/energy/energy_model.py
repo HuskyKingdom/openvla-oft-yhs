@@ -75,8 +75,8 @@ class EnergyModel(nn.Module):
         self,
         state_dim: int,
         act_dim: int,
-        hidden: int = 256,
-        n_layers: int = 2,
+        hidden: int = 512,
+        n_layers: int = 4,
         NUM_ACTIONS_CHUNK = 8,
     ):
         super().__init__()
