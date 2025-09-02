@@ -412,8 +412,12 @@ def run_forward_pass(
                 )  # (B, act_chunk_len, D)
                 current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
-            action_head.train() 
+            action_head.eval() 
 
+        print(ground_truth_actions,batch["labels"])
+        torch.save(context_hidden, "context_hidden_ts1.pt")
+        torch.save(batch["pixel_values"], "pixel_values.pt")
+        assert 1==2
         
         L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
 
@@ -1078,7 +1082,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
-        vla.train()
+        vla.eval()
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(dataloader):
@@ -1190,7 +1194,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                     val_time_limit=cfg.val_time_limit,
                 )
                 # Set model back to training mode after validation
-                vla.train()
+                vla.eval()
 
             # Stop training when max_steps is reached
             if log_step == cfg.max_steps:
