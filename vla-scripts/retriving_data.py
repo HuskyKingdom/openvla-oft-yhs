@@ -418,7 +418,7 @@ def run_forward_pass(
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
         torch.save(batch["pixel_values"], "energy_vis/pixel_values.pt")
         processor = AutoProcessor.from_pretrained("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt", trust_remote_code=True)
-        text = processor.tokenizer.decode(batch["input_ids"], skip_special_tokens=True)
+        text = processor.tokenizer.decode(batch["input_ids"][0], skip_special_tokens=True)
         print(text)
         assert 1==2
         
