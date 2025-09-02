@@ -263,8 +263,8 @@ def add_gaussian_noise(x: torch.Tensor,
 
 def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, topk=2, kappa=1):
 
-    # A_neg = layer_actions[1]  
-    A_neg = add_gaussian_noise(A_star,0.1)  # guassians noise on expert actions
+    A_neg = layer_actions[1]  
+    # A_neg = add_gaussian_noise(A_star,0.1)  # guassians noise on expert actions
 
     E_neg, _ = energy_head(hidden_N, A_neg)  
 
