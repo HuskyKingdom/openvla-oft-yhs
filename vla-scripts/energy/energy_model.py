@@ -250,10 +250,10 @@ def add_gaussian_noise(x: torch.Tensor,
             shape = [1, x.shape[1]] + [1] * (x.ndim - 2)
         else:
             shape = [1] * x.ndim
-        noise = torch.randn(shape, dtype=noise_dtype, device=dev, generator=generator)
+        noise = torch.randn(shape, dtype=noise_dtype, device=dev)
         noise = noise.expand_as(x)
     else:
-        noise = torch.randn_like(x, dtype=noise_dtype, device=dev, generator=generator)
+        noise = torch.randn_like(x, dtype=noise_dtype, device=dev)
 
     y = x + noise.to(x.dtype) * sigma + torch.as_tensor(mu, dtype=x.dtype, device=dev)
 
