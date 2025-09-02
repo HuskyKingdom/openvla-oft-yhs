@@ -414,6 +414,9 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
             action_head.train() 
 
+        print(ground_truth_actions)
+        torch.save(context_hidden, "context_hidden_ts1.pt")
+        assert 1==2
         
         L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
 
