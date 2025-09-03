@@ -83,8 +83,8 @@ denorm = denorm_actions_torch(normalized, norm_stats_action,
 
 
 CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt"
-energy_model = EnergyModel(4096,7,512,2,8)
-energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--200000_checkpoint.pt")).to(device).to(torch.bfloat16)
+energy_model = EnergyModel(4096,7,512,2,8).to(device).to(torch.bfloat16)
+energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--200000_checkpoint.pt"))
 
 # loading variables
 CONTEXT_PATH = "energy_vis/context_hidden_ts1.pt"
