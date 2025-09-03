@@ -82,9 +82,9 @@ normalized = torch.tensor(
 def sample_rand_like_train(B=1, H=8, device="cuda"):
     # 0-5 维：标准化域内的截断高斯；第6维(gripper)：{0,1}
     import torch
-    z = torch.randn(B, H, 6, device=device)
+    z = torch.randn(B, H, 6, device=device).to(torch.bfloat16)
     z = torch.clamp(z, -3.0, 3.0)  # 约等于在训练“可见域”内
-    g = torch.randint(0, 2, (B, H, 1), device=device).float()  # 离散抓取
+    g = torch.randint(0, 2, (B, H, 1), device=device).to(torch.bfloat16)
     a = torch.cat([z, g], dim=-1)  # 已是“标准化空间”
     # （如你训练时还额外 clip 到 [-0.9375, 0.9375]，也同步 clip 一下）
     a[..., :6] = torch.clamp(a[..., :6], -0.94, 0.94)
