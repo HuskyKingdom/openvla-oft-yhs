@@ -52,7 +52,7 @@ def denorm_actions_torch(
     return x
 
 # params
-
+device = "cuda"
 norm_stats_action = {
     "mean": [0.01820324920117855, 0.05858374014496803, -0.05592384561896324,
              0.004626928828656673, 0.00289608770981431, -0.007673131301999092, 0.5457824468612671],
@@ -76,11 +76,21 @@ normalized = torch.tensor(
     [-0.4277, -0.4883, -0.5156, -0.1484, -0.5781, -0.1660, 1.0000],
     [-0.4102, -0.5000, -0.5859, -0.1484, -0.5156, -0.1406, 1.0000],
     [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
-)
+).to(device)
 
 denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
 
-device = "cuda"
 
 energy_model = EnergyModel(4096,7,512,2,8).to(device).to(torch.bfloat16)
+
+
+# loading variables
+CONTEXT_PATH = "energy_vis/context_hidden_ts1.pt"
+context_hidden = torch.load(CONTEXT_PATH, map_location=device)
+
+
+
+energy_turth, _ = energy_model(context_hidden, normalized)
+
+print(context_hidden.shape, energy_turth)
