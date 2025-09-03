@@ -76,18 +76,19 @@ normalized = torch.tensor(
     [-0.4277, -0.4883, -0.5156, -0.1484, -0.5781, -0.1660, 1.0000],
     [-0.4102, -0.5000, -0.5859, -0.1484, -0.5156, -0.1406, 1.0000],
     [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
-).to(device)
+).to(device).to(torch.bfloat16)
 
 denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
 
 
-energy_model = EnergyModel(4096,7,512,2,8).to(device).to(torch.bfloat16)
-
+CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt"
+energy_model = EnergyModel(4096,7,512,2,8)
+energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--200000_checkpoint.pt")).to(device).to(torch.bfloat16)
 
 # loading variables
 CONTEXT_PATH = "energy_vis/context_hidden_ts1.pt"
-context_hidden = torch.load(CONTEXT_PATH, map_location=device)
+context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16)
 
 
 
