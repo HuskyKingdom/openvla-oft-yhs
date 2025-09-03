@@ -79,18 +79,18 @@ normalized = torch.tensor(
 ).to(device).to(torch.bfloat16)
 
 
-x = torch.tensor(
-  [[[-0.9999, -0.6055, -0.4375, -0.9999, -0.6758, -0.2832, 1.0000],
-    [-0.9999, -0.5742, -0.4688, -0.9999, -0.6289, -0.2412, 1.0000],
-    [-0.4219, -0.4922, -0.4766, -0.1484, -0.6094, -0.9999, 1.0000],
-    [-0.4238, -0.5039, -0.9999, -0.1484, -0.5938, -0.1826, 1.0000],
-    [-0.4336, -0.4980, -0.9999, -0.1484, -0.5820, -0.1738, 1.0000],
-    [-0.4277, -0.4883, -0.5156, -0.1484, -0.5781, -0.1660, 1.0000],
-    [-0.4102, -0.5000, -0.5859, -0.1484, -0.5156, -0.1406, 1.0000],
-    [-0.4102, -0.4766, -0.9999, -0.1484, -0.5391, -0.1201, 1.0000]]]
-).to(device).to(torch.bfloat16)
+def sample_rand_like_train(stats, B=1, H=8, device="cuda"):
+    # 0-5 维：标准化域内的截断高斯；第6维(gripper)：{0,1}
+    import torch
+    z = torch.randn(B, H, 6, device=device)
+    z = torch.clamp(z, -3.0, 3.0)  # 约等于在训练“可见域”内
+    g = torch.randint(0, 2, (B, H, 1), device=device).float()  # 离散抓取
+    a = torch.cat([z, g], dim=-1)  # 已是“标准化空间”
+    # （如你训练时还额外 clip 到 [-0.9375, 0.9375]，也同步 clip 一下）
+    a[..., :6] = torch.clamp(a[..., :6], -0.94, 0.94)
+    return a
 
-# x = torch.randn(1, 8, 7).to(device).to(torch.bfloat16)
+x = sample_rand_like_train()
 
 denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
@@ -112,4 +112,4 @@ energy_neg, energy_neg_step = energy_model(context_hidden, x)
 
 
 print(energy_turth_step,energy_neg_step)
-print(f"expert : {energy_turth[0][0]:.6f} | rand : {energy_neg[0][0]:.6f}")
+print(f"expert : {energy_turth[0][0]:.8f} | rand : {energy_neg[0][0]:.8f}")
