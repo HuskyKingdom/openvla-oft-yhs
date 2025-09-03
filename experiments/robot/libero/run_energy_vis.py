@@ -78,7 +78,7 @@ normalized = torch.tensor(
     [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
 ).to(device).to(torch.bfloat16)
 
-x = torch.rand(1, 8, 7).to(device).to(torch.bfloat16) + 0.5
+x = torch.rand(1, 8, 7).to(device).to(torch.bfloat16)
 
 denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
@@ -98,7 +98,6 @@ context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16
 energy_turth, energy_turth_step = energy_model(context_hidden, normalized)
 energy_neg, energy_neg_step = energy_model(context_hidden, x)
 
-print(energy_turth,energy_neg)
 
 print(energy_turth_step,energy_neg_step)
-
+print(f"expert : {energy_turth[0][0]:.6f} | rand : {energy_neg[0][0]:.6f}")
