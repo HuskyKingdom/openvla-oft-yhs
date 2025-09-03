@@ -96,7 +96,7 @@ context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16
 
 
 energy_turth, _ = energy_model(context_hidden, normalized)
-energy_neg, _ = energy_model(x, normalized)
+energy_neg, _ = energy_model(context_hidden, x)
 
 print(context_hidden.shape, energy_turth,energy_neg)
 
