@@ -966,7 +966,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.module.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
+    energy_model = EnergyModel(vla.module.llm_dim,7,512,4,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     energy_trainable_params = [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 
