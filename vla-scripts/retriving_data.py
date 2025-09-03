@@ -414,6 +414,8 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
             action_head.eval() 
 
+        print(vla.llm_dim)
+        assert 1==2
         print(ground_truth_actions)
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
         torch.save(batch["pixel_values"], "energy_vis/pixel_values.pt")
