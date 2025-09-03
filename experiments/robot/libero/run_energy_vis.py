@@ -79,7 +79,7 @@ normalized = torch.tensor(
 ).to(device).to(torch.bfloat16)
 
 
-def sample_rand_like_train(stats, B=1, H=8, device="cuda"):
+def sample_rand_like_train(B=1, H=8, device="cuda"):
     # 0-5 维：标准化域内的截断高斯；第6维(gripper)：{0,1}
     import torch
     z = torch.randn(B, H, 6, device=device)
