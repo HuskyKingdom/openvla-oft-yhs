@@ -78,7 +78,7 @@ normalized = torch.tensor(
     [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
 ).to(device).to(torch.bfloat16)
 
-x = torch.rand(1, 8, 7).to(device).to(torch.bfloat16)
+x = torch.rand(1, 8, 7).to(device).to(torch.bfloat16) + 0.5
 
 denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
