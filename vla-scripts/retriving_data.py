@@ -984,7 +984,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     energy_model = EnergyModel(vla.module.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
     energy_sd = torch.load(
         os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
-        map_location=device_id
+        map_location=f"cuda:{device_id}",
     )
     energy_model.load_state_dict(remove_ddp_in_checkpoint(energy_sd))
     
