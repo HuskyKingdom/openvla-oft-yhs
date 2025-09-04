@@ -100,7 +100,7 @@ class FinetuneConfig:
     save_latest_checkpoint_only: bool = False        # If True, saves only 1 checkpoint, overwriting latest checkpoint
                                                      #   (If False, saves all checkpoints)
     resume: bool = False                             # If True, resumes from checkpoint
-    resume_step: Optional[int] = None                # (When `resume==True`) Step number that we are resuming from
+    resume_step: Optional[int] = 200000                # (When `resume==True`) Step number that we are resuming from
     image_aug: bool = True                           # If True, trains with image augmentations (HIGHLY RECOMMENDED)
     diffusion_sample_freq: int = 50                  # (When `use_diffusion==True`) Frequency for sampling in steps
 
@@ -982,6 +982,12 @@ def finetune(cfg: FinetuneConfig) -> None:
         NUM_PATCHES += 1
 
     energy_model = EnergyModel(vla.module.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
+    energy_sd = torch.load(
+        os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
+        map_location=device_id
+    )
+    energy_model.load_state_dict(remove_ddp_in_checkpoint(energy_sd))
+    
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     energy_trainable_params = [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 
