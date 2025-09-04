@@ -402,7 +402,7 @@ def run_forward_pass(
         layer_actions = []
 
         with torch.no_grad(): 
-            action_head.eval()     
+            action_head.train()     
             for layer_idx in range(len(all_hiddents)): # retrive layer actions
                 hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
                 hiddents_actions = (
@@ -412,8 +412,9 @@ def run_forward_pass(
                 )  # (B, act_chunk_len, D)
                 current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
-            action_head.eval() 
+            action_head.train() 
 
+        print(layer_actions[1],layer_actions[-1])
  
         print(ground_truth_actions)
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
@@ -1086,7 +1087,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
-        vla.eval()
+        vla.train()
         optimizer.zero_grad()
 
         for batch_idx, batch in enumerate(dataloader):

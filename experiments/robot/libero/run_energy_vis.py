@@ -76,15 +76,15 @@ normalized = torch.tensor(
     [-0.4277, -0.4883, -0.5156, -0.1484, -0.5781, -0.1660, 1.0000],
     [-0.4102, -0.5000, -0.5859, -0.1484, -0.5156, -0.1406, 1.0000],
     [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
-).to(device).to(float)
+).to(device).to(torch.bfloat16)
 
 
 def sample_rand_like_train(B=1, H=8, device="cuda"):
     # 0-5 维：标准化域内的截断高斯；第6维(gripper)：{0,1}
     import torch
-    z = torch.randn(B, H, 6, device=device).to(float)
+    z = torch.randn(B, H, 6, device=device).to(torch.bfloat16)
     z = torch.clamp(z, -3.0, 3.0)  # 约等于在训练“可见域”内
-    g = torch.randint(0, 2, (B, H, 1), device=device).to(float)
+    g = torch.randint(0, 2, (B, H, 1), device=device).to(torch.bfloat16)
     a = torch.cat([z, g], dim=-1)  # 已是“标准化空间”
     # （如你训练时还额外 clip 到 [-0.9375, 0.9375]，也同步 clip 一下）
     a[..., :6] = torch.clamp(a[..., :6], -0.94, 0.94)
@@ -97,13 +97,13 @@ denorm = denorm_actions_torch(normalized, norm_stats_action,
 
 
 CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt"
-energy_model = EnergyModel(4096,7,512,2,8).to(device).to(float)
+energy_model = EnergyModel(4096,7,512,2,8).to(device).to(torch.bfloat16)
 energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--200000_checkpoint.pt"))
 energy_model.eval()
 
 # loading variables
 CONTEXT_PATH = "energy_vis/context_hidden_ts1.pt"
-context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(float)
+context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16)
 
 
 
