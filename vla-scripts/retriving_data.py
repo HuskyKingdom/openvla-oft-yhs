@@ -415,6 +415,10 @@ def run_forward_pass(
             action_head.train() 
 
         print(layer_actions[1],layer_actions[-1])
+
+        energy_1 = energy_model(context_hidden,layer_actions[1])
+        energy_2 = energy_model(context_hidden,layer_actions[-1])
+        print(energy_1,energy_2)
  
         print(ground_truth_actions)
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
