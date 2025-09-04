@@ -402,7 +402,7 @@ def run_forward_pass(
         layer_actions = []
 
         with torch.no_grad(): 
-            action_head.train()     
+            action_head.eval()     
             for layer_idx in range(len(all_hiddents)): # retrive layer actions
                 hiddents_text = all_hiddents[layer_idx][:, num_patches:-1]
                 hiddents_actions = (
@@ -414,6 +414,7 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
             action_head.train() 
 
+        predicted_actions = action_head.module.predict_action(actions_hidden_states)
         print(layer_actions[1],layer_actions[-1],ground_truth_actions, torch.nn.L1Loss()(ground_truth_actions, predicted_actions))
 
         energy_1 = energy_model(context_hidden,layer_actions[1])
