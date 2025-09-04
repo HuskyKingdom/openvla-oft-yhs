@@ -415,13 +415,14 @@ def run_forward_pass(
             action_head.train() 
 
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
-        print(layer_actions[1],layer_actions[-1],ground_truth_actions, torch.nn.L1Loss()(ground_truth_actions, predicted_actions))
 
-        energy_1 = energy_model(context_hidden,layer_actions[1])
-        energy_2 = energy_model(context_hidden,ground_truth_actions)
-        print(energy_1,energy_2)
+        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {layer_actions[-1]} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+
+        energy_1,_ = energy_model(context_hidden,layer_actions[1])
+        energy_2,_ = energy_model(context_hidden,ground_truth_actions)
+        print(f"Surface Energy { energy_1} ; GT Energy {energy_2}")
  
-        print(ground_truth_actions)
+
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
         torch.save(batch["pixel_values"], "energy_vis/pixel_values.pt")
         processor = AutoProcessor.from_pretrained("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt", trust_remote_code=True)
