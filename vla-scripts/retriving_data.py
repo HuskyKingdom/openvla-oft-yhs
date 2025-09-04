@@ -414,10 +414,10 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
             action_head.train() 
 
-        print(layer_actions[1],layer_actions[-1])
+        print(layer_actions[1],layer_actions[-1],ground_truth_actions)
 
         energy_1 = energy_model(context_hidden,layer_actions[1])
-        energy_2 = energy_model(context_hidden,layer_actions[-1])
+        energy_2 = energy_model(context_hidden,ground_truth_actions)
         print(energy_1,energy_2)
  
         print(ground_truth_actions)
