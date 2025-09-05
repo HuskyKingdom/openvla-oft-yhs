@@ -986,7 +986,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
         map_location=f"cuda:{device_id}",
     )
-    energy_model.load_state_dict(remove_ddp_in_checkpoint(energy_sd))
+    energy_model.load_state_dict(energy_sd)
     
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
