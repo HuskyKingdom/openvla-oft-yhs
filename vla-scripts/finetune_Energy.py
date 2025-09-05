@@ -395,7 +395,7 @@ def run_forward_pass(
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
         
         # # positive loss
-        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions,reduce="sum")
+        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions,reduce="mean")
         E_pos_mean = L_pos.mean()
 
 
