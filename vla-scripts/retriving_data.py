@@ -420,8 +420,8 @@ def run_forward_pass(
 
         energy_1,_ = energy_model(context_hidden,layer_actions[1])
         energy_2,_ = energy_model(context_hidden,ground_truth_actions)
-        print(f"Surface Energy { energy_1} ; GT Energy {energy_2}")
- 
+        print(f"Surface Energy {energy_1.item():.10f} ; GT Energy {energy_2.item():.10f}")
+
 
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
         torch.save(batch["pixel_values"], "energy_vis/pixel_values.pt")
