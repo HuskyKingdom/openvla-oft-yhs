@@ -422,14 +422,14 @@ def run_forward_pass(
         L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
         lambda_pos = 0.5
 
-        # regularzation
-        reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
+        # # regularzation
+        # reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
 
         # overall
-        energy_loss = L_neg + 0.05 * reg
+        energy_loss = L_neg 
 
 
-        print(L_neg, 0.05 * reg)
+        print(L_neg)
 
         E_pos = E_pos_mean
         
