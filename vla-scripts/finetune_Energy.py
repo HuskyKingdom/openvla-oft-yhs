@@ -426,7 +426,7 @@ def run_forward_pass(
         reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
 
         # overall
-        energy_loss = L_neg + 0.01 * reg
+        energy_loss = L_neg + 0.05 * reg
 
 
         print(L_neg, 0.01 * reg)
