@@ -425,8 +425,8 @@ def run_forward_pass(
         
         A_negatives = get_negatives(layer_actions)
         L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
-        lambda_pos = 0.05
-        energy_loss = L_neg + lambda_pos * ( 1 / (E_pos_mean + 0.001) )
+        
+        energy_loss = L_neg
         
 
         if use_l1_regression:
