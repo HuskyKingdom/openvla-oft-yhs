@@ -25,6 +25,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
 from transformers.modeling_outputs import CausalLMOutputWithPast
+import torch.nn.functional as F
 
 import wandb
 
@@ -426,7 +427,14 @@ def run_forward_pass(
         A_negatives = get_negatives(layer_actions)
         L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
         
-        energy_loss = L_neg
+        # regularzation term
+        B, H, Da = ground_truth_actions.shape
+        M = A_negatives.shape[1]
+        all_energy = torch.cat([ground_truth_actions.unsqueeze(1), A_negatives], dim=1) 
+        all_energy = all_energy.view(B * M, H, Da).contiguous() 
+        all_energy = energy_model(context_hidden,all_energy)
+
+        energy_loss = L_neg + 0.01 * F.mse_loss(all_energy, torch.ones_like(all_energy))
         
 
         if use_l1_regression:
