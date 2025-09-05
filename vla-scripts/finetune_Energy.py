@@ -420,7 +420,7 @@ def run_forward_pass(
         
 
         L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
-        lambda_pos = 0.05
+        lambda_pos = 0.5
         energy_loss = L_neg + lambda_pos * E_pos_mean
         print(L_neg,lambda_pos * E_pos_mean)
         E_pos = E_pos_mean
