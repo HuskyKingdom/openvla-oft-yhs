@@ -416,12 +416,17 @@ def run_forward_pass(
             action_head.train() 
 
         
-        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
-        # A_negatives = get_negatives(layer_actions)
-        # L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
-        lambda_pos = 0.05
+        
 
-        energy_loss = L_neg + lambda_pos * E_pos_mean
+        # L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        # lambda_pos = 0.05
+        # energy_loss = L_neg + lambda_pos * E_pos_mean
+        # E_pos = E_pos_mean
+        
+        A_negatives = get_negatives(layer_actions)
+        L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
+        lambda_pos = 0.05
+        energy_loss = L_neg + lambda_pos * ( 1 / (E_pos_mean + 0.001) )
         
 
         if use_l1_regression:
@@ -478,8 +483,8 @@ def run_forward_pass(
                     "curr_action_l1_loss": curr_action_l1_loss.item(),
                     "next_actions_l1_loss": next_actions_l1_loss.item(),
                     "energy_loss": energy_loss.item(),
-                    "Positive_Energy": E_pos_mean.item(),
-                    "Negative_Energy": E_neg.mean().item(),
+                    "Positive_Energy": E_pos.item(),
+                    "Negative_Energy": E_neg.item(),
                 }
             )
 
