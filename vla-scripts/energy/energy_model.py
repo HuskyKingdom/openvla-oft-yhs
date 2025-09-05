@@ -303,7 +303,7 @@ def energy_infonce_loss(energy_model, h, a_pos, a_negs, tau=1.0, reduce_steps="m
     logits = torch.cat([(-E_pos).unsqueeze(1), -E_negs], dim=1) / tau  # [B,1+M]
     target = torch.zeros(B, dtype=torch.long, device=logits.device)    # expert energy index at 0
 
-    return torch.nn.functional.cross_entropy(logits, target), E_pos.mean()
+    return torch.nn.functional.cross_entropy(logits, target), E_pos.mean(), E_negs.mean()
 
 
 def get_negatives(layer_actions):
