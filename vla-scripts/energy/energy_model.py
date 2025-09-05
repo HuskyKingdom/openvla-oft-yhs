@@ -273,7 +273,7 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
                                     dim=-1, keepdim=True)  # [B,1]
 
  
-    L_neg = F.relu(margin + P_loss.detach() - E_neg).mean()
+    L_neg = F.relu(margin + P_loss - E_neg).mean()
     return L_neg, E_neg
 
 
