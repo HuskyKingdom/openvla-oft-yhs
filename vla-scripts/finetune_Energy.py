@@ -432,7 +432,7 @@ def run_forward_pass(
         M = A_negatives.shape[1]
         all_energy = torch.cat([ground_truth_actions.unsqueeze(1), A_negatives], dim=1) 
         all_energy = all_energy.view(B + M, H, Da).contiguous() 
-        all_energy = energy_model(context_hidden,all_energy)
+        all_energy,_ = energy_model(context_hidden,all_energy)
 
         energy_loss = L_neg + 0.01 * F.mse_loss(all_energy, torch.ones_like(all_energy))
         
