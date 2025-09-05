@@ -418,8 +418,10 @@ def run_forward_pass(
 
         print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {layer_actions[-1]} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
 
-        energy_1,_ = energy_model(context_hidden,layer_actions[1])
+
         energy_2,_ = energy_model(context_hidden,ground_truth_actions)
+        energy_1,_ = energy_model(context_hidden,layer_actions[1])
+        
         print(f"Surface Energy {energy_1.item():.10f} ; GT Energy {energy_2.item():.10f}")
 
 
