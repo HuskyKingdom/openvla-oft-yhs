@@ -394,9 +394,7 @@ def run_forward_pass(
 
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
         
-        # # positive loss
-        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions,reduce="mean")
-        E_pos_mean = L_pos.mean()
+        
 
 
         # negative loss
@@ -417,12 +415,22 @@ def run_forward_pass(
             action_head.train() 
 
         
-        
+        #  positive loss and negative loss
+        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions,reduce="mean")
+        E_pos_mean = L_pos.mean()
 
         L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
         lambda_pos = 0.5
-        energy_loss = L_neg + lambda_pos * E_pos_mean
-        print(L_neg,lambda_pos * E_pos_mean)
+
+        # regularzation
+        reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
+
+        # overall
+        energy_loss = L_neg + 0.01 * reg
+
+
+        print(L_neg, 0.01 * reg)
+
         E_pos = E_pos_mean
         
         # A_negatives = get_negatives(layer_actions)
