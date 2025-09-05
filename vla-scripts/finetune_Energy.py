@@ -65,7 +65,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, compute_negative_energy
+from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives
 
 @dataclass
 class FinetuneConfig:
@@ -392,9 +392,10 @@ def run_forward_pass(
         # compute energy loss ————————
 
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        # positive loss
-        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions)
-        L_pos_mean = L_pos.mean()
+        
+        # # positive loss
+        # L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions)
+        # L_pos_mean = L_pos.mean()
 
 
         # negative loss
@@ -415,10 +416,12 @@ def run_forward_pass(
             action_head.train() 
 
         
-        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        # L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        A_negatives = get_negatives(layer_actions)
+        L_neg, L_pos = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
 
-        lambda_pos = 0.3
-        energy_loss = L_neg + lambda_pos * L_pos_mean
+        lambda_pos = 0.05
+        energy_loss = L_neg + lambda_pos * L_pos
         
 
         if use_l1_regression:

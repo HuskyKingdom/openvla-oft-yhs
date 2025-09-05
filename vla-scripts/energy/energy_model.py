@@ -274,3 +274,41 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
 
     L_neg = F.relu(margin + P_loss.detach() - E_neg).mean()
     return L_neg
+
+
+
+
+def energy_infonce_loss(energy_model, h, a_pos, a_negs, tau=1.0, reduce_steps="mean"):
+    """
+    h:     [B,S,Dh]   
+    a_pos: [B,H,Da]  
+    a_negs:[B,M,H,Da]  M Negatives
+    """
+    B, H, Da = a_pos.shape
+    M = a_negs.shape[1]
+
+    # --- E_pos ---
+    # [B,1] -> [B]
+    E_pos, _ = energy_model(h, a_pos, reduce=reduce_steps)
+    E_pos = E_pos.squeeze(-1)  # [B]
+
+    # --- E_negs ---
+    a_negs_flat = a_negs.reshape(B * M, H, Da)            # [B*M,H,Da]
+    h_rep       = h.repeat_interleave(M, dim=0)           # [B*M,S,Dh]
+
+    E_negs, _ = energy_model(h_rep, a_negs_flat, reduce=reduce_steps)  # [B*M,1]
+    E_negs = E_negs.view(B, M).contiguous()               # [B,M]
+
+    # --- EnergyNCE： -E as logits ---
+    logits = torch.cat([(-E_pos).unsqueeze(1), -E_negs], dim=1) / tau  # [B,1+M]
+    target = torch.zeros(B, dtype=torch.long, device=logits.device)    # expert energy index at 0
+
+    return torch.nn.functional.cross_entropy(logits, target), E_pos.mean()
+
+
+def get_negatives(layer_actions):
+
+    A_neg = layer_actions[1]  # (B,H,Da)
+    A_neg_noise = add_gaussian_noise(A_neg,sigma=0.3) # (B,H,Da)
+
+    return torch.cat([A_neg.unsqueeze(1),A_neg_noise.unsqueeze(1)],dim = 1)  # (B,M,H,Da)
