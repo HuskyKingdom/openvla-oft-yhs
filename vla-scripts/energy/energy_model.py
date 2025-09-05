@@ -271,7 +271,7 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
     with torch.no_grad():
         # margin = kappa * torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1),
         #                             dim=-1, keepdim=True)  # [B,1]
-        margin = F.mse_loss(A_neg, A_star))
+        margin = F.mse_loss(A_neg, A_star)
     
     
     L_neg = F.mse_loss(E_neg, torch.ones_like(E_neg) * margin)
