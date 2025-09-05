@@ -118,7 +118,8 @@ class EnergyModel(nn.Module):
         x = torch.cat(feats, dim=-1)         
 
         E_steps = self.model(x)           # [B,H,1]
-        E_steps = F.softplus(E_steps) # reg
+        # E_steps = F.softplus(E_steps) # reg
+        E_steps = 0.5 * (E_steps ** 2) + 1e-6
 
         if reduce == "sum":
             if gamma is None:
