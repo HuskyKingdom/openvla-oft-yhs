@@ -419,22 +419,22 @@ def run_forward_pass(
         
         
 
-        # L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
-        # lambda_pos = 0.05
-        # energy_loss = L_neg + lambda_pos * E_pos_mean
-        # E_pos = E_pos_mean
+        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        lambda_pos = 0.05
+        energy_loss = L_neg + lambda_pos * E_pos_mean
+        E_pos = E_pos_mean
         
-        A_negatives = get_negatives(layer_actions)
-        L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
+        # A_negatives = get_negatives(layer_actions)
+        # L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
         
-        # regularzation term
-        B, H, Da = ground_truth_actions.shape
-        M = A_negatives.shape[1]
-        all_energy = torch.cat([ground_truth_actions.unsqueeze(1), A_negatives], dim=1) 
-        all_energy = all_energy.view(B + M, H, Da).contiguous() 
-        all_energy,_ = energy_model(context_hidden,all_energy)
+        # # regularzation term
+        # B, H, Da = ground_truth_actions.shape
+        # M = A_negatives.shape[1]
+        # all_energy = torch.cat([ground_truth_actions.unsqueeze(1), A_negatives], dim=1) 
+        # all_energy = all_energy.view(B + M, H, Da).contiguous() 
+        # all_energy,_ = energy_model(context_hidden,all_energy)
 
-        energy_loss = L_neg + 0.01 * F.mse_loss(all_energy, torch.ones_like(all_energy))
+        # energy_loss = L_neg + 0.01 * F.mse_loss(all_energy, torch.ones_like(all_energy))
         
 
         if use_l1_regression:
