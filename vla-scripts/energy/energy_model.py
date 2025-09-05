@@ -266,7 +266,7 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
     A_neg = layer_actions[1]  
     # A_neg = add_gaussian_noise(A_star,0.5)  # guassians noise on expert actions
 
-    E_neg, _ = energy_head(hidden_N, A_neg)  
+    E_neg, _ = energy_head(hidden_N, A_neg,reduce="mean")  
 
     with torch.no_grad():
         margin = kappa * torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1),
