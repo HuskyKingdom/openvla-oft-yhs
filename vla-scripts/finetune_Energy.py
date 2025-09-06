@@ -66,7 +66,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce
+from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce_2d
 
 @dataclass
 class FinetuneConfig:
@@ -434,13 +434,13 @@ def run_forward_pass(
         # reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
 
         # in batch swap loss
-        swap_loss, _, _ = energy_inbatch_swap_infonce(energy_model,context_global,ground_truth_actions)
+        swap_loss, _, _ = energy_inbatch_swap_infonce_2d(energy_model,context_global,ground_truth_actions)
 
         # overall
         energy_loss = L_neg + 0.2 * E_pos_mean + swap_loss
 
 
-        print(L_neg,0.2 * E_pos_mean)
+        print(L_neg,0.2 * E_pos_mean,swap_loss)
 
         E_pos = E_pos_mean
         
