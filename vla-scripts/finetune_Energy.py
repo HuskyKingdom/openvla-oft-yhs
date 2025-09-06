@@ -392,18 +392,22 @@ def run_forward_pass(
         
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        mask = torch.zeros(context_hidden.shape[0],context_hidden.shape[1],dtype=torch.bool).to(context_hidden.device)
-        mask[:, :num_patches] = 1  # (B, seq_len)
-        txt_mask = batch["attention_mask"].to(context_hidden.device)
-        mask[:, num_patches:num_patches+txt_mask.shape[1]] = torch.maximum(mask[:, num_patches:num_patches+txt_mask.shape[1]], txt_mask.bool())
 
-        act_full = torch.zeros_like(mask)
-        act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = 1
-        mask = mask * (1 - act_full)
+        mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
+                   dtype=torch.bool, device=context_hidden.device)
 
-        w = mask.unsqueeze(-1)
-        context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1)  # (B, D)
-        
+        # vision patches
+        mask[:, :num_patches] = True
+        # text tokens (pad=0) 
+        txt_mask = batch["attention_mask"].to(mask.device).bool()
+        mask[:, num_patches:num_patches + txt_mask.shape[1]] |= txt_mask
+        # remove action positions from the text window
+        act_full = torch.zeros_like(mask)                           # bool
+        act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = True
+        mask = mask & (~act_full)                                   # ✅ use logical NOT + AND
+        # weights for pooling
+        w = mask.unsqueeze(-1).to(dtype=context_hidden.dtype)
+        context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1).clamp_min(1.0)
 
         # negative loss
         all_hiddents = output.hidden_states
