@@ -392,10 +392,8 @@ def run_forward_pass(
         
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-
         mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
                    dtype=torch.bool, device=context_hidden.device)
-
         # vision patches
         mask[:, :num_patches] = True
         # text tokens (pad=0) 

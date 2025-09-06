@@ -359,9 +359,8 @@ def energy_inbatch_swap_infonce_2d(
     c_rep = c_global.unsqueeze(1).expand(B, B, D).reshape(B*B, D)         # [B*B, D]
     a_rep = a_pos.unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)    # [B*B, H, Da]
 
-    # 计算能量矩阵 E_ij
-    # 建议：能量头内部保持 fp32；这里不走 autocast 更稳
-    E_ij, _ = energy_model(c_rep.float(), a_rep.float(), reduce=reduce_steps)  # [B*B, 1]
+    # 能量矩阵 E_ij
+    E_ij, _ = energy_model(c_rep, a_rep, reduce=reduce_steps)  # [B*B, 1]
     E_ij = E_ij.view(B, B)                                                     # [B, B]
 
     # InfoNCE logits = -E / tau
