@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from layers import FFWRelativeSelfAttentionModule
-from position_encodings import PositionalEncoding
+from .layers import FFWRelativeSelfAttentionModule
+from .position_encodings import PositionalEncoding
 
 
 class SeqPool(nn.Module):
