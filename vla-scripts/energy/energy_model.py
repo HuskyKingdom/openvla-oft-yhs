@@ -324,9 +324,52 @@ def energy_infonce_loss(energy_model, h, a_pos, a_negs, tau=0.5, reduce_steps="m
     return torch.nn.functional.cross_entropy(logits, target), E_pos.mean(), E_negs.mean()
 
 
+
+
 def get_negatives(layer_actions):
 
     A_neg = layer_actions[1]  # (B,H,Da)
     A_neg_noise = add_gaussian_noise(A_neg,sigma=0.3) # (B,H,Da)
 
     return torch.cat([A_neg.unsqueeze(1),A_neg_noise.unsqueeze(1)],dim = 1)  # (B,M,H,Da)
+
+
+
+@torch.no_grad()
+def _offdiag_mask(B, device):
+    return ~torch.eye(B, dtype=torch.bool, device=device)
+
+def energy_inbatch_swap_infonce_2d(
+    energy_model,
+    c_global: torch.Tensor,   # [B, D]
+    a_pos: torch.Tensor,      # [B, H, Da]
+    tau: float = 0.5,
+    reduce_steps: str = "mean",
+):
+    """
+    In-batch InfoNCE（2D上下文版本）。
+    正样本：对每个 i，(c_i, a_i)；负样本：同一 batch 的 a_j, j≠i。
+    返回: loss, E_pos_mean, E_neg_mean(仅非对角)
+    """
+    B, D = c_global.shape
+    H, Da = a_pos.shape[1], a_pos.shape[2]
+    device = c_global.device
+
+    # 构造所有(i,j)对
+    c_rep = c_global.unsqueeze(1).expand(B, B, D).reshape(B*B, D)         # [B*B, D]
+    a_rep = a_pos.unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)    # [B*B, H, Da]
+
+    # 计算能量矩阵 E_ij
+    # 建议：能量头内部保持 fp32；这里不走 autocast 更稳
+    E_ij, _ = energy_model(c_rep.float(), a_rep.float(), reduce=reduce_steps)  # [B*B, 1]
+    E_ij = E_ij.view(B, B)                                                     # [B, B]
+
+    # InfoNCE logits = -E / tau
+    logits = (-E_ij) / tau                                                     # [B, B]
+    labels = torch.arange(B, device=device)
+    loss = F.cross_entropy(logits, labels)
+
+    E_pos_mean = torch.diag(E_ij).mean()
+    E_neg_mean = E_ij[_offdiag_mask(B, device)].mean() if B > 1 else torch.tensor(0., device=device)
+
+    return loss, E_pos_mean, E_neg_mean

@@ -66,7 +66,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives
+from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce
 
 @dataclass
 class FinetuneConfig:
@@ -397,8 +397,12 @@ def run_forward_pass(
         txt_mask = batch["attention_mask"].to(context_hidden.device)
         mask[:, num_patches:num_patches+txt_mask.shape[1]] = torch.maximum(mask[:, num_patches:num_patches+txt_mask.shape[1]], txt_mask.bool())
 
+        act_full = torch.zeros_like(mask)
+        act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = 1
+        mask = mask * (1 - act_full)
+
         w = mask.unsqueeze(-1)
-        c_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1)  # (B, D)
+        context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1)  # (B, D)
         
 
         # negative loss
@@ -420,17 +424,20 @@ def run_forward_pass(
 
         
         #  positive loss and negative loss
-        L_pos, L_pos_step = energy_model(c_global,ground_truth_actions,reduce="mean")
+        L_pos, L_pos_step = energy_model(context_global,ground_truth_actions,reduce="mean")
         E_pos_mean = L_pos.mean()
 
-        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,c_global,L_pos)
-        lambda_pos = 0.5
+        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_global,L_pos)
+
 
         # # regularzation
         # reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
 
+        # in batch swap loss
+        swap_loss, _, _ = energy_inbatch_swap_infonce(energy_model,context_global,ground_truth_actions)
+
         # overall
-        energy_loss = L_neg + 0.2 * E_pos_mean
+        energy_loss = L_neg + 0.2 * E_pos_mean + swap_loss
 
 
         print(L_neg,0.2 * E_pos_mean)
