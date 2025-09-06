@@ -402,7 +402,7 @@ def run_forward_pass(
         # remove action positions from the text window
         act_full = torch.zeros_like(mask)                           # bool
         act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = True
-        mask = mask & (~act_full)                                   # ✅ use logical NOT + AND
+        mask = mask & (~act_full)                                 
         # weights for pooling
         w = mask.unsqueeze(-1).to(dtype=context_hidden.dtype)
         context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1).clamp_min(1.0)
@@ -439,7 +439,7 @@ def run_forward_pass(
         swap_loss, _, _ = energy_inbatch_swap_infonce_2d(energy_model,context_global,ground_truth_actions)
 
         # overall
-        energy_loss = L_neg + 0.2 * E_pos_mean + swap_loss
+        energy_loss = L_neg + 0.02 * E_pos_mean + swap_loss
 
 
         print(L_neg,0.2 * E_pos_mean,swap_loss)
