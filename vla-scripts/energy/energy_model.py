@@ -104,7 +104,7 @@ class EnergyModel(nn.Module):
         """
 
         B, H, Da = a.shape
-        c = self.pool(hN) # [B, 1]
+        # c = self.pool(hN) # [B, 1]
         c = self.proj_hidden(c) # [B, Hd]
         c = c.unsqueeze(1).expand(B, H, c.shape[-1])  # [B,H,Hd]
 

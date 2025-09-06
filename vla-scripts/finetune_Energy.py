@@ -391,11 +391,15 @@ def run_forward_pass(
 
         
         # compute energy loss ————————
-
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        
-        
+        mask = torch.zeros(context_hidden.shape[0],context_hidden.shape[1],dtype=torch.bool).to(context_hidden.device)
+        mask[:, :num_patches] = 1  # (B, seq_len)
+        txt_mask = batch["attention_mask"].to(context_hidden.device)
+        mask[:, num_patches:num_patches+txt_mask.shape[1]] = torch.maximum(mask[:, num_patches:num_patches+txt_mask.shape[1]], txt_mask.bool())
 
+        w = mask.unsqueeze(-1)
+        c_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1)  # (B, D)
+        
 
         # negative loss
         all_hiddents = output.hidden_states
@@ -416,10 +420,10 @@ def run_forward_pass(
 
         
         #  positive loss and negative loss
-        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions,reduce="mean")
+        L_pos, L_pos_step = energy_model(c_global,ground_truth_actions,reduce="mean")
         E_pos_mean = L_pos.mean()
 
-        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,c_global,L_pos)
         lambda_pos = 0.5
 
         # # regularzation
