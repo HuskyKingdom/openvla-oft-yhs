@@ -118,8 +118,8 @@ class EnergyModel(nn.Module):
         x = torch.cat(feats, dim=-1)         
 
         E_steps = self.model(x)           # [B,H,1]
-        E_steps = F.softplus(E_steps) # reg
-        # E_steps = 0.5 * (E_steps ** 2) + 1e-6
+        # E_steps = F.softplus(E_steps) # reg
+        E_steps = 0.5 * (E_steps ** 2) + 1e-6
 
         if reduce == "sum":
             if gamma is None:
@@ -261,26 +261,37 @@ def add_gaussian_noise(x: torch.Tensor,
         y = y.clamp(*clamp)
     return y
 
-def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, topk=2, kappa=1):
+# def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, topk=2, kappa=1):
 
-    A_neg = layer_actions[1]  
-    # A_neg = add_gaussian_noise(A_star,0.5)  # guassians noise on expert actions
+#     A_neg = layer_actions[1]  
+#     # A_neg = add_gaussian_noise(A_star,0.5)  # guassians noise on expert actions
 
-    E_neg, _ = energy_head(hidden_N, A_neg,reduce="mean")  
+#     E_neg, _ = energy_head(hidden_N, A_neg,reduce="mean")  
 
-    with torch.no_grad():
-        margin = kappa * torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1),
-                                    dim=-1, keepdim=True)  # [B,1]
-    #     margin = F.mse_loss(A_neg, A_star)
+#     with torch.no_grad():
+#         margin = kappa * torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1),
+#                                     dim=-1, keepdim=True)  # [B,1]
+#     #     margin = F.mse_loss(A_neg, A_star)
     
     
-    # L_neg = F.mse_loss(E_neg, torch.ones_like(E_neg) * margin)
+#     # L_neg = F.mse_loss(E_neg, torch.ones_like(E_neg) * margin)
 
  
-    L_neg = F.relu(margin + P_loss - E_neg).mean()
+#     L_neg = F.relu(margin + P_loss - E_neg).mean()
 
+#     return L_neg, E_neg.mean()
+
+
+def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss,
+                            topk=2, kappa=1.0, m0=0.5):  # 新增 m0
+    A_neg = layer_actions[1]
+    E_neg, _ = energy_head(hidden_N, A_neg, reduce="mean")
+
+    with torch.no_grad():
+        d = torch.norm((A_neg - A_star).reshape(A_neg.shape[0], -1), dim=-1, keepdim=True)  # [B,1]
+        target = m0 + kappa * d + P_loss.detach()  # <-- 关键：detach 掉 E_pos
+    L_neg = F.relu(target - E_neg).mean()
     return L_neg, E_neg.mean()
-
 
 
 
