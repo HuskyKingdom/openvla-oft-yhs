@@ -182,7 +182,7 @@ class EnergyModel(nn.Module):
         action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
         cls_tokens = self.cls_token.expand(hN.shape[0], -1, -1)
 
-        energy_concat = torch.cat([cls_tokens, context_mapped, action_mapped], dim=1)  # [B,S+H+1,Da]
+        energy_concat = torch.cat([cls_tokens, context_mapped, action_mapped], dim=1).to(hN.dtype)  # [B,S+H+1,Da]
 
         energy_features = self.energy_bc(energy_concat.transpose(0,1), diff_ts=None,
                 query_pos=None, context=None, context_pos=None,pad_mask=pad_mask)[-1].transpose(0,1)  # [B,S+H+1,Da]
