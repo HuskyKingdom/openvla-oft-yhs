@@ -538,7 +538,7 @@ class FFWRelativeSelfAttentionModule(nn.Module):
             
 
 
-        return output,None
+        return output
 
 
 class FFWRelativeSelfCrossAttentionModule(nn.Module):
