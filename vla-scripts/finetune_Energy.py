@@ -432,17 +432,17 @@ def run_forward_pass(
         L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_global,L_pos)
 
 
-        # # regularzation
-        # reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
+        # regularzation
+        reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
 
         # in batch swap loss
         swap_loss, _, _ = energy_inbatch_swap_infonce_2d(energy_model,context_global,ground_truth_actions)
 
         # overall
-        energy_loss = L_neg + 0.02 * E_pos_mean + swap_loss
+        energy_loss = L_neg + 0.02 * reg + swap_loss
 
 
-        print(L_neg,0.2 * E_pos_mean,swap_loss)
+        print(L_neg,0.02 * reg,swap_loss)
 
         E_pos = E_pos_mean
         
