@@ -396,40 +396,33 @@ def _offdiag_mask(B, device):
     return ~torch.eye(B, dtype=torch.bool, device=device)
 
 
+@torch.no_grad()
+def _offdiag_mask(B, device): return ~torch.eye(B, dtype=torch.bool, device=device)
+
 def energy_inbatch_swap_infonce(
     energy_model,
-    h: torch.Tensor,        # [B, S, Dh]
-    a_pos: torch.Tensor,    # [B, H, Da]
-    pad_mask: torch.Tensor,    # [B, H, Da]
+    h: torch.Tensor,          # [B,S,D]
+    a_pos: torch.Tensor,      # [B,H,Da]
+    pad_mask: torch.Tensor,   # [B,S+H]，True=pad
     tau: float = 0.5,
     reduce_steps: str = "mean",
 ):
-    """
-    In-batch InfoNCE: 对每个样本 i，正样本是 a_pos[i]，负样本是同一 batch 里 a_pos[j], j!=i
-    返回: loss, E_pos_mean, E_neg_mean(仅off-diagonal)
-    """
-    B, H, Da = a_pos.shape
-    S, Dh = h.shape[1], h.shape[2]
+    B, S, D = h.shape
+    H, Da   = a_pos.shape[1], a_pos.shape[2]
+    dtype   = next(energy_model.parameters()).dtype
 
-    # 构造所有(i,j)对
-    h_rep = h.unsqueeze(1).expand(B, B, S, Dh).reshape(B*B, S, Dh)         # [B*B,S,Dh]
-    a_rep = a_pos.unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)     # [B*B,H,Da]
+    h_rep = h.to(dtype).unsqueeze(1).expand(B, B, S, D).reshape(B*B, S, D)        # [B*B,S,D]
+    a_rep = a_pos.to(dtype).unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)  # [B*B,H,Da]
+    pm    = pad_mask.unsqueeze(1).expand(B, B, pad_mask.size(1)).reshape(B*B, pad_mask.size(1))  # [B*B,S+H]
 
-    # 计算能量矩阵 E_ij
-    E_ij = energy_model(h_rep, a_rep, pad_mask, reduce=reduce_steps)              # [B*B,1]
-    E_ij = E_ij.view(B, B)                                                 # [B,B]
+    E_ij = energy_model(h_rep, a_rep, pm).view(B, B, 1).squeeze(-1)               # [B,B]
 
-    # InfoNCE logits = -E / tau
-    logits = (-E_ij) / tau                                                 # [B,B]
-    labels = torch.arange(B, device=h.device)                              # 正类索引 = 自身列 i
+    logits = (-E_ij) / tau
+    labels = torch.arange(B, device=h.device)
+    loss   = F.cross_entropy(logits, labels)
 
-    loss = F.cross_entropy(logits, labels)
-
-    # 统计量：对角线=正样本；非对角线=负样本
     E_pos_mean = torch.diag(E_ij).mean()
-    offdiag_mask = ~torch.eye(B, dtype=torch.bool, device=h.device)
-    E_neg_mean = E_ij[offdiag_mask].mean() if B > 1 else torch.tensor(0., device=h.device)
-
+    E_neg_mean = E_ij[_offdiag_mask(B, h.device)].mean() if B > 1 else torch.tensor(0., device=h.device, dtype=E_ij.dtype)
     return loss, E_pos_mean, E_neg_mean
 
 
