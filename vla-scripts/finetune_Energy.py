@@ -311,6 +311,10 @@ def build_ctx_act_key_padding_mask(
     act_pad = torch.zeros(B, H_action, dtype=torch.bool, device=device)          # [B, H_action]
 
     key_padding_mask = torch.cat([ctx_pad, act_pad], dim=1)                      # [B, S_ctx + H_action]
+
+    cls_pad = torch.zeros(B, 1, dtype=torch.bool, device=device)
+    key_padding_mask = torch.cat([cls_pad, ctx_pad, act_pad], dim=1)                      # [B, 1 + S_ctx + H_action]
+
     return key_padding_mask
 
 
