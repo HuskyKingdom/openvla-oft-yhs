@@ -66,7 +66,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce_2d
+from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce_2d, energy_inbatch_swap_infonce
 
 @dataclass
 class FinetuneConfig:
@@ -271,6 +271,49 @@ def init_module(
     return wrap_ddp(module, device_id, find_unused_params)
 
 
+def build_ctx_act_key_padding_mask(
+    context_hidden: torch.Tensor,          # [B, S_ctx, D]
+    num_patches: int,                      # vision patches 数
+    attention_mask_text: torch.Tensor,     # [B, S_text] (HF 的 text attention_mask)
+    current_action_mask: torch.Tensor,     # [B, S_text_part] 你已有的动作位mask（对齐到 text_hidden_states）
+    next_actions_mask: torch.Tensor,       # [B, S_text_part]
+    H_action: int,                         # 你要拼的 action 序列长度（例如 actions_hidden_states 的序列维）
+    device: torch.device = None,
+) -> torch.Tensor:
+    """
+    返回:
+        key_padding_mask: [B, S_ctx + H_action]，True=mask(不可见)，False=可见
+    说明:
+        - context 段: 保留 vision patches + 有效文本；并把动作位置从文本段里剔除
+        - action 段: 全部有效（不做pad）
+    """
+    B, S_ctx, _ = context_hidden.shape
+    if device is None:
+        device = context_hidden.device
+
+    ctx_vis = torch.zeros(B, S_ctx, dtype=torch.bool, device=device)
+    ctx_vis[:, :num_patches] = True
+
+    txt_mask = attention_mask_text.to(device=device).bool()                      # [B, S_text]
+    S_text = txt_mask.shape[1]
+    ctx_vis[:, num_patches:num_patches + S_text] |= txt_mask
+
+    act_in_text = current_action_mask | next_actions_mask                        # [B, S_text-1 或 S_text? 看你实现]
+    act_full = torch.zeros_like(ctx_vis)
+    text_slice = ctx_vis[:, num_patches:-1]                                      # 形状和你提取 text_hidden_states 的方式一致
+    assert act_in_text.shape == text_slice.shape, \
+        f"act_in_text {act_in_text.shape} must match context_hidden[:, num_patches:-1] {text_slice.shape}"
+    act_full[:, num_patches:-1] = act_in_text
+    ctx_vis = ctx_vis & (~act_full)
+
+    ctx_pad = ~ctx_vis                                                           # [B, S_ctx]
+
+    act_pad = torch.zeros(B, H_action, dtype=torch.bool, device=device)          # [B, H_action]
+
+    key_padding_mask = torch.cat([ctx_pad, act_pad], dim=1)                      # [B, S_ctx + H_action]
+    return key_padding_mask
+
+
 def run_forward_pass(
     vla,
     action_head,
@@ -392,20 +435,20 @@ def run_forward_pass(
         
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
-                   dtype=torch.bool, device=context_hidden.device)
-        # vision patches
-        mask[:, :num_patches] = True
-        # text tokens (pad=0) 
-        txt_mask = batch["attention_mask"].to(mask.device).bool()
-        mask[:, num_patches:num_patches + txt_mask.shape[1]] |= txt_mask
-        # remove action positions from the text window
-        act_full = torch.zeros_like(mask)                           # bool
-        act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = True
-        mask = mask & (~act_full)                                 
-        # weights for pooling
-        w = mask.unsqueeze(-1).to(dtype=context_hidden.dtype)
-        context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1).clamp_min(1.0)
+        # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
+        #            dtype=torch.bool, device=context_hidden.device)
+        # # vision patches
+        # mask[:, :num_patches] = True
+        # # text tokens (pad=0) 
+        # txt_mask = batch["attention_mask"].to(mask.device).bool()
+        # mask[:, num_patches:num_patches + txt_mask.shape[1]] |= txt_mask
+        # # remove action positions from the text window
+        # act_full = torch.zeros_like(mask)                           # bool
+        # act_full[:, num_patches:-1][current_action_mask | next_actions_mask] = True
+        # mask = mask & (~act_full)                                 
+        # # weights for pooling
+        # w = mask.unsqueeze(-1).to(dtype=context_hidden.dtype)
+        # context_global = (context_hidden * w).sum(dim=1) / w.sum(dim=1).clamp_min(1.0)
 
         # negative loss
         all_hiddents = output.hidden_states
@@ -424,28 +467,49 @@ def run_forward_pass(
                 layer_actions.append(current_actions)
             action_head.train() 
 
+
+        # ________
+
+        # padding mask 
+        energy_mask = build_ctx_act_key_padding_mask(
+            context_hidden=context_hidden,             # [B,S_ctx,D]
+            num_patches=num_patches,                   # num of vision patch
+            attention_mask_text=batch["attention_mask"],
+            current_action_mask=current_action_mask,   # 与 context_hidden[:, num_patches:-1] align
+            next_actions_mask=next_actions_mask,
+            H_action=8,                # action seq len
+        )
+
+        E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
+        swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions)
+        reg = F.mse_loss(E_pos, torch.ones_like(E_pos))
         
-        #  positive loss and negative loss
-        L_pos, L_pos_step = energy_model(context_global,ground_truth_actions,reduce="mean")
-        E_pos_mean = L_pos.mean()
-
-        L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_global,L_pos)
-
-
-        # regularzation
-        reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
-
-        # in batch swap loss
-        swap_loss, _, _ = energy_inbatch_swap_infonce_2d(energy_model,context_global,ground_truth_actions)
-
-        # overall
-        energy_loss = L_neg + 0.02 * reg + swap_loss
-
-
-        print(L_neg,0.02 * reg,swap_loss)
-
-        E_pos = E_pos_mean
+        energy_loss = 0.02 * reg + swap_loss
+       
         
+        # #  positive loss and negative loss
+        # L_pos, L_pos_step = energy_model(context_global,ground_truth_actions,reduce="mean")
+        # E_pos_mean = L_pos.mean()
+
+        # L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_global,L_pos)
+
+
+        # # regularzation
+        # reg = F.mse_loss(L_pos_step, torch.ones_like(L_pos_step))
+
+        # # in batch swap loss
+        # swap_loss, _, _ = energy_inbatch_swap_infonce_2d(energy_model,context_global,ground_truth_actions)
+
+        # # overall
+        # energy_loss = L_neg + 0.02 * reg + swap_loss
+
+
+        # print(L_neg,0.02 * reg,swap_loss)
+
+        # E_pos = E_pos_mean
+        
+        # ________
+
         # A_negatives = get_negatives(layer_actions)
         # L_neg, E_pos, E_neg = energy_infonce_loss(energy_model,context_hidden,ground_truth_actions,A_negatives)
         
@@ -513,8 +577,8 @@ def run_forward_pass(
                     "curr_action_l1_loss": curr_action_l1_loss.item(),
                     "next_actions_l1_loss": next_actions_l1_loss.item(),
                     "energy_loss": energy_loss.item(),
-                    "Positive_Energy": E_pos.item(),
-                    "Negative_Energy": E_neg.item(),
+                    "Positive_Energy": E_pos_mean.item(),
+                    "Negative_Energy": E_neg_mean.item(),
                 }
             )
 
@@ -1007,7 +1071,9 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.module.llm_dim,7,512,4,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
+    # energy_model = EnergyModel(vla.module.llm_dim,7,512,4,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
+    energy_model = EnergyModel(vla.module.llm_dim,7).to(device_id).to(torch.bfloat16)
+
     # Instantiate optimizer
     trainable_params = [param for param in vla.parameters() if param.requires_grad]
     energy_trainable_params = [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 

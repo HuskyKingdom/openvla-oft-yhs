@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from layers import FFWRelativeSelfAttentionModule
+from position_encodings import PositionalEncoding
+
 
 class SeqPool(nn.Module):
     def __init__(self, mode="mean"):
@@ -65,6 +68,77 @@ class MLPResNet(nn.Module):
 
 
 
+# class EnergyModel(nn.Module):
+#     """
+#     E_phi(s, a):
+#     input: hN(s) [B, seq, D_h], a [B, chunk, D_a] 
+#     output: energy [B, 1]
+#     """
+#     def __init__(
+#         self,
+#         state_dim: int,
+#         act_dim: int,
+#         hidden: int = 512,
+#         n_layers: int = 4,
+#         NUM_ACTIONS_CHUNK = 8,
+#     ):
+#         super().__init__()
+#         in_dim = hidden * 3
+#         self.action_proj = nn.Linear(act_dim, hidden)
+#         self.action_proj_act = nn.SiLU()
+        
+#         self.state_dim = state_dim
+#         self.pool = SeqPool(mode="mean")
+#         self.proj_hidden  = nn.Linear(state_dim, hidden)
+
+#         self.model = MLPResNet(
+#             num_blocks=n_layers, input_dim=in_dim, hidden_dim=hidden, output_dim=1
+#         )
+
+
+#         # pos emb
+#         self.pos_emb = nn.Embedding(NUM_ACTIONS_CHUNK, hidden)
+
+
+#     def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
+#         """
+#         hN: [B, S, D_h], a: [B, H,  D_a]
+#         return: energy [B, 1]
+#         """
+
+#         B, H, Da = a.shape
+#         # c = self.pool(hN) # [B, 1]
+#         c = hN
+#         c = self.proj_hidden(c) # [B, Hd]
+#         c = c.unsqueeze(1).expand(B, H, c.shape[-1])  # [B,H,Hd]
+
+#         a = self.action_proj_act(self.action_proj(a)) # [B,H,Hd]
+
+#         # pos emb
+#         feats = [c, a]
+#         pos_ids = torch.arange(H, device=a.device).unsqueeze(0).expand(B, H)  # [B,H]
+#         p = self.pos_emb(pos_ids)                                             # [B,H,Hid]
+#         feats.append(p)
+#         x = torch.cat(feats, dim=-1)         
+
+#         E_steps = self.model(x)           # [B,H,1]
+#         # E_steps = F.softplus(E_steps) # reg
+#         E_steps = 0.5 * (E_steps ** 2) + 1e-6
+
+#         if reduce == "sum":
+#             if gamma is None:
+#                 E = E_steps.sum(dim=1)        # [B,1]
+#             else:
+#                 w = torch.pow(gamma, torch.arange(H, device=a.device)).view(1,H,1)  # discount
+#                 E = (E_steps * w).sum(dim=1)
+#         elif reduce == "mean":
+#             E = E_steps.mean(dim=1)
+#         else:
+#             raise ValueError("reduce must be 'sum' or 'mean'")
+
+
+#         return E, E_steps
+    
 class EnergyModel(nn.Module):
     """
     E_phi(s, a):
@@ -76,67 +150,49 @@ class EnergyModel(nn.Module):
         state_dim: int,
         act_dim: int,
         hidden: int = 512,
-        n_layers: int = 4,
-        NUM_ACTIONS_CHUNK = 8,
+        head: int = 8,
+        layers: int = 4,
     ):
         super().__init__()
-        in_dim = hidden * 3
-        self.action_proj = nn.Linear(act_dim, hidden)
-        self.action_proj_act = nn.SiLU()
-        
-        self.state_dim = state_dim
-        self.pool = SeqPool(mode="mean")
-        self.proj_hidden  = nn.Linear(state_dim, hidden)
 
-        self.model = MLPResNet(
-            num_blocks=n_layers, input_dim=in_dim, hidden_dim=hidden, output_dim=1
+        self.energy_bc = FFWRelativeSelfAttentionModule(hidden,head,layers)
+        # pos emb
+        self.pe_layer = PositionalEncoding(hidden,0.2)
+
+        self.state_linear = MLPResNet(
+            num_blocks=1, input_dim=state_dim, hidden_dim=hidden, output_dim=hidden
+        )
+        self.action_linear = MLPResNet(
+            num_blocks=1, input_dim=act_dim, hidden_dim=hidden, output_dim=hidden
+        )
+        self.prediction_head = MLPResNet(
+            num_blocks=2, input_dim=hidden, hidden_dim=hidden, output_dim=1
         )
 
-
-        # pos emb
-        self.pos_emb = nn.Embedding(NUM_ACTIONS_CHUNK, hidden)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
 
-    def forward(self, hN: torch.Tensor, a: torch.Tensor, reduce="sum", gamma=None) -> torch.Tensor:
+    def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
         """
         hN: [B, S, D_h], a: [B, H,  D_a]
         return: energy [B, 1]
         """
 
-        B, H, Da = a.shape
-        # c = self.pool(hN) # [B, 1]
-        c = hN
-        c = self.proj_hidden(c) # [B, Hd]
-        c = c.unsqueeze(1).expand(B, H, c.shape[-1])  # [B,H,Hd]
+        context_mapped = self.state_linear(hN)  # [B,S,Dh]
+        action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
+        cls_tokens = self.cls_token.expand(hN.shape[0], -1, -1)
 
-        a = self.action_proj_act(self.action_proj(a)) # [B,H,Hd]
+        energy_concat = torch.cat([cls_tokens, context_mapped, action_mapped], dim=1)  # [B,S+H+1,Da]
 
-        # pos emb
-        feats = [c, a]
-        pos_ids = torch.arange(H, device=a.device).unsqueeze(0).expand(B, H)  # [B,H]
-        p = self.pos_emb(pos_ids)                                             # [B,H,Hid]
-        feats.append(p)
-        x = torch.cat(feats, dim=-1)         
+        energy_features = self.energy_bc(energy_concat.transpose(0,1), diff_ts=None,
+                query_pos=None, context=None, context_pos=None,pad_mask=pad_mask)[-1].transpose(0,1)  # [B,S+H+1,Da]
+        
 
-        E_steps = self.model(x)           # [B,H,1]
-        # E_steps = F.softplus(E_steps) # reg
-        E_steps = 0.5 * (E_steps ** 2) + 1e-6
-
-        if reduce == "sum":
-            if gamma is None:
-                E = E_steps.sum(dim=1)        # [B,1]
-            else:
-                w = torch.pow(gamma, torch.arange(H, device=a.device)).view(1,H,1)  # discount
-                E = (E_steps * w).sum(dim=1)
-        elif reduce == "mean":
-            E = E_steps.mean(dim=1)
-        else:
-            raise ValueError("reduce must be 'sum' or 'mean'")
+        energy_cls = energy_features[:,0,:].squeeze(1)
+        E = self.prediction_head(energy_cls) # [B, 1]
 
 
-        return E, E_steps
-    
-
+        return E
 
 
 
@@ -339,7 +395,48 @@ def get_negatives(layer_actions):
 def _offdiag_mask(B, device):
     return ~torch.eye(B, dtype=torch.bool, device=device)
 
+
+def energy_inbatch_swap_infonce(
+    energy_model,
+    h: torch.Tensor,        # [B, S, Dh]
+    a_pos: torch.Tensor,    # [B, H, Da]
+    pad_mask: torch.Tensor,    # [B, H, Da]
+    tau: float = 0.5,
+    reduce_steps: str = "mean",
+):
+    """
+    In-batch InfoNCE: 对每个样本 i，正样本是 a_pos[i]，负样本是同一 batch 里 a_pos[j], j!=i
+    返回: loss, E_pos_mean, E_neg_mean(仅off-diagonal)
+    """
+    B, H, Da = a_pos.shape
+    S, Dh = h.shape[1], h.shape[2]
+
+    # 构造所有(i,j)对
+    h_rep = h.unsqueeze(1).expand(B, B, S, Dh).reshape(B*B, S, Dh)         # [B*B,S,Dh]
+    a_rep = a_pos.unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)     # [B*B,H,Da]
+
+    # 计算能量矩阵 E_ij
+    E_ij = energy_model(h_rep, a_rep, pad_mask, reduce=reduce_steps)              # [B*B,1]
+    E_ij = E_ij.view(B, B)                                                 # [B,B]
+
+    # InfoNCE logits = -E / tau
+    logits = (-E_ij) / tau                                                 # [B,B]
+    labels = torch.arange(B, device=h.device)                              # 正类索引 = 自身列 i
+
+    loss = F.cross_entropy(logits, labels)
+
+    # 统计量：对角线=正样本；非对角线=负样本
+    E_pos_mean = torch.diag(E_ij).mean()
+    offdiag_mask = ~torch.eye(B, dtype=torch.bool, device=h.device)
+    E_neg_mean = E_ij[offdiag_mask].mean() if B > 1 else torch.tensor(0., device=h.device)
+
+    return loss, E_pos_mean, E_neg_mean
+
+
+
+
 def energy_inbatch_swap_infonce_2d(
+        
     energy_model,
     c_global: torch.Tensor,   # [B, D]
     a_pos: torch.Tensor,      # [B, H, Da]
