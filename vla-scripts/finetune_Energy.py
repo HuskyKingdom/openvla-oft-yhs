@@ -485,6 +485,7 @@ def run_forward_pass(
         # )
         energy_mask = None
 
+        context_hidden = context_hidden[:, :num_patches, :]
         # E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
         swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
         reg = F.mse_loss(E_pos_mean, torch.zeros_like(E_pos_mean))
