@@ -169,8 +169,9 @@ class EnergyModel(nn.Module):
         self.prediction_head = MLPResNet(
             num_blocks=2, input_dim=hidden, hidden_dim=hidden, output_dim=1
         )
+        self.pool = SeqPool(mode="mean")
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
+        # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
 
     def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
@@ -179,21 +180,38 @@ class EnergyModel(nn.Module):
         return: energy [B, 1]
         """
 
-        context_mapped = self.state_linear(hN)  # [B,S,Dh]
-        action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
-        cls_tokens = self.cls_token.expand(hN.shape[0], -1, -1)
+        # context_mapped = self.state_linear(hN)  # [B,S,Dh]
+        # action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
+        # cls_tokens = self.cls_token.expand(hN.shape[0], -1, -1)
 
-        energy_concat = torch.cat([cls_tokens, context_mapped, action_mapped], dim=1).to(hN.dtype)  # [B,S+H+1,Da]
+        # energy_concat = torch.cat([cls_tokens, context_mapped, action_mapped], dim=1).to(hN.dtype)  # [B,S+H+1,Da]
 
-        energy_features = self.energy_bc(energy_concat.transpose(0,1), diff_ts=None,
-                query_pos=None, context=None, context_pos=None,pad_mask=pad_mask)[-1].transpose(0,1)  # [B,S+H+1,Da]
+        # energy_features = self.energy_bc(energy_concat.transpose(0,1), diff_ts=None,
+        #         query_pos=None, context=None, context_pos=None,pad_mask=pad_mask)[-1].transpose(0,1)  # [B,S+H+1,Da]
         
 
-        energy_cls = energy_features[:,0,:].squeeze(1)
-        E = self.prediction_head(energy_cls) # [B, 1]
+        # # energy_cls = energy_features[:,0,:].squeeze(1)
+        # E = self.prediction_head(energy_cls) # [B, 1]
 
+
+        # return E
+
+        context_mapped = self.state_linear(hN)  # [B,S,Dh]
+        action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
+
+        energy_feat = self.energy_bc(query=action_mapped.transpose(0, 1),
+            value=context_mapped.transpose(0, 1),
+            query_pos=None,
+            value_pos=None,
+            diff_ts=None)[-1].transpose(0,1) # [B,H,Da]
+        
+        energy = self.pool(energy_feat) # [B,Da]
+        E = self.prediction_head(energy) # [B, 1]
 
         return E
+
+        
+
 
 
 
