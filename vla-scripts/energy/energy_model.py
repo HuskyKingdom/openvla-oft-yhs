@@ -171,6 +171,8 @@ class EnergyModel(nn.Module):
         )
         self.pool = SeqPool(mode="mean")
 
+        self.gate_a = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))
+
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
 
@@ -203,6 +205,8 @@ class EnergyModel(nn.Module):
             query_pos=None,
             value_pos=None,
             diff_ts=None)[-1].transpose(0,1) # [B,H,Da]
+        
+        energy_feat = energy_feat + self.gate_a * action_mapped 
         
         energy = self.pool(energy_feat) # [B,Da]
         E = self.prediction_head(energy) # [B, 1]
