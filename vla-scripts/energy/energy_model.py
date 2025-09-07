@@ -155,9 +155,7 @@ class EnergyModel(nn.Module):
     ):
         super().__init__()
 
-        hN = hN.float()
-        a  = a.float()
-        
+     
         # self.energy_bc = FFWRelativeCrossAttentionModule(hidden,head,layers)
         self.cross = nn.MultiheadAttention(hidden, head, batch_first=True)
 
@@ -199,6 +197,10 @@ class EnergyModel(nn.Module):
         # # energy_cls = energy_features[:,0,:].squeeze(1)
         # E = self.prediction_head(energy_cls) # [B, 1]
 
+
+        hN = hN.float()
+        a  = a.float()
+        
 
         # return E
         context_mapped = self.state_linear(hN).to(torch.bfloat16)  # [B,S,Dh]
