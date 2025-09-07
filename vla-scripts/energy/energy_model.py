@@ -155,7 +155,8 @@ class EnergyModel(nn.Module):
     ):
         super().__init__()
 
-        self.energy_bc = FFWRelativeCrossAttentionModule(hidden,head,layers)
+        # self.energy_bc = FFWRelativeCrossAttentionModule(hidden,head,layers)
+        self.cross = nn.MultiheadAttention(hidden, head, batch_first=True)
 
         # pos emb
         self.pe_layer = PositionalEncoding(hidden,0.2)
@@ -200,16 +201,21 @@ class EnergyModel(nn.Module):
         context_mapped = self.state_linear(hN).to(torch.bfloat16)  # [B,S,Dh]
         action_mapped  = self.pe_layer(self.action_linear(a)).to(torch.bfloat16)  # [B,H,Da]
 
-        energy_feat = self.energy_bc(query=action_mapped.transpose(0, 1),
-            value=context_mapped.transpose(0, 1),
-            query_pos=None,
-            value_pos=None,
-            diff_ts=None)[-1].transpose(0,1) # [B,H,Da]
+        # energy_feat = self.energy_bc(query=action_mapped.transpose(0, 1),
+        #     value=context_mapped.transpose(0, 1),
+        #     query_pos=None,
+        #     value_pos=None,
+        #     diff_ts=None)[-1].transpose(0,1) # [B,H,Da]
         
-        energy_feat = energy_feat + self.gate_a * action_mapped 
-        
-        energy = self.pool(energy_feat) # [B,Da]
-        E = self.prediction_head(energy) # [B, 1]
+        # energy_feat = energy_feat + self.gate_a * action_mapped 
+
+        # energy = self.pool(energy_feat) # [B,Da]
+        # E = self.prediction_head(energy) # [B, 1]
+
+
+        Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False)
+        energy = self.pool(Z)
+        E = self.prediction_head(energy)
 
         return E
 
