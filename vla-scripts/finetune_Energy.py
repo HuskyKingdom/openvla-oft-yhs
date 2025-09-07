@@ -492,6 +492,8 @@ def run_forward_pass(
         L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
         
         energy_loss = L_neg + 0.02 * reg 
+
+        print(L_neg,0.02 * reg)
        
         
         # #  positive loss and negative loss
