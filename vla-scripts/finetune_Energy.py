@@ -475,14 +475,15 @@ def run_forward_pass(
         # ________
 
         # padding mask 
-        energy_mask = build_ctx_act_key_padding_mask(
-            context_hidden=context_hidden,             # [B,S_ctx,D]
-            num_patches=num_patches,                   # num of vision patch
-            attention_mask_text=batch["attention_mask"],
-            current_action_mask=current_action_mask,   # 与 context_hidden[:, num_patches:-1] align
-            next_actions_mask=next_actions_mask,
-            H_action=8,                # action seq len
-        )
+        # energy_mask = build_ctx_act_key_padding_mask(
+        #     context_hidden=context_hidden,             # [B,S_ctx,D]
+        #     num_patches=num_patches,                   # num of vision patch
+        #     attention_mask_text=batch["attention_mask"],
+        #     current_action_mask=current_action_mask,   # 与 context_hidden[:, num_patches:-1] align
+        #     next_actions_mask=next_actions_mask,
+        #     H_action=8,                # action seq len
+        # )
+        energy_mask = None
 
         E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
         # swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)

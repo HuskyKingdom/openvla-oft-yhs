@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .layers import FFWRelativeSelfAttentionModule
+from .layers import FFWRelativeSelfAttentionModule, FFWRelativeCrossAttentionModule
 from .position_encodings import PositionalEncoding
 
 
@@ -155,7 +155,8 @@ class EnergyModel(nn.Module):
     ):
         super().__init__()
 
-        self.energy_bc = FFWRelativeSelfAttentionModule(hidden,head,layers)
+        self.energy_bc = FFWRelativeCrossAttentionModule(hidden,head,layers)
+
         # pos emb
         self.pe_layer = PositionalEncoding(hidden,0.2)
 
@@ -187,8 +188,6 @@ class EnergyModel(nn.Module):
         energy_features = self.energy_bc(energy_concat.transpose(0,1), diff_ts=None,
                 query_pos=None, context=None, context_pos=None,pad_mask=pad_mask)[-1].transpose(0,1)  # [B,S+H+1,Da]
         
-        print(pad_mask)
-        assert 1==2
 
         energy_cls = energy_features[:,0,:].squeeze(1)
         E = self.prediction_head(energy_cls) # [B, 1]
