@@ -120,7 +120,7 @@ class FinetuneConfig:
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
     energy_warm_steps = 0 # 50000
-    energy_learning_rate = 5e-2
+    energy_learning_rate = 5e-4
 
     # fmt: on
 
@@ -1269,6 +1269,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                 optimizer.step()
                 scheduler.step()
                 if batch_idx >= cfg.energy_warm_steps:
+                    torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
                     energy_optimizer.step()
                     energy_optimizer.zero_grad()
                 optimizer.zero_grad()
