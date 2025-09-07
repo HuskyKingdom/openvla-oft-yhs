@@ -195,10 +195,9 @@ class EnergyModel(nn.Module):
 
 
         # return E
-        print(hN.dtype, a.dtype)
-        context_mapped = self.state_linear(hN)  # [B,S,Dh]
-        action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
-        print(hN.dtype, a.dtype)
+        context_mapped = self.state_linear(hN).to(torch.float32)  # [B,S,Dh]
+        action_mapped  = self.pe_layer(self.action_linear(a)).to(torch.float32)  # [B,H,Da]
+
         energy_feat = self.energy_bc(query=action_mapped.transpose(0, 1),
             value=context_mapped.transpose(0, 1),
             query_pos=None,
