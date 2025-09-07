@@ -432,7 +432,8 @@ def energy_inbatch_swap_infonce(
 
     h_rep = h.to(dtype).unsqueeze(1).expand(B, B, S, D).reshape(B*B, S, D)        # [B*B,S,D]
     a_rep = a_pos.to(dtype).unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)  # [B*B,H,Da]
-    pm    = pad_mask.unsqueeze(1).expand(B, B, pad_mask.size(1)).reshape(B*B, pad_mask.size(1))  # [B*B,S+H]
+    if pm != None:
+        pm    = pad_mask.unsqueeze(1).expand(B, B, pad_mask.size(1)).reshape(B*B, pad_mask.size(1))  # [B*B,S+H]
 
     E_ij = energy_model(h_rep, a_rep, pm).view(B, B, 1).squeeze(-1)               # [B,B]
 
