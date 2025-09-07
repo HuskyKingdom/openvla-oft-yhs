@@ -493,7 +493,7 @@ def run_forward_pass(
         
         energy_loss = L_neg + 0.02 * reg
 
-        print(L_neg ,0.02 * reg)
+        # print(L_neg ,0.02 * reg)
 
         E_pos_mean = E_pos.mean()
        
