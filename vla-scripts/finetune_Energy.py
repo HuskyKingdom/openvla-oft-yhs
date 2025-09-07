@@ -1273,6 +1273,8 @@ def finetune(cfg: FinetuneConfig) -> None:
                     torch.nn.utils.clip_grad_norm_(energy_model.parameters(), max_norm=1.0)
                     energy_optimizer.step()
                     energy_optimizer.zero_grad()
+                else:
+                    energy_optimizer.zero_grad()
                 optimizer.zero_grad()
                 progress.update()
 
