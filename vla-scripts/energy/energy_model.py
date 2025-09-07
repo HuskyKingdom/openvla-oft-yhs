@@ -155,6 +155,9 @@ class EnergyModel(nn.Module):
     ):
         super().__init__()
 
+        hN = hN.float()
+        a  = a.float()
+        
         # self.energy_bc = FFWRelativeCrossAttentionModule(hidden,head,layers)
         self.cross = nn.MultiheadAttention(hidden, head, batch_first=True)
 
