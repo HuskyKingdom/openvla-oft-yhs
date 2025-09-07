@@ -491,9 +491,9 @@ def run_forward_pass(
 
         # L_neg, E_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
         
-        energy_loss = swap_loss + 0.02 * reg 
+        energy_loss = swap_loss
 
-        print(swap_loss,0.02 * reg)
+        print(swap_loss)
        
         
         # #  positive loss and negative loss
