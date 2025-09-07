@@ -1198,7 +1198,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
-
+        energy_optimizer.zero_grad()
         for batch_idx, batch in enumerate(dataloader):
 
             # Compute training metrics and loss
@@ -1227,9 +1227,6 @@ def finetune(cfg: FinetuneConfig) -> None:
 
             # Backward pass
             normalized_loss.backward()
-
-            if batch_idx >= cfg.energy_warm_steps:
-                energy_optimizer.zero_grad()
             normalized_energy_loss.backward()
 
             # Store recent train metrics
