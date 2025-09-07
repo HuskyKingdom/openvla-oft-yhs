@@ -586,7 +586,7 @@ def run_forward_pass(
                     "curr_action_l1_loss": curr_action_l1_loss.item(),
                     "next_actions_l1_loss": next_actions_l1_loss.item(),
                     "energy_loss": energy_loss.item(),
-                    "Positive_Energy": E_pos.mean().item(),
+                    "Positive_Energy": E_pos_mean.item(),
                     "Negative_Energy": E_neg_mean.item(),
                 }
             )
