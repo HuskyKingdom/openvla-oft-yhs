@@ -178,6 +178,7 @@ class EnergyModel(nn.Module):
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
 
+
     def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
         """
         hN: [B, S, D_h], a: [B, H,  D_a]
@@ -220,7 +221,8 @@ class EnergyModel(nn.Module):
 
         Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False)
         energy = self.pool(Z)
-        E = self.prediction_head(energy)
+        raw = self.prediction_head(energy)
+        E = F.softplus(raw) + 1e-6
 
         return E
 
@@ -373,7 +375,7 @@ def add_gaussian_noise(x: torch.Tensor,
 
 
 def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, pad_mask,
-                            topk=2, kappa=1.0, m0=10):  # 新增 m0
+                            topk=2, kappa=0.6, m0=1.0):  # 新增 m0
     A_neg = layer_actions[1]
     E_neg = energy_head(hidden_N, A_neg, pad_mask, reduce="mean")
 
