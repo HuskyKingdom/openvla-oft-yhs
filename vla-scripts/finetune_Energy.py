@@ -516,14 +516,14 @@ def run_forward_pass(
         energy_mask = context_mask
 
         with torch.cuda.amp.autocast(enabled=False):
-            E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
+            # E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
             
-            reg = F.mse_loss(E_pos, torch.ones_like(E_pos))
+            # reg = F.mse_loss(E_pos, torch.ones_like(E_pos))
 
-            L_neg, E_neg_mean = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
+            # L_neg, E_neg_mean = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
             
-            energy_loss = L_neg + 0.02 * reg
-            E_pos_mean = E_pos.mean()
+            # energy_loss = L_neg + 0.02 * reg
+            # E_pos_mean = E_pos.mean()
 
 
             # A_negatives = get_negatives(layer_actions)
@@ -532,8 +532,8 @@ def run_forward_pass(
 
             # E_pos_mean = E_pos
             # E_neg_mean = E_neg
-            # swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
-            # energy_loss = swap_loss
+            swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
+            energy_loss = swap_loss
             
        
         
