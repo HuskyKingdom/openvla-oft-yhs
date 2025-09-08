@@ -376,6 +376,8 @@ def add_gaussian_noise(x: torch.Tensor,
 
 def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N, P_loss, pad_mask,
                             topk=2, kappa=0.6, m0=1.0):  # 新增 m0
+    
+    energy_head.eval()
     A_neg = layer_actions[1]
     E_neg = energy_head(hidden_N, A_neg, pad_mask, reduce="mean")
 
@@ -384,6 +386,7 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
         target = m0 + kappa * d + P_loss.detach()  # <-- 关键：detach 掉 E_pos
         
     L_neg = F.relu(target - E_neg).mean()
+    energy_head.train()
     return L_neg, E_neg.mean()
 
 
