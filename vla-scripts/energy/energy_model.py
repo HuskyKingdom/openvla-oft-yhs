@@ -388,7 +388,7 @@ def compute_negative_energy(energy_head, A_star, layer_actions, delta, hidden_N,
 
 
 
-def energy_infonce_loss(energy_model, h, a_pos, a_negs, tau=0.5, reduce_steps="mean"):
+def energy_infonce_loss(energy_model, h, a_pos, a_negs, pad_mask, tau=0.5, reduce_steps="mean"):
     """
     h:     [B,S,Dh]   
     a_pos: [B,H,Da]  
