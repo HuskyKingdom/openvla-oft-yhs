@@ -406,7 +406,7 @@ def energy_infonce_loss(energy_model, h, a_pos, a_negs, pad_mask, tau=0.5, reduc
     a_negs_flat = a_negs.reshape(B * M, H, Da)            # [B*M,H,Da]
     h_rep       = h.repeat_interleave(M, dim=0)           # [B*M,S,Dh]
 
-    E_negs, _ = energy_model(h_rep, a_negs_flat, reduce=reduce_steps)  # [B*M,1]
+    E_negs, _ = energy_model(h_rep, a_negs_flat, pad_mask, reduce=reduce_steps)  # [B*M,1]
     E_negs = E_negs.view(B, M).contiguous()               # [B,M]
 
     # --- EnergyNCE： -E as logits ---
@@ -450,7 +450,7 @@ def energy_inbatch_swap_infonce(
     h_rep = h.to(dtype).unsqueeze(1).expand(B, B, S, D).reshape(B*B, S, D)        # [B*B,S,D]
     a_rep = a_pos.to(dtype).unsqueeze(0).expand(B, B, H, Da).reshape(B*B, H, Da)  # [B*B,H,Da]
     pm = None
-    if pad_mask != None:
+    if pad_mask is not None:
         pm  = pad_mask.unsqueeze(1).expand(B, B, pad_mask.size(1)).reshape(B*B, pad_mask.size(1))  # [B*B,S+H]
 
     E_ij = energy_model(h_rep, a_rep, pm).view(B, B, 1).squeeze(-1)               # [B,B]
