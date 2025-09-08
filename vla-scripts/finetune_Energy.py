@@ -119,7 +119,7 @@ class FinetuneConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
-    energy_warm_steps = 50000 # 50000
+    energy_warm_steps = 0 # 50000
     energy_learning_rate = 5e-4
 
     # fmt: on
@@ -439,6 +439,7 @@ def run_forward_pass(
         
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
+        context_hidden = context_hidden[:,:num_patches,:]
         # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
         #            dtype=torch.bool, device=context_hidden.device)
         # # vision patches
