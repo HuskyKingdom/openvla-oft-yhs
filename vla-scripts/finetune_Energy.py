@@ -460,20 +460,13 @@ def run_forward_pass(
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
     
-       
-
-        print(context_hidden.shape, num_patches, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape) # atten mask true is non-mask
         action_mask = current_action_mask | next_actions_mask 
         action_mask = extend_mask_after_last_true(action_mask)
         patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
         eos_mask = torch.ones_like(context_hidden[:,0], dtype=torch.bool, device = context_hidden.device)
         
-
-        print(action_mask)
         context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
-        
-        assert 1==2
 
         # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
         #            dtype=torch.bool, device=context_hidden.device)
@@ -519,7 +512,7 @@ def run_forward_pass(
         #     next_actions_mask=next_actions_mask,
         #     H_action=8,                # action seq len
         # )
-        energy_mask = None
+        energy_mask = context_mask
 
         with torch.cuda.amp.autocast(enabled=False):
             E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
