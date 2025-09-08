@@ -465,6 +465,7 @@ def run_forward_pass(
         patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
         eos_mask = torch.ones_like(context_hidden[:,0], dtype=torch.bool, device = context_hidden.device)
         
+        print(patch_mask.shape,action_mask.shape,eos_mask.shape)
         context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
 
