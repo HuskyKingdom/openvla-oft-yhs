@@ -444,12 +444,13 @@ def run_forward_pass(
 
         print(context_hidden.shape, num_patches, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape) # atten mask true is non-mask
         action_mask = current_action_mask | next_actions_mask 
-        patch_mask = torch.zeros_like(context_hidden[:,:num_patches], dtype=torch.bool, device = context_hidden.device)
+        patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
         eos_mask = torch.ones_like(context_hidden[:,0], dtype=torch.bool, device = context_hidden.device)
 
+        print(next_actions_mask)
         context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
-        print(next_actions_mask)
+        
         assert 1==2
 
         # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
