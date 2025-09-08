@@ -463,9 +463,9 @@ def run_forward_pass(
         action_mask = current_action_mask | next_actions_mask 
         action_mask = extend_mask_after_last_true(action_mask)
         patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
-        eos_mask = torch.ones_like(context_hidden[:,0], dtype=torch.bool, device = context_hidden.device)
+        eos_mask = torch.ones_like(context_hidden.shape[0],1, dtype=torch.bool, device = context_hidden.device)
         
-        print(patch_mask.shape,action_mask.shape,eos_mask.shape)
+
         context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
 
@@ -532,7 +532,6 @@ def run_forward_pass(
 
             # E_pos_mean = E_pos
             # E_neg_mean = E_neg
-            print(energy_mask.shape,context_hidden.shape)
             swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
             energy_loss = swap_loss
             print(swap_loss)
