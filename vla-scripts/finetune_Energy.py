@@ -119,7 +119,7 @@ class FinetuneConfig:
     run_id_note: Optional[str] = None                # Extra note to add to end of run ID for logging
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
-    energy_warm_steps = 50000 # 50000
+    energy_warm_steps = 0 # 50000
     energy_learning_rate = 5e-4
 
     # fmt: on
@@ -515,17 +515,21 @@ def run_forward_pass(
         energy_mask = context_mask
 
         with torch.cuda.amp.autocast(enabled=False):
-            E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
-            # swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
-            reg = F.mse_loss(E_pos, torch.ones_like(E_pos))
-
-            L_neg, E_neg_mean = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
+            # E_pos = energy_model(context_hidden,ground_truth_actions,energy_mask)
             
-            energy_loss = L_neg + 0.02 * reg
+            # reg = F.mse_loss(E_pos, torch.ones_like(E_pos))
 
-            # print(L_neg ,0.02 * reg)
+            # L_neg, E_neg_mean = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,E_pos,energy_mask)
+            
+            # energy_loss = L_neg + 0.02 * reg
+            # E_pos_mean = E_pos.mean()
 
-            E_pos_mean = E_pos.mean()
+
+            swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
+            energy_loss = swap_loss
+            print(swap_loss)
+
+            
        
         
         # #  positive loss and negative loss
