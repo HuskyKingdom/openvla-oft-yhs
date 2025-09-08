@@ -442,7 +442,7 @@ def run_forward_pass(
     
 
 
-        print(context_hidden.shape, batch["pixel_values"].shape, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape)
+        print(context_hidden.shape, num_patches, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape)
         assert 1==2
 
         # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
