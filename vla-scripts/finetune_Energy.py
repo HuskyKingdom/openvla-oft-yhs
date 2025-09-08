@@ -439,26 +439,11 @@ def run_forward_pass(
         
         # compute energy loss ————————
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        B,S,D = context_hidden.shape
-        img_hiddens = context_hidden[:, :num_patches]  # (B, num_patches, D)
-        text_hiddens = context_hidden[:, num_patches:-1]  # (B, S_text, D)
-        labels_t = batch["labels"][:, num_patches:-1].to(context_hidden.device)  # (B, S_text)
-        atten_t = batch["attention_mask"][:, num_patches:-1].to(context_hidden.device)   # (B, S_text+1)
-        act_mask = (current_action_mask | next_actions_mask).bool()  # (B, S_text)
-        q_mask = (labels_t == -100) & atten_t & (~act_mask)  # (B, S_text)
-        non_act_text = [text_hiddens[b][q_mask[b]] for b in range(B)]
-        max_len = max([x.shape[0] for x in non_act_text])
-        ctx_hidden = torch.zeros(B, max_len + num_patches, D, device=context_hidden.device, dtype=context_hidden.dtype)
-        ctx_padmask = torch.ones(B, max_len + num_patches, dtype=torch.bool, device=context_hidden.device)
+    
 
-        for b in range(B):
-            L = non_act_text[b].shape[0]
-            ctx_hidden[b, :num_patches] = img_hiddens[b]
-            ctx_hidden[b, num_patches:num_patches + L] = non_act_text[b]
-            ctx_padmask[b, :num_patches] = False
-            ctx_padmask[b, num_patches:num_patches + L] = False
 
-        print(ctx_hidden.shape, ctx_padmask.shape, ctx_padmask)
+        print(context_hidden.shape, batch["pixel_values"].shape, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape)
+        assert 1==2
 
         # mask = torch.zeros(context_hidden.shape[0], context_hidden.shape[1],
         #            dtype=torch.bool, device=context_hidden.device)
