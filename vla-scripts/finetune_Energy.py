@@ -318,6 +318,26 @@ def build_ctx_act_key_padding_mask(
     return key_padding_mask
 
 
+def extend_mask_after_last_true(mask: torch.Tensor) -> torch.Tensor:
+    """
+    Args:
+        mask: Bool tensor of shape [B, S] (True = valid, False = masked)
+    Returns:
+        new_mask: Bool tensor of shape [B, S] with all positions after
+                  the last True set to True as well.
+    """
+    B, S = mask.shape
+    device = mask.device
+
+    last_true_idx = torch.where(mask, torch.arange(S, device=device).expand(B, S), -1)
+    last_true_idx = last_true_idx.max(dim=1).values  # [B]
+
+    arange = torch.arange(S, device=device).unsqueeze(0).expand(B, S)  # [B,S]
+    new_mask = arange >= last_true_idx.unsqueeze(1)  # [B,S]
+
+    new_mask = new_mask | mask
+    return new_mask
+
 def run_forward_pass(
     vla,
     action_head,
@@ -444,10 +464,12 @@ def run_forward_pass(
 
         print(context_hidden.shape, num_patches, batch["proprio"].shape,batch["input_ids"].shape,batch["attention_mask"].shape) # atten mask true is non-mask
         action_mask = current_action_mask | next_actions_mask 
+        action_mask = extend_mask_after_last_true(action_mask)
         patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
         eos_mask = torch.ones_like(context_hidden[:,0], dtype=torch.bool, device = context_hidden.device)
+        
 
-        print(next_actions_mask)
+        print(action_mask)
         context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
         
