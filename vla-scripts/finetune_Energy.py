@@ -443,7 +443,7 @@ def run_forward_pass(
         img_hiddens = context_hidden[:, :num_patches]  # (B, num_patches, D)
         text_hiddens = context_hidden[:, num_patches:-1]  # (B, S_text, D)
         labels_t = batch["labels"][:, num_patches:-1].to(context_hidden.device)  # (B, S_text)
-        atten_t = batch["attention_mask"][:, num_patches:-1]  # (B, S_text+1)
+        atten_t = batch["attention_mask"][:, num_patches:-1].to(context_hidden.device)   # (B, S_text+1)
         act_mask = (current_action_mask | next_actions_mask).bool()  # (B, S_text)
         q_mask = (labels_t == -100) & atten_t & (~act_mask)  # (B, S_text)
         non_act_text = [text_hiddens[b][q_mask[b]] for b in range(B)]
