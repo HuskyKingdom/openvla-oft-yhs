@@ -219,7 +219,7 @@ class EnergyModel(nn.Module):
         # E = self.prediction_head(energy) # [B, 1]
 
 
-        Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False)
+        Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False, key_padding_mask=pad_mask)
         energy = self.pool(Z)
         raw = self.prediction_head(energy)
         E = F.softplus(raw) + 1e-6
