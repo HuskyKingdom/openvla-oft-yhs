@@ -245,6 +245,9 @@ class EnergyModel(nn.Module):
         energy = self.pool(Z)
         raw = self.prediction_head(energy)
         assert_finite(raw, "raw")
+        print(raw)
+        # raw = self.T * torch.tanh(raw / self.T)
+        assert_finite(raw, "raw")
 
         E = self.act(raw) + 1e-6
         assert_finite(E, "E")
