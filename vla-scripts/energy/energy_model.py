@@ -213,13 +213,15 @@ class EnergyModel(nn.Module):
         
         assert_finite(hN, "hN")
         assert_finite(a,  "a")
-        assert_finite(context_mapped, "context_mapped")
-        assert_finite(action_mapped,  "action_mapped")
+        
 
         if pad_mask is not None:
             if pad_mask.all(dim=1).any():
                 raise RuntimeError("[NaN-risk] some rows key_padding_mask are all True")
-        Z, _ = self.cross(...)
+
+
+        assert_finite(context_mapped, "context_mapped")
+        assert_finite(action_mapped,  "action_mapped")
 
         # return E
         context_mapped = self.state_linear(hN)  # [B,S,Dh]
