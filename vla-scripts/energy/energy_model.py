@@ -244,7 +244,7 @@ class EnergyModel(nn.Module):
         Energy_per_step = self.act(self.prediction_head(Z)) + 1e-6
         assert_finite(Energy_per_step, "Energy_per_step")
 
-        total_energy = self.pool(total_energy)
+        total_energy = self.pool(Energy_per_step)
         assert_finite(total_energy, "total_energy")
 
         # raw = self.T * torch.tanh(raw / self.T)
