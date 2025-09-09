@@ -246,6 +246,7 @@ class EnergyModel(nn.Module):
         raw = self.prediction_head(energy)
         assert_finite(raw, "raw")
 
+        print(raw)
         # raw = self.T * torch.tanh(raw / self.T)
 
 
