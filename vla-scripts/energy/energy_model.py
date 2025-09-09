@@ -175,6 +175,8 @@ class EnergyModel(nn.Module):
 
         self.gate_a = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))
 
+        self.T = 30.0               # temperature for energy range
+
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
 
@@ -222,6 +224,8 @@ class EnergyModel(nn.Module):
         Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False, key_padding_mask=pad_mask)
         energy = self.pool(Z)
         raw = self.prediction_head(energy)
+        raw = self.T * torch.tanh(raw / self.T)
+
         E = F.softplus(raw) + 1e-6
 
         return E
