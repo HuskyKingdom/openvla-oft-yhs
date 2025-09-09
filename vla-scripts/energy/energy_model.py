@@ -139,6 +139,13 @@ class MLPResNet(nn.Module):
 
 #         return E, E_steps
     
+def assert_finite(x, name):
+    if not torch.isfinite(x).all():
+        bad = (~torch.isfinite(x)).nonzero(as_tuple=False)[:5]
+        raise RuntimeError(f"[NaN] {name} has non-finite at {bad.shape[0]} positions, e.g. {bad[:3].tolist()}")
+
+
+
 class EnergyModel(nn.Module):
     """
     E_phi(s, a):
@@ -176,10 +183,10 @@ class EnergyModel(nn.Module):
 
         self.T = 30.0               # temperature for energy range
         
-        self.act = nn.Sigmoid()
+        self.act = nn.Sigmoid() 
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
 
-
+    
 
     def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
         """
@@ -204,6 +211,15 @@ class EnergyModel(nn.Module):
         hN = hN.float()
         a  = a.float()
         
+        assert_finite(hN, "hN")
+        assert_finite(a,  "a")
+        assert_finite(context_mapped, "context_mapped")
+        assert_finite(action_mapped,  "action_mapped")
+
+        if pad_mask is not None:
+            if pad_mask.all(dim=1).any():
+                raise RuntimeError("[NaN-risk] some rows key_padding_mask are all True")
+        Z, _ = self.cross(...)
 
         # return E
         context_mapped = self.state_linear(hN)  # [B,S,Dh]
@@ -222,10 +238,14 @@ class EnergyModel(nn.Module):
 
 
         Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False, key_padding_mask=pad_mask)
+        assert_finite(Z, "attn_out")
+        
         energy = self.pool(Z)
         raw = self.prediction_head(energy)
+        assert_finite(raw, "raw")
 
         E = self.act(raw) + 1e-6
+        assert_finite(E, "E")
 
         return E
 
