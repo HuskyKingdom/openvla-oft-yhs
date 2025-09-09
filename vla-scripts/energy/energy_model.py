@@ -247,7 +247,7 @@ class EnergyModel(nn.Module):
         assert_finite(raw, "raw")
         print(raw)
         # raw = self.T * torch.tanh(raw / self.T)
-        assert_finite(raw, "raw")
+        
 
         E = self.act(raw) + 1e-6
         assert_finite(E, "E")
