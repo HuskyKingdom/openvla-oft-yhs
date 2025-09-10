@@ -243,17 +243,19 @@ class EnergyModel(nn.Module):
         Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False, key_padding_mask=pad_mask)
         assert_finite(Z, "attn_out")
 
-        energy = self.pool(Z)
-        raw = self.prediction_head(energy)
-        assert_finite(raw, "raw")
+        energy_feature_step = self.prediction_head(Z)
+        assert_finite(energy_feature_step, "energy_feature_step")
+
 
         # raw = self.T * torch.tanh(raw / self.T)
-
-        scaled_raw = raw * 0.5
-        E = self.act(scaled_raw) * self.energy_scale + self.energy_offset
+        energy_feature_step = energy_feature_step * 0.5
+        E = self.act(energy_feature_step) * self.energy_scale + self.energy_offset
         assert_finite(E, "E")
 
-        return E
+        energy_avg = self.pool(E)
+        assert_finite(energy_avg, "energy_avg")
+
+        return energy_avg
 
         
 
