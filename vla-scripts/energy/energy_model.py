@@ -185,7 +185,8 @@ class EnergyModel(nn.Module):
         
         self.act = nn.Sigmoid() 
         # self.cls_token = nn.Parameter(torch.zeros(1, 1, hidden))
-
+        self.energy_scale = 2.0
+        self.energy_offset = 0.1
     
 
     def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
@@ -248,8 +249,8 @@ class EnergyModel(nn.Module):
 
         # raw = self.T * torch.tanh(raw / self.T)
 
-
-        E = self.act(raw) + 1e-6
+        scaled_raw = raw * 0.5
+        E = self.act(scaled_raw) * self.energy_scale + self.energy_offset
         assert_finite(E, "E")
 
         return E

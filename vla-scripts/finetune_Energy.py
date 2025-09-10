@@ -535,6 +535,8 @@ def run_forward_pass(
 
             swap_loss, E_pos_mean, E_neg_mean = energy_inbatch_swap_infonce(energy_model,context_hidden,ground_truth_actions, energy_mask)
             energy_loss = swap_loss
+
+            print(ground_truth_actions)
             
        
         
