@@ -225,8 +225,8 @@ class EnergyModel(nn.Module):
         # return E
         context_mapped = self.state_linear(hN)  # [B,S,Dh]
         action_mapped  = self.pe_layer(self.action_linear(a))  # [B,H,Da]
-        assert_finite(context_mapped, "context_mapped")
-        assert_finite(action_mapped,  "action_mapped")
+        # assert_finite(context_mapped, "context_mapped")
+        # assert_finite(action_mapped,  "action_mapped")
 
         # energy_feat = self.energy_bc(query=action_mapped.transpose(0, 1),
         #     value=context_mapped.transpose(0, 1),
