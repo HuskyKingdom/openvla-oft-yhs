@@ -1225,7 +1225,7 @@ def finetune(cfg: FinetuneConfig) -> None:
                 # Make sure to do this AFTER any learning rate modifications (e.g., warmup/decay)
                 wandb.log(
                     {
-                        "VLA Train/Learning Rate": scheduler.get_last_lr()[0],
+                        "VLA Train/Learning Rate": 0,
                     },
                     step=log_step,
                 )
