@@ -1073,7 +1073,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     energy_optimizer = AdamW(energy_trainable_params, lr=cfg.energy_learning_rate)
 
     # Record original learning rate
-    original_lr = optimizer.param_groups[0]["lr"]
+    # original_lr = optimizer.param_groups[0]["lr"]
 
     # Create learning rate scheduler
     scheduler = None
@@ -1168,7 +1168,6 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
-        optimizer.zero_grad()
         energy_optimizer.zero_grad()
         for batch_idx, batch in enumerate(dataloader):
 
@@ -1214,12 +1213,12 @@ def finetune(cfg: FinetuneConfig) -> None:
             if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
                 log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
 
-            # [If applicable] Linearly warm up learning rate from 10% to 100% of original
-            if cfg.lr_warmup_steps > 0:
-                lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)  # Cap at 1.0
-                current_lr = original_lr * (0.1 + 0.9 * lr_progress)
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] = current_lr
+            # # [If applicable] Linearly warm up learning rate from 10% to 100% of original
+            # if cfg.lr_warmup_steps > 0:
+            #     lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)  # Cap at 1.0
+            #     current_lr = original_lr * (0.1 + 0.9 * lr_progress)
+            #     for param_group in optimizer.param_groups:
+            #         param_group["lr"] = current_lr
 
             if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
                 # Log the learning rate
