@@ -983,7 +983,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.module.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
+    energy_model = EnergyModel(vla.module.llm_dim,7).to(device_id)
     energy_sd = torch.load(
         os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
         map_location=f"cuda:{device_id}",
