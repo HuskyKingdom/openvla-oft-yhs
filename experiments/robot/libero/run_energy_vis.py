@@ -68,4 +68,4 @@ def gaussian_perturbation_energy_landscape():
     ax.set_title('Energy Landscape: Gaussian Perturbation Parameters')
     plt.colorbar(surf)
     plt.legend()
-    plt.savefig('energy_landscape_gaussian_params.png', dpi=300)
+    plt.savefig('energy_vis/energy_landscape_gaussian_params.png', dpi=300)
