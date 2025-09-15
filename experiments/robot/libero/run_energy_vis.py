@@ -69,3 +69,6 @@ def gaussian_perturbation_energy_landscape():
     plt.colorbar(surf)
     plt.legend()
     plt.savefig('/work1/aiginternal/yuhang/openvla-oft-yhs/energy_vis/energy_landscape_gaussian_params.png', dpi=300)
+
+
+gaussian_perturbation_energy_landscape()
