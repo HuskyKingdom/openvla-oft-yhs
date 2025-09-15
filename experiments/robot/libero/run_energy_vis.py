@@ -1,116 +1,68 @@
-from energy_model.model import EnergyModel
 import torch
-from typing import Dict, Sequence
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import seaborn as sns
 
-# instruction : pick up the black bowl from table center and place it on the plate.
-
-def denorm_actions_torch(
-    actions: torch.Tensor,   # [..., 7]  归一化后的动作
-    stats: Dict[str, Sequence[float]],
-    clamp_to_range: bool = True,
-    discretize_gripper: bool = True,
-) -> torch.Tensor:
-    """
-    依据 OpenVLA 保存的 norm_stats['action'] 做反归一化。
-    - 对 mask[i]==True 的维做 x = z*std + mean
-    - 对 mask[i]==False（通常是 gripper）保持原值；可选阈值二值化到 {0,1}
-    - 最后可选按 per-dim min/max 限幅
-
-    actions: 形状 [..., 7]（如 [B, T, 7]），float/bfloat16 都行
-    stats:   dict，含 keys: 'mean','std','min','max','mask'
-    """
-    assert actions.shape[-1] == 7, "Expect last dim = 7 (x,y,z,roll,pitch,yaw,gripper)"
-    device = actions.device if torch.is_tensor(actions) else "cpu"
-    dtype  = torch.float32
-
-    mean = torch.tensor(stats["mean"], dtype=dtype, device=device)  # [7]
-    std  = torch.tensor(stats["std"],  dtype=dtype, device=device)  # [7]
-    vmin = torch.tensor(stats["min"],  dtype=dtype, device=device)  # [7]
-    vmax = torch.tensor(stats["max"],  dtype=dtype, device=device)  # [7]
-    mask = torch.tensor(stats["mask"], dtype=torch.bool, device=device)  # [7]
-
-    # broadcast 到 actions 的形状
-    view_shape = [1] * (actions.ndim - 1) + [7]
-    mean = mean.view(view_shape)
-    std  = std.view(view_shape)
-    vmin = vmin.view(view_shape)
-    vmax = vmax.view(view_shape)
-    mask = mask.view(view_shape)
-
-    # 反归一化（仅在被标准化的维度上做 z*std+mean；其它维度原样保留）
-    z = actions.to(dtype)
-    x = torch.where(mask, z * std + mean, z)
-
-    # gripper: 可选二值化（>=0.5为闭合）
-    if discretize_gripper:
-        g = x[..., 6]
-        x[..., 6] = (g >= 0.5).to(dtype)
-
-    # 可选按数据统计的 min/max 限幅（更安全，避免数值越界）
-    if clamp_to_range:
-        x = torch.minimum(torch.maximum(x, vmin), vmax)
-
-    return x
-
-# params
-device = "cuda"
-norm_stats_action = {
-    "mean": [0.01820324920117855, 0.05858374014496803, -0.05592384561896324,
-             0.004626928828656673, 0.00289608770981431, -0.007673131301999092, 0.5457824468612671],
-    "std":  [0.2825464606285095, 0.35904666781425476, 0.3673802614212036,
-             0.03770702704787254, 0.05429719388484955, 0.08725254982709885, 0.49815231561660767],
-    "max":  [0.9375, 0.9375, 0.9375, 0.30000001192092896, 0.29357144236564636, 0.375, 1.0],
-    "min":  [-0.9375, -0.9375, -0.9375, -0.23642857372760773, -0.3053571283817291, -0.3675000071525574, 0.0],
-    "q01":  [-0.6348214149475098, -0.7741071581840515, -0.7633928656578064,
-             -0.09749999642372131, -0.14819999992847435, -0.2742857038974762, 0.0],
-    "q99":  [0.7714285850524902, 0.8464285731315613, 0.9375,
-             0.13928571343421936, 0.15964286029338837, 0.3246428668498993, 1.0],
-    "mask": [True, True, True, True, True, True, False],
-}
-
-normalized = torch.tensor(
-  [[[-0.0069, -0.7031,  0.6914, -0.3750, -0.6055, -1.0312, -0.6172],
-    [ 0.5781, -0.5664,  0.5078,  0.1982,  0.0024, -1.3047, -0.1680],
-    [ 0.8359, -0.7266,  0.4219, -0.1904, -0.0074, -1.5000, -0.0718],
-    [ 0.8789, -0.9219,  0.7227,  0.2090,  0.0347, -0.9023,  0.1758],
-    [ 0.9219, -1.0469,  0.6250,  0.1338,  0.1953, -0.8320,  0.3262],
-    [ 1.1484, -0.8555,  0.5352,  0.1553,  0.2139, -0.7891,  0.3594],
-    [ 0.9297, -0.8203,  0.4590, -0.1279,  0.2715, -0.9922,  0.4453],
-    [ 0.9609, -0.8789,  0.5703, -0.1523,  0.1807, -0.9648,  0.3652]]]
-).to(device).to(torch.bfloat16)
-
-
-def sample_rand_like_train(B=1, H=8, device="cuda"):
-    # 0-5 维：标准化域内的截断高斯；第6维(gripper)：{0,1}
-    import torch
-    z = torch.randn(B, H, 6, device=device).to(torch.bfloat16)
-    z = torch.clamp(z, -3.0, 3.0)  # 约等于在训练“可见域”内
-    g = torch.randint(0, 2, (B, H, 1), device=device).to(torch.bfloat16)
-    a = torch.cat([z, g], dim=-1)  # 已是“标准化空间”
-    # （如你训练时还额外 clip 到 [-0.9375, 0.9375]，也同步 clip 一下）
-    a[..., :6] = torch.clamp(a[..., :6], -0.94, 0.94)
-    return a
-
-x = sample_rand_like_train()
-
-denorm = denorm_actions_torch(normalized, norm_stats_action,
-                              clamp_to_range=True, discretize_gripper=True)
-
-
-CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt"
-energy_model = EnergyModel(4096,7).to(device).to(torch.bfloat16)
-energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--100000_checkpoint.pt"))
-energy_model.eval()
-
-# loading variables
-CONTEXT_PATH = "energy_vis/context_hidden_ts1.pt"
-context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16)
-
-
-
-energy_turth = energy_model(context_hidden, normalized)
-energy_neg = energy_model(context_hidden, x)
-
-
-print(energy_turth_step,energy_neg_step)
-print(f"expert : {energy_turth[0][0]:.8f} | rand : {energy_neg[0][0]:.8f}")
+def gaussian_perturbation_energy_landscape():
+    """高斯扰动参数的energy landscape可视化"""
+    
+    # 加载数据
+    device = "cuda"
+    CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt"
+    
+    energy_model = EnergyModel(4096, 7).to(device).to(torch.bfloat16)
+    energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--100000_checkpoint.pt"))
+    energy_model.eval()
+    
+    context_hidden = torch.load("energy_vis/context_hidden_ts1.pt", map_location=device).to(torch.bfloat16)
+    expert_action = torch.tensor(
+        [[[-0.0069, -0.7031,  0.6914, -0.3750, -0.6055, -1.0312, -0.6172],
+          [ 0.5781, -0.5664,  0.5078,  0.1982,  0.0024, -1.3047, -0.1680],
+          # ... 其他expert actions
+        ]]
+    ).to(device).to(torch.bfloat16)
+    
+    # 扰动参数网格
+    noise_means = np.linspace(-0.5, 0.5, 20)      # x轴: 噪声均值
+    noise_stds = np.linspace(0.01, 1.0, 20)       # y轴: 噪声标准差
+    
+    energy_surface = np.zeros((len(noise_means), len(noise_stds)))
+    
+    print("Computing energy landscape...")
+    for i, noise_mean in enumerate(noise_means):
+        for j, noise_std in enumerate(noise_stds):
+            # 生成扰动动作
+            noise = torch.randn_like(expert_action) * noise_std + noise_mean
+            perturbed_action = expert_action + noise
+            
+            # 计算energy（多次采样取平均，减少随机性）
+            energies = []
+            for _ in range(5):
+                noise_sample = torch.randn_like(expert_action) * noise_std + noise_mean
+                action_sample = expert_action + noise_sample
+                with torch.no_grad():
+                    energy = energy_model(context_hidden, action_sample)
+                    energies.append(energy.cpu().item())
+            
+            energy_surface[i, j] = np.mean(energies)
+    
+    # 3D可视化
+    fig = plt.figure(figsize=(12, 9))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    X, Y = np.meshgrid(noise_means, noise_stds)
+    surf = ax.plot_surface(X, Y, energy_surface.T, cmap='viridis', alpha=0.8)
+    
+    # 标记expert action点
+    expert_energy = energy_model(context_hidden, expert_action).cpu().item()
+    ax.scatter([0], [0], [expert_energy], color='red', s=100, label='Expert Action')
+    
+    ax.set_xlabel('Noise Mean')
+    ax.set_ylabel('Noise Std')
+    ax.set_zlabel('Energy')
+    ax.set_title('Energy Landscape: Gaussian Perturbation Parameters')
+    plt.colorbar(surf)
+    plt.legend()
+    plt.savefig('energy_landscape_gaussian_params.png', dpi=300)
+    plt.show()

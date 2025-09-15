@@ -446,12 +446,13 @@ def run_forward_pass(
         print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
 
         with torch.cuda.amp.autocast(enabled=False):
-            energy_2 = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
-            energy_1 = energy_model(context_hidden,layer_actions[1],pad_mask=energy_mask)
+            energy_gt = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
+            energy_suf = energy_model(context_hidden,layer_actions[1],pad_mask=energy_mask)
             rand_action = torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)
-            energy_3 = energy_model(context_hidden,rand_action,pad_mask=energy_mask)
+            energy_rand = energy_model(context_hidden,rand_action,pad_mask=energy_mask)
+            energy_final = energy_model(context_hidden,layer_actions[-1],pad_mask=energy_mask)
         
-        print(f"Rand Energy {energy_3.item():.10f}; Surface Energy {energy_1.item():.10f} ; GT Energy {energy_2.item():.10f}; ")
+        print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
 
 
         torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
