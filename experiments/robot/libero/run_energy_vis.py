@@ -2,6 +2,7 @@ from energy_model.model import EnergyModel
 import torch
 from typing import Dict, Sequence
 
+# instruction : pick up the black bowl from table center and place it on the plate.
 
 def denorm_actions_torch(
     actions: torch.Tensor,   # [..., 7]  归一化后的动作
@@ -68,14 +69,14 @@ norm_stats_action = {
 }
 
 normalized = torch.tensor(
-  [[[-0.3984, -0.6055, -0.4375, -0.1484, -0.6758, -0.2832, 1.0000],
-    [-0.4238, -0.5742, -0.4688, -0.1484, -0.6289, -0.2412, 1.0000],
-    [-0.4219, -0.4922, -0.4766, -0.1484, -0.6094, -0.1865, 1.0000],
-    [-0.4238, -0.5039, -0.4805, -0.1484, -0.5938, -0.1826, 1.0000],
-    [-0.4336, -0.4980, -0.5000, -0.1484, -0.5820, -0.1738, 1.0000],
-    [-0.4277, -0.4883, -0.5156, -0.1484, -0.5781, -0.1660, 1.0000],
-    [-0.4102, -0.5000, -0.5859, -0.1484, -0.5156, -0.1406, 1.0000],
-    [-0.4102, -0.4766, -0.6523, -0.1484, -0.5391, -0.1201, 1.0000]]]
+  [[[-0.0069, -0.7031,  0.6914, -0.3750, -0.6055, -1.0312, -0.6172],
+    [ 0.5781, -0.5664,  0.5078,  0.1982,  0.0024, -1.3047, -0.1680],
+    [ 0.8359, -0.7266,  0.4219, -0.1904, -0.0074, -1.5000, -0.0718],
+    [ 0.8789, -0.9219,  0.7227,  0.2090,  0.0347, -0.9023,  0.1758],
+    [ 0.9219, -1.0469,  0.6250,  0.1338,  0.1953, -0.8320,  0.3262],
+    [ 1.1484, -0.8555,  0.5352,  0.1553,  0.2139, -0.7891,  0.3594],
+    [ 0.9297, -0.8203,  0.4590, -0.1279,  0.2715, -0.9922,  0.4453],
+    [ 0.9609, -0.8789,  0.5703, -0.1523,  0.1807, -0.9648,  0.3652]]]
 ).to(device).to(torch.bfloat16)
 
 
@@ -96,9 +97,9 @@ denorm = denorm_actions_torch(normalized, norm_stats_action,
                               clamp_to_range=True, discretize_gripper=True)
 
 
-CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b3+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_finetuned--200000_chkpt"
-energy_model = EnergyModel(4096,7,512,2,8).to(device).to(torch.bfloat16)
-energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--200000_checkpoint.pt"))
+CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt"
+energy_model = EnergyModel(4096,7).to(device).to(torch.bfloat16)
+energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--100000_checkpoint.pt"))
 energy_model.eval()
 
 # loading variables
@@ -107,8 +108,8 @@ context_hidden = torch.load(CONTEXT_PATH, map_location=device).to(torch.bfloat16
 
 
 
-energy_turth, energy_turth_step = energy_model(context_hidden, normalized)
-energy_neg, energy_neg_step = energy_model(context_hidden, x)
+energy_turth = energy_model(context_hidden, normalized)
+energy_neg = energy_model(context_hidden, x)
 
 
 print(energy_turth_step,energy_neg_step)

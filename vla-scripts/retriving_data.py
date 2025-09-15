@@ -443,7 +443,7 @@ def run_forward_pass(
 
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
-        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {layer_actions[-1]} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
 
         with torch.cuda.amp.autocast(enabled=False):
             energy_2 = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
