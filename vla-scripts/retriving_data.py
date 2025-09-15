@@ -25,6 +25,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
 from transformers.modeling_outputs import CausalLMOutputWithPast
+import torch.nn.functional as F
 
 import wandb
 
@@ -65,7 +66,7 @@ from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # energy
-from energy.energy_model import EnergyModel, compute_negative_energy
+from energy.energy_model import EnergyModel, compute_negative_energy, energy_infonce_loss, get_negatives, energy_inbatch_swap_infonce_2d, energy_inbatch_swap_infonce
 
 @dataclass
 class FinetuneConfig:
@@ -392,9 +393,15 @@ def run_forward_pass(
         # compute energy loss ————————
 
         context_hidden = output.hidden_states[-1].detach() # (B, seq_len, D)
-        # positive loss
-        L_pos, L_pos_step = energy_model(context_hidden,ground_truth_actions)
-        L_pos_mean = L_pos.mean()
+
+
+        action_mask = current_action_mask | next_actions_mask 
+        action_mask = extend_mask_after_last_true(action_mask)
+        patch_mask = torch.zeros(context_hidden.shape[0], num_patches, dtype=torch.bool, device=context_hidden.device)
+        eos_mask = torch.ones(context_hidden.shape[0],1, dtype=torch.bool, device = context_hidden.device)
+        
+
+        context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
 
 
         # negative loss
@@ -413,14 +420,16 @@ def run_forward_pass(
                 current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
             action_head.train() 
+        
+        energy_mask = context_mask
 
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
         print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {layer_actions[-1]} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
 
-
-        energy_2,_ = energy_model(context_hidden,ground_truth_actions)
-        energy_1,_ = energy_model(context_hidden,layer_actions[1])
+        with torch.cuda.amp.autocast(enabled=False):
+            energy_2 = energy_model(context_hidden,ground_truth_actions,pad_mask=conditioned)
+            energy_1 = energy_model(context_hidden,layer_actions[1],pad_mask=conditioned)
         
         print(f"Surface Energy {energy_1.item():.10f} ; GT Energy {energy_2.item():.10f}")
 
@@ -432,7 +441,7 @@ def run_forward_pass(
         print(text)
         assert 1==2
         
-        L_neg = compute_negative_energy(energy_model,ground_truth_actions,layer_actions,0.2,context_hidden,L_pos)
+
 
         energy_loss = L_neg + L_pos_mean
         
