@@ -65,4 +65,3 @@ def gaussian_perturbation_energy_landscape():
     plt.colorbar(surf)
     plt.legend()
     plt.savefig('energy_landscape_gaussian_params.png', dpi=300)
-    plt.show()
