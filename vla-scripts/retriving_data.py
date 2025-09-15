@@ -270,7 +270,25 @@ def init_module(
 
     return wrap_ddp(module, device_id, find_unused_params)
 
+def extend_mask_after_last_true(mask: torch.Tensor) -> torch.Tensor:
+    """
+    Args:
+        mask: Bool tensor of shape [B, S] (True = valid, False = masked)
+    Returns:
+        new_mask: Bool tensor of shape [B, S] with all positions after
+                  the last True set to True as well.
+    """
+    B, S = mask.shape
+    device = mask.device
 
+    last_true_idx = torch.where(mask, torch.arange(S, device=device).expand(B, S), -1)
+    last_true_idx = last_true_idx.max(dim=1).values  # [B]
+
+    arange = torch.arange(S, device=device).unsqueeze(0).expand(B, S)  # [B,S]
+    new_mask = arange >= last_true_idx.unsqueeze(1)  # [B,S]
+
+    new_mask = new_mask | mask
+    return new_mask
 def run_forward_pass(
     vla,
     action_head,
