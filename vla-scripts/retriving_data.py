@@ -444,7 +444,7 @@ def run_forward_pass(
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
         print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
-        print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}")
+        print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}; L1 loss with rand {torch.nn.L1Loss()(ground_truth_actions, rand_action)};")
 
 
         with torch.cuda.amp.autocast(enabled=False):
