@@ -457,7 +457,7 @@ def run_forward_pass(
         print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
 
 
-        saving_folder = "energy_vis"
+        saving_folder = "energy_vis_1"
         torch.save(context_hidden, f"{saving_folder}/context_hidden_ts1.pt")
         torch.save(batch["pixel_values"], f"{saving_folder}/pixel_values.pt")
         processor = AutoProcessor.from_pretrained("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt", trust_remote_code=True)
