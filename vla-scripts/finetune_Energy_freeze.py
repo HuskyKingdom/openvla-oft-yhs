@@ -491,7 +491,7 @@ def run_forward_pass(
                 )  # (B, act_chunk_len, D)
                 current_actions = action_head.module.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
-            action_head.train() 
+            action_head.eval()
 
 
         energy_mask = context_mask
