@@ -443,7 +443,9 @@ def run_forward_pass(
 
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
-        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+        print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions); print(f"L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}")}")
+
 
         with torch.cuda.amp.autocast(enabled=False):
             energy_gt = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
@@ -455,8 +457,9 @@ def run_forward_pass(
         print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
 
 
-        torch.save(context_hidden, "energy_vis/context_hidden_ts1.pt")
-        torch.save(batch["pixel_values"], "energy_vis/pixel_values.pt")
+        saving_folder = "energy_vis"
+        torch.save(context_hidden, f"{saving_folder}/context_hidden_ts1.pt")
+        torch.save(batch["pixel_values"], f"{saving_folder}/pixel_values.pt")
         processor = AutoProcessor.from_pretrained("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt", trust_remote_code=True)
         text = processor.tokenizer.decode(batch["input_ids"][0], skip_special_tokens=True)
         print(text)
