@@ -3,6 +3,7 @@ import os
 import torch
 import numpy as np
 from PIL import Image
+from energy_model.model import EnergyModel
 
 # === 修改为你的路径 ===
 TENSOR_PATH = "energy_vis/pixel_values.pt"
