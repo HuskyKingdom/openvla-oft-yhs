@@ -443,9 +443,7 @@ def run_forward_pass(
 
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
-        print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
-        print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}; L1 loss with rand {torch.nn.L1Loss()(ground_truth_actions, rand_action)};")
-
+       
 
         with torch.cuda.amp.autocast(enabled=False):
             energy_gt = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
@@ -454,7 +452,10 @@ def run_forward_pass(
             energy_rand = energy_model(context_hidden,rand_action,pad_mask=energy_mask)
             energy_final = energy_model(context_hidden,layer_actions[-1],pad_mask=energy_mask)
         
-        print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
+
+            print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+            print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}; L1 loss with rand {torch.nn.L1Loss()(ground_truth_actions, rand_action)};")
+            print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
 
 
         saving_folder = "energy_vis_1"
