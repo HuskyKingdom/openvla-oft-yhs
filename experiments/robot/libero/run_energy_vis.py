@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import seaborn as sns
+from energy_model.model import EnergyModel
 
 def gaussian_perturbation_energy_landscape():
     """高斯扰动参数的energy landscape可视化"""
