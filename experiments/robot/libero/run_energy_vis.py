@@ -12,11 +12,11 @@ def gaussian_perturbation_energy_landscape():
     device = "cuda"
     CKPT_DIR = "/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt"
     
-    energy_model = EnergyModel(4096, 7).to(device).to(torch.bfloat16)
+    energy_model = EnergyModel(4096, 7).to(device)
     energy_model.load_state_dict(torch.load(CKPT_DIR + "/energy_model--100000_checkpoint.pt"))
     energy_model.eval()
     
-    context_hidden = torch.load("energy_vis/context_hidden_ts1.pt", map_location=device).to(torch.bfloat16)
+    context_hidden = torch.load("energy_vis/context_hidden_ts1.pt", map_location=device)
     expert_action = torch.tensor(
         [[[ 1.0000, -0.1396, -0.4590,  0.0153,  0.1172,  0.3965,  0.0000],
          [ 1.0000, -0.0977, -0.4961,  0.0153,  0.1396,  0.4082,  0.0000],
@@ -26,7 +26,7 @@ def gaussian_perturbation_energy_landscape():
          [ 0.9922,  0.2441, -0.2354, -0.9297,  0.1289,  0.1494,  0.0000],
          [ 0.8711,  0.0454, -0.1660, -0.8477,  0.0781,  0.1167,  0.0000],
          [ 0.7539, -0.0977, -0.0574, -0.8281,  0.0781,  0.1167,  0.0000]]]
-    ).to(device).to(torch.bfloat16)
+    ).to(device)
     
     # 扰动参数网格
     noise_means = np.linspace(-0.5, 0.5, 20)      # x轴: 噪声均值
