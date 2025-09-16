@@ -452,9 +452,9 @@ def run_forward_pass(
         surface_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[1])) # (-1,1)
         final_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[-1]))
         rand_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)))
-        surface_action = torch.where(surface_action[..., -1:] == -1, 1, 0)
-        final_action = torch.where(final_action[..., -1:] == -1, 1, 0)
-        rand_action = torch.where(rand_action[..., -1:] == -1, 1, 0)
+        surface_action[..., -1] = torch.where(surface_action[..., -1] == -1, 1, 0)
+        final_action[..., -1] = torch.where(final_action[..., -1] == -1, 1, 0)
+        rand_action[..., -1] = torch.where(rand_action[..., -1] == -1, 1, 0)
 
 
 
