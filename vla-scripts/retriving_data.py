@@ -63,8 +63,8 @@ from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
 from experiments.robot.robot_utils import (
-    normalize_gripper_action,
-    invert_gripper_action,
+    normalize_gripper_action_tensor,
+    invert_gripper_action_tensor,
 )
 
 # Sane Defaults
@@ -449,9 +449,9 @@ def run_forward_pass(
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
        
-        surface_action = invert_gripper_action(normalize_gripper_action(layer_actions[1])) # (-1,1)
-        final_action = invert_gripper_action(normalize_gripper_action(layer_actions[-1]))
-        rand_action = invert_gripper_action(normalize_gripper_action(torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)))
+        surface_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[1])) # (-1,1)
+        final_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[-1]))
+        rand_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)))
         surface_action = torch.where(surface_action[..., -1:] == -1, 1, 0)
         final_action = torch.where(final_action[..., -1:] == -1, 1, 0)
         rand_action = torch.where(rand_action[..., -1:] == -1, 1, 0)
