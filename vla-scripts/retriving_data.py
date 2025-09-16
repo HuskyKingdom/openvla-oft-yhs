@@ -62,6 +62,10 @@ from prismatic.vla.constants import (
 from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
 
+from experiments.robot.robot_utils import (
+    normalize_gripper_action
+)
+
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -444,16 +448,19 @@ def run_forward_pass(
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
        
+       surface_action = layer_actions[1]
+       final_action = layer_actions[-1]
+       rand_action = torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)
+
 
         with torch.cuda.amp.autocast(enabled=False):
             energy_gt = energy_model(context_hidden,ground_truth_actions,pad_mask=energy_mask)
-            energy_suf = energy_model(context_hidden,layer_actions[1],pad_mask=energy_mask)
-            rand_action = torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)
+            energy_suf = energy_model(context_hidden,surface_action,pad_mask=energy_mask)
             energy_rand = energy_model(context_hidden,rand_action,pad_mask=energy_mask)
-            energy_final = energy_model(context_hidden,layer_actions[-1],pad_mask=energy_mask)
+            energy_final = energy_model(context_hidden,final_action ,pad_mask=energy_mask)
         
 
-            print(f"Action Surface : {layer_actions[1]} \n Action Final : {layer_actions[-1]} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n L1 loss {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}")
+            print(f"Action Surface : {surface_action} \n Action Final : {final_action} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n ")
             print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}; L1 loss with rand {torch.nn.L1Loss()(ground_truth_actions, rand_action)};")
             print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
 
