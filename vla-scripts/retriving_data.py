@@ -468,7 +468,7 @@ def run_forward_pass(
 
             print(f"Action Surface : {surface_action} \n Action Final : {final_action} \n predicted_actions : {predicted_actions} \n ground_truth_actions : {ground_truth_actions} \n ")
             print(f"L1 loss with model prediction {torch.nn.L1Loss()(ground_truth_actions, predicted_actions)}; L1 loss with surface {torch.nn.L1Loss()(ground_truth_actions, layer_actions[1])}; L1 loss with rand {torch.nn.L1Loss()(ground_truth_actions, rand_action)};")
-            print(f"Rand Energy {energy_rand.item():.10f}; Surface Energy {energy_suf.item():.10f} ; Final Energy {energy_final.item():.10f} ; GT Energy {energy_gt.item():.10f}; ")
+            print(f"Final Energy {energy_final.item():.10f} ; Surface Energy {energy_suf.item():.10f} ; Rand Energy {energy_rand.item():.10f};   GT Energy {energy_gt.item():.10f}; ")
 
 
         saving_folder = "energy_vis_1"
@@ -951,15 +951,20 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # LoRA setup
     if cfg.use_lora:
-        lora_config = LoraConfig(
-            r=cfg.lora_rank,
-            lora_alpha=min(cfg.lora_rank, 16),
-            lora_dropout=cfg.lora_dropout,
-            target_modules="all-linear",
-            init_lora_weights="gaussian",
-        )
-        vla = get_peft_model(vla, lora_config)
-        vla.print_trainable_parameters()
+        if cfg.resume:
+            # 从checkpoint加载已训练的LoRA权重
+            adapter_path = os.path.join(cfg.vla_path, "lora_adapter")
+            vla = PeftModel.from_pretrained(vla, adapter_path)
+        else:
+            lora_config = LoraConfig(
+                r=cfg.lora_rank,
+                lora_alpha=min(cfg.lora_rank, 16),
+                lora_dropout=cfg.lora_dropout,
+                target_modules="all-linear",
+                init_lora_weights="gaussian",
+            )
+            vla = get_peft_model(vla, lora_config)
+            vla.print_trainable_parameters()
 
     # FiLM setup
     if cfg.use_film:
