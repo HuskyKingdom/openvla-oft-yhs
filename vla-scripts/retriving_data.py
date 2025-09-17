@@ -951,27 +951,11 @@ def finetune(cfg: FinetuneConfig) -> None:
     ).to(device_id)
 
     # Set number of images in VLA input
-    if hasattr(vla, 'model'):
-        # LoRA wrapped model
-        vla.model.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
-    else:
-        # Direct model
-        vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
 
-    # 检查并加载LoRA适配器（如果存在）
-    adapter_path = os.path.join(cfg.vla_path, "lora_adapter")
-    if os.path.exists(adapter_path):
-        print("=== LOADING LoRA ADAPTER FOR OBSERVATION ===")
-        print(f"Found LoRA adapter at: {adapter_path}")
-        vla = PeftModel.from_pretrained(vla, adapter_path)
-        print("LoRA adapter loaded successfully")
-    else:
-        print("=== NO LoRA ADAPTER FOUND - USING BASE MODEL ===")
-        print("Using base model directly for observation")
-    
     # 设置为评估模式用于观测/推理  
     vla.eval()
-    print("=== MODEL READY FOR OBSERVATION ===")
+    print("=== MODEL LOADED FOR OBSERVATION ===")
     print(f"Model loaded from: {cfg.vla_path}")
     print(f"Total model parameters: {sum(p.numel() for p in vla.parameters()):,}")
     print(f"Model device: {next(vla.parameters()).device}")
@@ -1001,26 +985,36 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # If applicable, instantiate proprio projector
     if cfg.use_proprio:
-        proprio_projector = init_module(
-            ProprioProjector,
-            "proprio_projector",
-            cfg,
-            device_id,
-            {"llm_dim": vla.llm_dim, "proprio_dim": PROPRIO_DIM},
-            use_ddp=False,
-        )
+        # 像推理代码一样直接创建和加载proprio_projector
+        proprio_projector = ProprioProjector(
+            llm_dim=vla.llm_dim, 
+            proprio_dim=PROPRIO_DIM
+        ).to(device_id)
+        
+        # 加载预训练权重
+        proprio_path = os.path.join(cfg.vla_path, f"proprio_projector--{cfg.resume_step}_checkpoint.pt")
+        print(f"Loading proprio_projector from: {proprio_path}")
+        state_dict = torch.load(proprio_path, map_location=f"cuda:{device_id}")
+        proprio_projector.load_state_dict(state_dict)
+        proprio_projector.eval()
+        print("Proprio projector loaded successfully")
 
     # If applicable, instantiate continuous action head for L1 regression
     if cfg.use_l1_regression:
-        action_head = init_module(
-            L1RegressionActionHead,
-            "action_head",
-            cfg,
-            device_id,
-            {"input_dim": vla.llm_dim, "hidden_dim": vla.llm_dim, "action_dim": ACTION_DIM},
-            to_bf16=True,
-            use_ddp=False,
-        )
+        # 像推理代码一样直接创建和加载action_head
+        action_head = L1RegressionActionHead(
+            input_dim=vla.llm_dim, 
+            hidden_dim=vla.llm_dim, 
+            action_dim=ACTION_DIM
+        ).to(device_id).to(torch.bfloat16)
+        
+        # 加载预训练权重
+        action_head_path = os.path.join(cfg.vla_path, f"action_head--{cfg.resume_step}_checkpoint.pt")
+        print(f"Loading action_head from: {action_head_path}")
+        state_dict = torch.load(action_head_path, map_location=f"cuda:{device_id}")
+        action_head.load_state_dict(state_dict)
+        action_head.eval()
+        print("Action head loaded successfully")
 
     # If applicable, instantiate diffusion action head and noisy action projector
     if cfg.use_diffusion:
@@ -1043,12 +1037,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         )
 
     # Get number of vision patches
-    if hasattr(vla, 'model'):
-        # LoRA wrapped model
-        NUM_PATCHES = vla.model.vision_backbone.get_num_patches() * vla.model.vision_backbone.get_num_images_in_input()
-    else:
-        # Direct model
-        NUM_PATCHES = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
+    NUM_PATCHES = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
     if cfg.use_proprio:
         NUM_PATCHES += 1
@@ -1056,36 +1045,17 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.llm_dim,7).to(device_id)
-    energy_sd = torch.load(
-        os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
-        map_location=f"cuda:{device_id}",
-    )
+    # 像推理代码一样直接创建和加载energy_model
+    energy_model = EnergyModel(vla.llm_dim, 7).to(device_id).to(torch.bfloat16)
+    energy_path = os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt")
+    print(f"Loading energy_model from: {energy_path}")
+    energy_sd = torch.load(energy_path, map_location=f"cuda:{device_id}")
     energy_model.load_state_dict(energy_sd)
+    energy_model.eval()
+    print("Energy model loaded successfully")
     
-    # Instantiate optimizer
-    trainable_params = [param for param in vla.parameters() if param.requires_grad]
-    energy_trainable_params = [param for param in energy_model.parameters() if param.requires_grad] # Energy parameters 
-    if cfg.use_l1_regression or cfg.use_diffusion:
-        trainable_params += [param for param in action_head.parameters() if param.requires_grad]
-    if cfg.use_diffusion:
-        trainable_params += [param for param in noisy_action_projector.parameters() if param.requires_grad]
-    if cfg.use_proprio:
-        trainable_params += [param for param in proprio_projector.parameters() if param.requires_grad]
-    print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
-    print(f"# total energy trainable params: {sum(p.numel() for p in energy_trainable_params)}")
-    optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
-    energy_optimizer = AdamW(energy_trainable_params, lr=cfg.energy_learning_rate)
-
-    # Record original learning rate
-    original_lr = optimizer.param_groups[0]["lr"]
-
-    # Create learning rate scheduler
-    scheduler = MultiStepLR(
-        optimizer,
-        milestones=[cfg.num_steps_before_decay],  # Number of steps after which LR will change
-        gamma=0.1,  # Multiplicative factor of learning rate decay
-    )
+    # 跳过所有训练相关的设置，只用于观测
+    print("Skipping optimizer setup - observation mode only")
 
     # Create Action Tokenizer
     action_tokenizer = ActionTokenizer(processor.tokenizer)
@@ -1172,15 +1142,16 @@ def finetune(cfg: FinetuneConfig) -> None:
         "energy_loss": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
-    # Start training
-    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
-        vla.train()
-        optimizer.zero_grad()
+    # 只运行一次观测，不进行训练
+    print("=== STARTING OBSERVATION ===")
+    vla.eval()
+    
+    for batch_idx, batch in enumerate(dataloader):
 
-        for batch_idx, batch in enumerate(dataloader):
-
-            # Compute training metrics and loss
-            compute_diffusion_l1 = cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0
+        # 只运行一次观测
+        print(f"Processing batch {batch_idx + 1}...")
+        
+        with torch.no_grad():
             loss, metrics, energy_loss = run_forward_pass(
                 vla=vla,
                 action_head=action_head,
@@ -1194,104 +1165,15 @@ def finetune(cfg: FinetuneConfig) -> None:
                 use_proprio=cfg.use_proprio,
                 use_film=cfg.use_film,
                 num_patches=NUM_PATCHES,
-                compute_diffusion_l1=compute_diffusion_l1,
+                compute_diffusion_l1=True,
                 num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
                 energy_model=energy_model,
             )
-
-            # Normalize loss to account for gradient accumulation
-            normalized_loss = loss / cfg.grad_accumulation_steps
-            normalized_energy_loss = energy_loss / cfg.grad_accumulation_steps
-
-            # Backward pass
-            normalized_loss.backward()
-
-            if batch_idx >= cfg.energy_warm_steps:
-                energy_optimizer.zero_grad()
-            normalized_energy_loss.backward()
-
-            # Store recent train metrics
-            for metric_name, value in metrics.items():
-                if metric_name in recent_metrics:
-                    recent_metrics[metric_name].append(value)
-
-            # Compute gradient step index
-            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
-
-            # Compute smoothened train metrics
-            smoothened_metrics = compute_smoothened_metrics(recent_metrics)
-
-            # Push Metrics to W&B (every wandb_log_freq gradient steps)
-            log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
-            if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
-                log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
-
-            # [If applicable] Linearly warm up learning rate from 10% to 100% of original
-            if cfg.lr_warmup_steps > 0:
-                lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)  # Cap at 1.0
-                current_lr = original_lr * (0.1 + 0.9 * lr_progress)
-                for param_group in optimizer.param_groups:
-                    param_group["lr"] = current_lr
-
-            if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
-                # Log the learning rate
-                # Make sure to do this AFTER any learning rate modifications (e.g., warmup/decay)
-                wandb.log(
-                    {
-                        "VLA Train/Learning Rate": scheduler.get_last_lr()[0],
-                    },
-                    step=log_step,
-                )
-
-            # Optimizer and LR scheduler step
-            if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                optimizer.step()
-                scheduler.step()
-                if batch_idx >= cfg.energy_warm_steps:
-                    energy_optimizer.step()
-                    energy_optimizer.zero_grad()
-                optimizer.zero_grad()
-                progress.update()
-
-            # Save model checkpoint: either keep latest checkpoint only or all checkpoints
-            if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
-                save_training_checkpoint(
-                    cfg=cfg,
-                    run_dir=run_dir,
-                    log_step=log_step,
-                    vla=vla,
-                    processor=processor,
-                    proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
-                    action_head=action_head if (cfg.use_l1_regression or cfg.use_diffusion) else None,
-                    train_dataset=train_dataset,
-                    distributed_state=distributed_state,
-                    energy_model = energy_model,
-                )
-
-            # Test model on validation set
-            if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
-                run_validation(
-                    vla=vla,
-                    action_head=action_head,
-                    noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
-                    proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    val_dataloader=val_dataloader,
-                    action_tokenizer=action_tokenizer,
-                    device_id=device_id,
-                    cfg=cfg,
-                    num_patches=NUM_PATCHES,
-                    log_step=log_step,
-                    distributed_state=distributed_state,
-                    val_time_limit=cfg.val_time_limit,
-                )
-                # Set model back to training mode after validation
-                vla.eval()
-
-            # Stop training when max_steps is reached
-            if log_step == cfg.max_steps:
-                print(f"Max step {cfg.max_steps} reached! Stopping training...")
-                break
+        
+        print("=== OBSERVATION COMPLETED ===")
+        print("Energy values and L1 losses have been printed above.")
+        print("Data saved to energy_vis_1/ directory.")
+        break  # 只处理一个batch就退出
 
 
 if __name__ == "__main__":
