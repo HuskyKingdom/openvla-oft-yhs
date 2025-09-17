@@ -343,7 +343,7 @@ def run_forward_pass(
 
     # [Only for diffusion] Sample noisy actions used as input for noise predictor network
     if use_diffusion:
-        noisy_dict = action_head.module.sample_noisy_actions(ground_truth_actions)
+        noisy_dict = action_head.sample_noisy_actions(ground_truth_actions)
         noise, noisy_actions, diffusion_timestep_embeddings = (
             noisy_dict["noise"],
             noisy_dict["noisy_actions"],
@@ -440,13 +440,13 @@ def run_forward_pass(
                     .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
                     .to(torch.bfloat16)
                 )  # (B, act_chunk_len, D)
-                current_actions = action_head.module.predict_action(hiddents_actions).detach()
+                current_actions = action_head.predict_action(hiddents_actions).detach()
                 layer_actions.append(current_actions)
             action_head.train() 
         
         energy_mask = context_mask
 
-        predicted_actions = action_head.module.predict_action(actions_hidden_states)
+        predicted_actions = action_head.predict_action(actions_hidden_states)
 
        
         surface_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[1])) # (-1,1)
@@ -486,7 +486,7 @@ def run_forward_pass(
 
         if use_l1_regression:
             # Predict action
-            predicted_actions = action_head.module.predict_action(actions_hidden_states)
+            predicted_actions = action_head.predict_action(actions_hidden_states)
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
@@ -494,7 +494,7 @@ def run_forward_pass(
         
         if use_diffusion:
             # Predict noise
-            noise_pred = action_head.module.predict_noise(actions_hidden_states)
+            noise_pred = action_head.predict_noise(actions_hidden_states)
             # Get diffusion noise prediction MSE loss
             noise_pred = noise_pred.reshape(noise.shape)
             loss = nn.functional.mse_loss(noise_pred, noise, reduction="mean")
@@ -589,16 +589,16 @@ def run_diffusion_sampling(
     )  # (B, chunk_len, action_dim)
 
     # Set diffusion timestep values
-    action_head.module.noise_scheduler.set_timesteps(action_head.module.num_diffusion_steps_train)
+    action_head.noise_scheduler.set_timesteps(action_head.num_diffusion_steps_train)
 
     # Reverse diffusion: Iteratively denoise to generate action, conditioned on observation
     curr_noisy_actions = noise
-    for t in action_head.module.noise_scheduler.timesteps:
+    for t in action_head.noise_scheduler.timesteps:
         # Get diffusion model's noise prediction (conditioned on VLA latent embedding, current noisy action embedding,
         # and diffusion timestep embedding)
         timesteps = torch.Tensor([t]).repeat(batch_size).to(device_id)
         diffusion_timestep_embeddings = (
-            action_head.module.time_encoder(timesteps).to(curr_noisy_actions.dtype).to(curr_noisy_actions.device)
+            action_head.time_encoder(timesteps).to(curr_noisy_actions.dtype).to(curr_noisy_actions.device)
         )  # (B, llm_dim)
         diffusion_timestep_embeddings = diffusion_timestep_embeddings.unsqueeze(1)  # (B, 1, llm_dim)
 
@@ -626,10 +626,10 @@ def run_diffusion_sampling(
             )  # (B, act_chunk_len, D)
             actions_hidden_states = actions_hidden_states.to(torch.bfloat16)
             # Predict noise
-            noise_pred = action_head.module.predict_noise(actions_hidden_states)
+            noise_pred = action_head.predict_noise(actions_hidden_states)
 
         # Compute the action at the previous diffusion timestep: x_t -> x_{t-1}
-        curr_noisy_actions = action_head.module.noise_scheduler.step(noise_pred, t, curr_noisy_actions).prev_sample
+        curr_noisy_actions = action_head.noise_scheduler.step(noise_pred, t, curr_noisy_actions).prev_sample
 
     return curr_noisy_actions.reshape(actions_shape)
 
@@ -949,22 +949,16 @@ def finetune(cfg: FinetuneConfig) -> None:
     # Set number of images in VLA input
     vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
 
-    # LoRA setup
-    if cfg.use_lora:
-        if cfg.resume:
-            # 从checkpoint加载已训练的LoRA权重
-            adapter_path = os.path.join(cfg.vla_path, "lora_adapter")
-            vla = PeftModel.from_pretrained(vla, adapter_path)
-        else:
-            lora_config = LoraConfig(
-                r=cfg.lora_rank,
-                lora_alpha=min(cfg.lora_rank, 16),
-                lora_dropout=cfg.lora_dropout,
-                target_modules="all-linear",
-                init_lora_weights="gaussian",
-            )
-            vla = get_peft_model(vla, lora_config)
-            vla.print_trainable_parameters()
+    # 设置为评估模式用于观测/推理  
+    vla.eval()
+    print("=== MODEL LOADED FOR OBSERVATION ===")
+    print(f"Model loaded from: {cfg.vla_path}")
+    print(f"Total model parameters: {sum(p.numel() for p in vla.parameters()):,}")
+    print(f"Model device: {next(vla.parameters()).device}")
+    print(f"Model dtype: {next(vla.parameters()).dtype}")
+    print("Model set to evaluation mode")
+    print("Skipping LoRA setup - using loaded model directly")
+    print("=========================================")
 
     # FiLM setup
     if cfg.use_film:
@@ -983,8 +977,8 @@ def finetune(cfg: FinetuneConfig) -> None:
             vla.model.vision_backbone.load_state_dict(state_dict)
         vla.model.vision_backbone = vla.model.vision_backbone.to(device_id)
 
-    # Wrap VLA with DDP
-    vla = wrap_ddp(vla, device_id, find_unused=True)
+    # Skip DDP for observation mode
+    print("Skipping DDP wrapping - observation mode only")
 
     # If applicable, instantiate proprio projector
     if cfg.use_proprio:
@@ -993,7 +987,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             "proprio_projector",
             cfg,
             device_id,
-            {"llm_dim": vla.module.llm_dim, "proprio_dim": PROPRIO_DIM},
+            {"llm_dim": vla.llm_dim, "proprio_dim": PROPRIO_DIM},
         )
 
     # If applicable, instantiate continuous action head for L1 regression
@@ -1003,7 +997,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             "action_head",
             cfg,
             device_id,
-            {"input_dim": vla.module.llm_dim, "hidden_dim": vla.module.llm_dim, "action_dim": ACTION_DIM},
+            {"input_dim": vla.llm_dim, "hidden_dim": vla.llm_dim, "action_dim": ACTION_DIM},
             to_bf16=True,
         )
 
@@ -1015,19 +1009,19 @@ def finetune(cfg: FinetuneConfig) -> None:
             cfg,
             device_id,
             {
-                "input_dim": vla.module.llm_dim,
-                "hidden_dim": vla.module.llm_dim,
+                "input_dim": vla.llm_dim,
+                "hidden_dim": vla.llm_dim,
                 "action_dim": ACTION_DIM,
                 "num_diffusion_steps_train": cfg.num_diffusion_steps_train,
             },
             to_bf16=True,
         )
         noisy_action_projector = init_module(
-            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.module.llm_dim}
+            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.llm_dim}
         )
 
     # Get number of vision patches
-    NUM_PATCHES = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
+    NUM_PATCHES = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
     if cfg.use_proprio:
         NUM_PATCHES += 1
@@ -1035,7 +1029,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     if cfg.use_diffusion:
         NUM_PATCHES += 1
 
-    energy_model = EnergyModel(vla.module.llm_dim,7).to(device_id)
+    energy_model = EnergyModel(vla.llm_dim,7).to(device_id)
     energy_sd = torch.load(
         os.path.join(cfg.vla_path, f"energy_model--{cfg.resume_step}_checkpoint.pt"),
         map_location=f"cuda:{device_id}",
@@ -1101,7 +1095,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         cfg.data_root_dir,
         cfg.dataset_name,
         batch_transform,
-        resize_resolution=tuple(vla.module.config.image_sizes),
+        resize_resolution=tuple(vla.config.image_sizes),
         shuffle_buffer_size=cfg.shuffle_buffer_size,
         image_aug=cfg.image_aug,
     )
@@ -1110,7 +1104,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             cfg.data_root_dir,
             cfg.dataset_name,
             batch_transform,
-            resize_resolution=tuple(vla.module.config.image_sizes),
+            resize_resolution=tuple(vla.config.image_sizes),
             shuffle_buffer_size=cfg.shuffle_buffer_size // 10,
             image_aug=cfg.image_aug,
             train=False,
