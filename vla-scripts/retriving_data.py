@@ -9,7 +9,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Type
+from typing import Dict, Optional, Tuple, Type, Union
 
 import draccus
 import torch
@@ -246,7 +246,8 @@ def init_module(
     module_args: dict,
     to_bf16: bool = False,
     find_unused_params: bool = False,
-) -> DDP:
+    use_ddp: bool = True,
+) -> Union[DDP, nn.Module]:
     """
     Initializes a module, optionally loads checkpoint, moves to device, and wraps with DDP.
 
@@ -273,7 +274,10 @@ def init_module(
         module = module.to(torch.bfloat16)
     module = module.to(device_id)
 
-    return wrap_ddp(module, device_id, find_unused_params)
+    if use_ddp:
+        return wrap_ddp(module, device_id, find_unused_params)
+    else:
+        return module
 
 def extend_mask_after_last_true(mask: torch.Tensor) -> torch.Tensor:
     """
@@ -988,6 +992,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             cfg,
             device_id,
             {"llm_dim": vla.llm_dim, "proprio_dim": PROPRIO_DIM},
+            use_ddp=False,
         )
 
     # If applicable, instantiate continuous action head for L1 regression
@@ -999,6 +1004,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             device_id,
             {"input_dim": vla.llm_dim, "hidden_dim": vla.llm_dim, "action_dim": ACTION_DIM},
             to_bf16=True,
+            use_ddp=False,
         )
 
     # If applicable, instantiate diffusion action head and noisy action projector
@@ -1015,9 +1021,10 @@ def finetune(cfg: FinetuneConfig) -> None:
                 "num_diffusion_steps_train": cfg.num_diffusion_steps_train,
             },
             to_bf16=True,
+            use_ddp=False,
         )
         noisy_action_projector = init_module(
-            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.llm_dim}
+            NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.llm_dim}, use_ddp=False
         )
 
     # Get number of vision patches
