@@ -873,7 +873,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     Returns:
         None.
     """
-    assert cfg.use_lora, "Only LoRA fine-tuning is supported. Please set --use_lora=True!"
+    # assert cfg.use_lora, "Only LoRA fine-tuning is supported. Please set --use_lora=True!"
     assert not (cfg.use_l1_regression and cfg.use_diffusion), (
         "Cannot do both L1 regression and diffusion. Please pick one of them!"
     )
