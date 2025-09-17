@@ -487,14 +487,18 @@ def run_forward_pass(
         predicted_actions = action_head.module.predict_action(actions_hidden_states)
 
        
-        surface_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[1])) # (-1,1)
-        final_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[-1]))
-        rand_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)))
-        surface_action[..., -1] = torch.where(surface_action[..., -1] == -1, 1, 0)
-        final_action[..., -1] = torch.where(final_action[..., -1] == -1, 1, 0)
-        rand_action[..., -1] = torch.where(rand_action[..., -1] == -1, 1, 0)
+        # surface_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[1])) # (-1,1)
+        # final_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(layer_actions[-1]))
+        # rand_action = invert_gripper_action_tensor(normalize_gripper_action_tensor(torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)))
+        # surface_action[..., -1] = torch.where(surface_action[..., -1] == -1, 1, 0)
+        # final_action[..., -1] = torch.where(final_action[..., -1] == -1, 1, 0)
+        # rand_action[..., -1] = torch.where(rand_action[..., -1] == -1, 1, 0)
 
 
+        surface_action = layer_actions[1] # (-1,1)
+        final_action = layer_actions[-1]
+        rand_action = torch.rand(layer_actions[1].shape[0], layer_actions[1].shape[1],layer_actions[1].shape[2]).to(layer_actions[1].device)
+     
 
 
         with torch.cuda.amp.autocast(enabled=False):
