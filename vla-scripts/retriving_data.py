@@ -1079,7 +1079,7 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     energy_model = EnergyModel(vla.module.llm_dim,7).to(device_id)
     energy_sd = torch.load(
-        os.path.join("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze--100000_chkpt", f"energy_model--{cfg.resume_step}_checkpoint.pt"),
+        os.path.join("/work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints/openvla-7b-oft-finetuned-libero-spatial-object-goal-10+libero_4_task_suites_no_noops+b24+lr-0.0005+lora-r32+dropout-0.0--image_aug--energy_freeze_refine_action_head--80000_chkpt", f"energy_model--{cfg.resume_step}_checkpoint.pt"),
         map_location=f"cuda:{device_id}",
     )
     energy_model.load_state_dict(energy_sd)
