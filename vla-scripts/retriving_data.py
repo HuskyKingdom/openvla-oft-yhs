@@ -951,17 +951,32 @@ def finetune(cfg: FinetuneConfig) -> None:
     ).to(device_id)
 
     # Set number of images in VLA input
-    vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    if hasattr(vla, 'model'):
+        # LoRA wrapped model
+        vla.model.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+    else:
+        # Direct model
+        vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
 
+    # 检查并加载LoRA适配器（如果存在）
+    adapter_path = os.path.join(cfg.vla_path, "lora_adapter")
+    if os.path.exists(adapter_path):
+        print("=== LOADING LoRA ADAPTER FOR OBSERVATION ===")
+        print(f"Found LoRA adapter at: {adapter_path}")
+        vla = PeftModel.from_pretrained(vla, adapter_path)
+        print("LoRA adapter loaded successfully")
+    else:
+        print("=== NO LoRA ADAPTER FOUND - USING BASE MODEL ===")
+        print("Using base model directly for observation")
+    
     # 设置为评估模式用于观测/推理  
     vla.eval()
-    print("=== MODEL LOADED FOR OBSERVATION ===")
+    print("=== MODEL READY FOR OBSERVATION ===")
     print(f"Model loaded from: {cfg.vla_path}")
     print(f"Total model parameters: {sum(p.numel() for p in vla.parameters()):,}")
     print(f"Model device: {next(vla.parameters()).device}")
     print(f"Model dtype: {next(vla.parameters()).dtype}")
     print("Model set to evaluation mode")
-    print("Skipping LoRA setup - using loaded model directly")
     print("=========================================")
 
     # FiLM setup
@@ -1028,7 +1043,12 @@ def finetune(cfg: FinetuneConfig) -> None:
         )
 
     # Get number of vision patches
-    NUM_PATCHES = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
+    if hasattr(vla, 'model'):
+        # LoRA wrapped model
+        NUM_PATCHES = vla.model.vision_backbone.get_num_patches() * vla.model.vision_backbone.get_num_images_in_input()
+    else:
+        # Direct model
+        NUM_PATCHES = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
     if cfg.use_proprio:
         NUM_PATCHES += 1
