@@ -266,8 +266,46 @@ def init_module(
     count_parameters(module, module_name)
 
     if cfg.resume:
-        state_dict = load_checkpoint(module_name, cfg.vla_path, cfg.resume_step)
-        module.load_state_dict(state_dict)
+        # Check if checkpoint file exists locally first
+        checkpoint_path = os.path.join(cfg.vla_path, f"{module_name}--{cfg.resume_step}_checkpoint.pt")
+        if os.path.exists(checkpoint_path):
+            state_dict = load_checkpoint(module_name, cfg.vla_path, cfg.resume_step)
+            module.load_state_dict(state_dict)
+            print(f"Loaded checkpoint for {module_name} from {checkpoint_path}")
+        else:
+            # Try to load from HuggingFace Hub like inference does
+            try:
+                from huggingface_hub import hf_hub_download
+                from experiments.robot.openvla_utils import load_component_state_dict
+                
+                # Map model paths to checkpoint names (similar to inference code)
+                model_path_to_checkpoint_name = {
+                    "openvla/openvla-7b": f"{module_name}--{cfg.resume_step}_checkpoint.pt",
+                    "moojink/openvla-7b-oft-finetuned-libero-spatial": f"{module_name}--150000_checkpoint.pt",
+                    "moojink/openvla-7b-oft-finetuned-libero-object": f"{module_name}--150000_checkpoint.pt",
+                    "moojink/openvla-7b-oft-finetuned-libero-goal": f"{module_name}--50000_checkpoint.pt",
+                    "moojink/openvla-7b-oft-finetuned-libero-10": f"{module_name}--150000_checkpoint.pt",
+                    "moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10": f"{module_name}--300000_checkpoint.pt",
+                }
+                
+                # Get the original model path before it was overwritten by snapshot_download
+                original_vla_path = getattr(cfg, '_original_vla_path', cfg.vla_path)
+                
+                if original_vla_path in model_path_to_checkpoint_name:
+                    checkpoint_filename = model_path_to_checkpoint_name[original_vla_path]
+                    print(f"Downloading {module_name} from HuggingFace Hub: {original_vla_path}/{checkpoint_filename}")
+                    checkpoint_path = hf_hub_download(
+                        repo_id=original_vla_path, 
+                        filename=checkpoint_filename
+                    )
+                    state_dict = load_component_state_dict(checkpoint_path)
+                    module.load_state_dict(state_dict)
+                    print(f"Loaded pretrained {module_name} from HuggingFace Hub")
+                else:
+                    print(f"No pretrained weights available for {module_name} from {original_vla_path}, using randomly initialized weights")
+            except Exception as e:
+                print(f"Failed to load pretrained weights for {module_name}: {e}")
+                print(f"Using randomly initialized weights for {module_name}")
 
     if to_bf16:
         module = module.to(torch.bfloat16)
@@ -917,6 +955,10 @@ def finetune(cfg: FinetuneConfig) -> None:
     # the `modeling_prismatic.py` file in this codebase; if so, we will copy
     # the file to the downloaded or locally stored checkpoint directory so
     # that the user's changes to the VLA class logic go into effect
+    
+    # Save original VLA path before it gets overwritten by snapshot_download
+    cfg._original_vla_path = cfg.vla_path
+    
     if model_is_on_hf_hub(cfg.vla_path):
         # Download model directly from Hugging Face Hub
         vla_download_path = snapshot_download(repo_id=cfg.vla_path)
