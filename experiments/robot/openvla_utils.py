@@ -922,7 +922,6 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-        print(energy_pad_mask.shape,hiddens[-1].shape)
         action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
         
 

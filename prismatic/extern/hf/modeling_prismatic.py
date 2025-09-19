@@ -893,6 +893,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         返回:
         mm_exclusion  : (B, S_text + patch_len)  # True=屏蔽, False=保留
         """
+
+        bos_mask = torch.zeros((B, 1), dtype=torch.bool, device=attention_mask.device)
+
+
         # 原文本的“可见性” -> True 表示可见；我们要构造“屏蔽”掩码（True = 屏蔽）
         attn_bool = attention_mask.to(dtype=torch.bool)  # True=可见, False=padding
         action_mask = get_current_action_mask(labels) | get_next_actions_mask(labels)  # True=动作 token
@@ -909,7 +913,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # 与 _build_multimodal_attention 的拼接顺序保持一致：[BOS], patches, text[1:]
         mm_exclusion = torch.cat(
-            [text_exclusion[:, :1], patch_exclusion, text_exclusion[:, 1:],eos_mask],
+            [patch_exclusion, text_exclusion,eos_mask],
             dim=1,
         )
 
