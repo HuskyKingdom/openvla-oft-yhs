@@ -33,10 +33,52 @@ from prismatic.vla.constants import (
     ACTION_PROPRIO_NORMALIZATION_TYPE,
 )
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
-from .robot_utils import (
-    normalize_gripper_action_tensor,
-    invert_gripper_action_tensor,
-)
+
+
+def normalize_gripper_action_tensor(action: torch.Tensor, binarize: bool = True) -> torch.Tensor:
+    """
+    Normalize gripper action from [0,1] to [-1,+1] range (PyTorch version).
+
+    Args:
+        action (torch.Tensor): Action tensor with gripper action in the last dimension
+        binarize (bool): Whether to binarize gripper action to -1 or +1
+
+    Returns:
+        torch.Tensor: Action tensor with normalized gripper action
+    """
+    # 复制，避免修改原 tensor
+    normalized_action = action.clone()
+
+    # Normalize to [-1,+1]
+    orig_low, orig_high = 0.0, 1.0
+    normalized_action[..., -1] = 2 * (normalized_action[..., -1] - orig_low) / (orig_high - orig_low) - 1
+
+    if binarize:
+        # Binarize to -1 or +1
+        normalized_action[..., -1] = torch.sign(normalized_action[..., -1])
+
+    return normalized_action
+
+def invert_gripper_action_tensor(action: np.ndarray) -> np.ndarray:
+    """
+    Flip the sign of the gripper action (last dimension of action vector).
+
+    This is necessary for environments where -1 = open, +1 = close, since
+    the RLDS dataloader aligns gripper actions such that 0 = close, 1 = open.
+
+    Args:
+        action: Action array with gripper action in the last dimension
+
+    Returns:
+        np.ndarray: Action array with inverted gripper action
+    """
+    # Create a copy to avoid modifying the original
+    inverted_action = action.clone()
+
+    # Invert the gripper action
+    inverted_action[..., -1] *= -1.0
+
+    return inverted_action
 
 
 # Initialize important constants
