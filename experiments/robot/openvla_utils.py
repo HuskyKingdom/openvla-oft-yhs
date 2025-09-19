@@ -740,7 +740,7 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 
 
-def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
+def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1, clip_frac=0.2,
                                    act_range=None, correct_first_only=False):
     """
     A_bc: [H, Da] (numpy array or torch tensor)
@@ -752,7 +752,7 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
     A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
 
     with torch.enable_grad():
-        E = energy_head(h, A, reduce="sum")
+        E = energy_head(h, A, energy_mask)
         grad_A = torch.autograd.grad(E.sum(), A)[0]      # [B,H,Da]
 
 
@@ -825,9 +825,6 @@ def get_vla_action(
         # Process primary image
         inputs = processor(prompt, primary_image).to(DEVICE, dtype=torch.bfloat16)
 
-        print(inputs)
-        print(inputs.shape)
-        assert 1==2
 
         # Process additional wrist images if any
         if all_images:
@@ -866,7 +863,7 @@ def get_vla_action(
                 )
             else:
                 try:
-                    action, hiddens, layer_actions = vla.predict_action(  # in case of our implementation
+                    action, hiddens, layer_actions, energy_pad_mask = vla.predict_action(  # in case of our implementation
                         **inputs,
                         unnorm_key=cfg.unnorm_key,
                         do_sample=False,
@@ -925,7 +922,8 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-        action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
+        print(energy_pad_mask.shape,hiddens[-1].shape)
+        action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
         
 
 
