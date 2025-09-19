@@ -998,7 +998,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = self.bin_centers[discretized_actions]
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
 
-        return normalized_actions, all_hiddens_processed, layer_actions
+        return normalized_actions, all_out, layer_actions
 
     def predict_action(
         self,
