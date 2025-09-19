@@ -33,7 +33,7 @@ from prismatic.vla.constants import (
     ACTION_PROPRIO_NORMALIZATION_TYPE,
 )
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
-from experiments.robot.robot_utils import (
+from .robot_utils import (
     normalize_gripper_action_tensor,
     invert_gripper_action_tensor,
 )
