@@ -904,11 +904,15 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         B = attention_mask.size(0)
         patch_exclusion = torch.zeros((B, patch_len), dtype=torch.bool, device=attention_mask.device)
 
+        # eos
+        eos_mask = torch.ones((B, 1), dtype=torch.bool, device=attention_mask.device)
+
         # 与 _build_multimodal_attention 的拼接顺序保持一致：[BOS], patches, text[1:]
         mm_exclusion = torch.cat(
-            [text_exclusion[:, :1], patch_exclusion, text_exclusion[:, 1:]],
+            [text_exclusion[:, :1], patch_exclusion, text_exclusion[:, 1:],eos_mask],
             dim=1,
         )
+
         return mm_exclusion
 
     def _regression_or_discrete_prediction(
