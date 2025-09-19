@@ -752,7 +752,7 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
     A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
 
     with torch.enable_grad():
-        E, _ = energy_head(h, A, reduce="sum")
+        E = energy_head(h, A, reduce="sum")
         grad_A = torch.autograd.grad(E.sum(), A)[0]      # [B,H,Da]
 
 
@@ -824,6 +824,10 @@ def get_vla_action(
 
         # Process primary image
         inputs = processor(prompt, primary_image).to(DEVICE, dtype=torch.bfloat16)
+
+        print(inputs)
+        print(inputs.shape)
+        assert 1==2
 
         # Process additional wrist images if any
         if all_images:
