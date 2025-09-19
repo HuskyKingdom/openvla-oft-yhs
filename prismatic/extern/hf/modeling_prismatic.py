@@ -894,7 +894,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         mm_exclusion  : (B, S_text + patch_len)  # True=屏蔽, False=保留
         """
 
-        bos_mask = torch.zeros((B, 1), dtype=torch.bool, device=attention_mask.device)
+        
 
 
         # 原文本的“可见性” -> True 表示可见；我们要构造“屏蔽”掩码（True = 屏蔽）
