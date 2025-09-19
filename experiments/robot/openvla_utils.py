@@ -794,9 +794,11 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1,
         A_bc = torch.tensor(A_bc, dtype=torch.bfloat16, device=h.device).unsqueeze(0)
 
     B, H, Da = A_bc.shape
-    A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
-    A = invert_gripper_action_tensor(normalize_gripper_action_tensor(A))
+    A = A_bc  # [B,H,Da]
+    A = invert_gripper_action_tensor(normalize_gripper_action_tensor(A)).detach().clone().requires_grad_(True)
     A[..., -1] = torch.where(A[..., -1] == -1, 1, 0)
+
+    energy_mask = energy_mask.detach().clone().requires_grad_(True)
 
     with torch.enable_grad():
         E = energy_head(h, A, energy_mask)
