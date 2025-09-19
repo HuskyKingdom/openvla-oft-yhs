@@ -33,7 +33,10 @@ from prismatic.vla.constants import (
     ACTION_PROPRIO_NORMALIZATION_TYPE,
 )
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
-
+from experiments.robot.robot_utils import (
+    normalize_gripper_action_tensor,
+    invert_gripper_action_tensor,
+)
 
 
 # Initialize important constants
@@ -750,6 +753,8 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1,
 
     B, H, Da = A_bc.shape
     A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
+    A = invert_gripper_action_tensor(normalize_gripper_action_tensor(A))
+    A[..., -1] = torch.where(A[..., -1] == -1, 1, 0)
 
     with torch.enable_grad():
         E = energy_head(h, A, energy_mask)
