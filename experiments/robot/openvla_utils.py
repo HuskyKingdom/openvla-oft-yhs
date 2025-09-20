@@ -785,7 +785,7 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 
 
-def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1, clip_frac=0.2,
+def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1, clip_frac=None,
                                    act_range=None, correct_first_only=False):
     """
     A_bc: [H, Da] (numpy array or torch tensor)
@@ -814,7 +814,6 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1,
         max_step = clip_frac * act_range.view(1,1,-1).to(step.device)
         step = torch.clamp(step, -max_step, max_step)
     else:
-
         step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
         base_norm = A_bc.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
         coef = torch.minimum(torch.ones_like(step_norm), (clip_frac*base_norm)/step_norm)
