@@ -552,7 +552,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
 
     # saving results
-    with open(f"{cfg.task_label}.txt", "w", encoding="utf-8") as f:
+    with open(f"/mnt/nfs/sgyson10/openvla-oft-yhs/ckpoints/{cfg.task_label}.txt", "w", encoding="utf-8") as f:
         f.write(f"{final_success_rate:.4f}")  
 
     # Log to wandb if enabled
