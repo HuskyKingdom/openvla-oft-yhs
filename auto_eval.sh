@@ -6,9 +6,9 @@ FARM_USER=sgyson10
 pip uninstall -y opencv-python; \
 pip install opencv-python-headless==4.11.0.86; \
 apt-get update && apt-get install -y \
-libegl1-mesa-dev libgles2-mesa-dev \
-libosmesa6 libosmesa6-dev \
-libgl1-mesa-glx; \
+    libegl1-mesa-dev libgles2-mesa-dev \
+    libosmesa6 libosmesa6-dev \
+    libgl1-mesa-glx; \
 export MUJOCO_GL=osmesa; \
 export PYOPENGL_PLATFORM=osmesa; \
 export NUMBA_DISABLE_JIT=1; \
