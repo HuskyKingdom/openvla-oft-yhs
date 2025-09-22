@@ -134,6 +134,7 @@ class GenerateConfig:
     h_decoding = False
     save_video = False
     e_decoding = True
+    task_label = ""
 
     # fmt: on
 
@@ -548,6 +549,11 @@ def eval_libero(cfg: GenerateConfig) -> float:
     log_message(f"Total episodes: {total_episodes}", log_file)
     log_message(f"Total successes: {total_successes}", log_file)
     log_message(f"Overall success rate: {final_success_rate:.4f} ({final_success_rate * 100:.1f}%)", log_file)
+
+
+    # saving results
+    with open(f"{cfg.task_label}.txt", "w", encoding="utf-8") as f:
+        f.write(f"{final_success_rate:.4f}")  
 
     # Log to wandb if enabled
     if cfg.use_wandb:
