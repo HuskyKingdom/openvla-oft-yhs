@@ -131,10 +131,10 @@ class GenerateConfig:
     wandb_project: str = "your-wandb-project"        # Name of WandB project
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-    h_decoding = False
-    save_video = False
-    e_decoding = True
-    task_label = ""
+    h_decoding:bool = False
+    save_video:bool = False
+    e_decoding:bool = True
+    task_label:str = ""
 
     # fmt: on
 
