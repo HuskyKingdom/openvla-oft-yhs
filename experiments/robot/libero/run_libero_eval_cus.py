@@ -457,7 +457,7 @@ def run_task(
         #     # Get initial state
         #     initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
         
-        initial_states = None
+        initial_state = None
 
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
