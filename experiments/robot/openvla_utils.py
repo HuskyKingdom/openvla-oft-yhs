@@ -35,6 +35,51 @@ from prismatic.vla.constants import (
 from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
 
+def normalize_gripper_action_tensor(action: torch.Tensor, binarize: bool = True) -> torch.Tensor:
+    """
+    Normalize gripper action from [0,1] to [-1,+1] range (PyTorch version).
+
+    Args:
+        action (torch.Tensor): Action tensor with gripper action in the last dimension
+        binarize (bool): Whether to binarize gripper action to -1 or +1
+
+    Returns:
+        torch.Tensor: Action tensor with normalized gripper action
+    """
+    # 复制，避免修改原 tensor
+    normalized_action = action.clone()
+
+    # Normalize to [-1,+1]
+    orig_low, orig_high = 0.0, 1.0
+    normalized_action[..., -1] = 2 * (normalized_action[..., -1] - orig_low) / (orig_high - orig_low) - 1
+
+    if binarize:
+        # Binarize to -1 or +1
+        normalized_action[..., -1] = torch.sign(normalized_action[..., -1])
+
+    return normalized_action
+
+def invert_gripper_action_tensor(action: np.ndarray) -> np.ndarray:
+    """
+    Flip the sign of the gripper action (last dimension of action vector).
+
+    This is necessary for environments where -1 = open, +1 = close, since
+    the RLDS dataloader aligns gripper actions such that 0 = close, 1 = open.
+
+    Args:
+        action: Action array with gripper action in the last dimension
+
+    Returns:
+        np.ndarray: Action array with inverted gripper action
+    """
+    # Create a copy to avoid modifying the original
+    inverted_action = action.clone()
+
+    # Invert the gripper action
+    inverted_action[..., -1] *= -1.0
+
+    return inverted_action
+
 
 # Initialize important constants
 DATE = time.strftime("%Y_%m_%d")
@@ -806,8 +851,8 @@ def get_context_mask_for_inference(context_hidden, action_head, num_patches):
     return context_mask
 
 
-def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
-                                   act_range=None, correct_first_only=False, context_mask=None):
+def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1, clip_frac=0.5,
+                                   act_range=None, correct_first_only=False):
     """
     A_bc: [H, Da] (numpy array or torch tensor)
     """
@@ -815,13 +860,13 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
         A_bc = torch.tensor(A_bc, dtype=torch.bfloat16, device=h.device).unsqueeze(0)
 
     B, H, Da = A_bc.shape
-    A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
+    A = A_bc  # [B,H,Da]
+    A = invert_gripper_action_tensor(normalize_gripper_action_tensor(A)).detach().clone().requires_grad_(True)
+    A[..., -1] = torch.where(A[..., -1] == -1, 1, 0)
+
 
     with torch.enable_grad():
-        if context_mask is not None:
-            E = energy_head(h, A, reduce="sum", pad_mask=context_mask)
-        else:
-            E = energy_head(h, A, reduce="sum")
+        E = energy_head(h, A, energy_mask)
         grad_A = torch.autograd.grad(E.sum(), A)[0]      # [B,H,Da]
 
 
@@ -835,7 +880,6 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
         max_step = clip_frac * act_range.view(1,1,-1).to(step.device)
         step = torch.clamp(step, -max_step, max_step)
     else:
-
         step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
         base_norm = A_bc.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
         coef = torch.minimum(torch.ones_like(step_norm), (clip_frac*base_norm)/step_norm)
@@ -932,7 +976,7 @@ def get_vla_action(
                 )
             else:
                 try:
-                    action, hiddens, layer_actions = vla.predict_action(  # in case of our implementation
+                    action, hiddens, layer_actions, energy_pad_mask = vla.predict_action(  # in case of our implementation
                         **inputs,
                         unnorm_key=cfg.unnorm_key,
                         do_sample=False,
@@ -991,17 +1035,11 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-        # 获取 num_patches 信息
-        num_patches = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
-        if cfg.use_proprio:
-            num_patches += 1
-        if cfg.use_diffusion:
-            num_patches += 1
-            
-        # 获取 context mask 用于 energy correction
-        context_mask = get_context_mask_for_inference(hiddens[-1], action_head, num_patches)
-        action = one_step_energy_correction_seq(h_head, hiddens[-1], action, context_mask=context_mask)
+        action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
         
+
+
+
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]

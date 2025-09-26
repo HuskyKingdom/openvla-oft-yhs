@@ -131,9 +131,10 @@ class GenerateConfig:
     wandb_project: str = "your-wandb-project"        # Name of WandB project
 
     seed: int = 7                                    # Random Seed (for reproducibility)
-    h_decoding = False
-    save_video = False
-    e_decoding = False
+    h_decoding:bool = False
+    save_video:bool = False
+    e_decoding:bool = True
+    task_label:str = ""
 
     # fmt: on
 
@@ -438,8 +439,8 @@ def run_task(
 
         # loading energy model
         if cfg.e_decoding:
-            hnn_potential_mlp_head = EnergyModel(model.llm_dim,7,512).to(model.device)
-            hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/energy_model--200000_checkpoint.pt"))
+            hnn_potential_mlp_head = EnergyModel(model.llm_dim,7).to(model.device)
+            hnn_potential_mlp_head.load_state_dict(torch.load("/mnt/nfs/sgyson10/openvla-oft-yhs/ckpoints/energy_refined_80000.pt"))
         else:
             hnn_potential_mlp_head = None
 
@@ -548,6 +549,11 @@ def eval_libero(cfg: GenerateConfig) -> float:
     log_message(f"Total episodes: {total_episodes}", log_file)
     log_message(f"Total successes: {total_successes}", log_file)
     log_message(f"Overall success rate: {final_success_rate:.4f} ({final_success_rate * 100:.1f}%)", log_file)
+
+
+    # saving results
+    with open(f"/mnt/nfs/sgyson10/openvla-oft-yhs/ckpoints/{cfg.task_label}.txt", "w", encoding="utf-8") as f:
+        f.write(f"{final_success_rate:.4f}")  
 
     # Log to wandb if enabled
     if cfg.use_wandb:

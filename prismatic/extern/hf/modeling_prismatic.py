@@ -873,6 +873,49 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # Return final actions
         return curr_noisy_actions.float().cpu().detach().numpy(), actions_hidden_states
+    
+
+    def build_action_exclusion_mask_multimodal(
+        self,
+        attention_mask: torch.Tensor,
+        labels: torch.Tensor,
+        patch_len: int,
+    ) -> torch.Tensor:
+        """
+        生成与 multimodal_attention_mask 等长的布尔掩码（True=屏蔽/忽略）。
+        规则：
+        - 文本部分：padding 或 动作位置 → True；其余 → False（保持与原 attention_mask 可见性一致）
+        - 视觉 patch（含你追加的 proprio/diffusion 等 token）部分：全 False（不屏蔽）
+        参数:
+        attention_mask: (B, S_text)  # 已经过 _prepare_input_for_action_prediction 扩展
+        labels        : (B, S_text)  # 已经过 _prepare_labels_for_action_prediction
+        patch_len     : int          # 等于 projected_patch_embeddings.shape[1]
+        返回:
+        mm_exclusion  : (B, S_text + patch_len)  # True=屏蔽, False=保留
+        """
+
+
+        # 原文本的“可见性” -> True 表示可见；我们要构造“屏蔽”掩码（True = 屏蔽）
+        attn_bool = attention_mask.to(dtype=torch.bool)  # True=可见, False=padding
+        action_mask = get_current_action_mask(labels) | get_next_actions_mask(labels)  # True=动作 token
+
+        # 文本侧：padding 或 动作 → 屏蔽(True)
+        text_exclusion = (~attn_bool) | action_mask  # (B, S_text), True=屏蔽/忽略
+
+        # patch 段全不屏蔽
+        B = attention_mask.size(0)
+        patch_exclusion = torch.zeros((B, patch_len), dtype=torch.bool, device=attention_mask.device)
+
+        # eos
+        eos_mask = torch.ones((B, 1), dtype=torch.bool, device=attention_mask.device)
+
+        # 与 _build_multimodal_attention 的拼接顺序保持一致：[BOS], patches, text[1:]
+        mm_exclusion = torch.cat(
+            [patch_exclusion, text_exclusion,eos_mask],
+            dim=1,
+        )
+
+        return mm_exclusion
 
     def _regression_or_discrete_prediction(
         self,
@@ -932,7 +975,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             c_normalized_actions = c_normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
             c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
             layer_actions.append(c_normalized_actions)
-            all_hiddens_processed.append(current_hidden)
+            all_hiddens_processed.append(all_out)
 
         # print(layer_actions)
 
@@ -961,7 +1004,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = self.bin_centers[discretized_actions]
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
 
-        return normalized_actions, all_hiddens_processed, layer_actions
+        return normalized_actions, all_out, layer_actions
 
     def predict_action(
         self,
@@ -1024,6 +1067,13 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Process vision features
         projected_patch_embeddings = self._process_vision_features(pixel_values, language_embeddings, use_film)
 
+        # retirve energy masking
+        mm_mask_to_ignore = self.build_action_exclusion_mask_multimodal(
+        attention_mask=attention_mask,
+        labels=labels,
+        patch_len=projected_patch_embeddings.shape[1],
+        )
+
         # Add proprioceptive features if provided
         use_proprio = proprio_projector is not None and proprio is not None
         if use_proprio:
@@ -1082,7 +1132,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         
         
 
-        return actions, actions_hidden_states, layer_actions
+        return actions, actions_hidden_states, layer_actions, mm_mask_to_ignore
 
     @staticmethod
     def _check_unnorm_key(norm_stats: Dict[str, Dict[str, Any]], unnorm_key: Optional[str]) -> str:
