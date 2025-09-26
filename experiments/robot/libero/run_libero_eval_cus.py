@@ -327,6 +327,7 @@ def run_episode(
     # Run episode
     success = False
     import cv2
+    frames_holder = []
     # try:
     while t < max_steps + cfg.num_steps_wait:
         # Do nothing for the first few timesteps to let objects stabilize
@@ -336,6 +337,7 @@ def run_episode(
 
             # saving image
             observation, img = prepare_observation(obs, resize_size)
+            frames_holder.append(img)
             save_dir = "/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
             os.makedirs(save_dir, exist_ok=True)
             for idx, frame in enumerate(replay_images):
