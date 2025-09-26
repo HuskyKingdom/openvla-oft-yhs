@@ -326,12 +326,23 @@ def run_episode(
 
     # Run episode
     success = False
+    import cv2
     # try:
     while t < max_steps + cfg.num_steps_wait:
         # Do nothing for the first few timesteps to let objects stabilize
         if t < cfg.num_steps_wait:
             obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
             t += 1
+
+            # saving image
+            observation, img = prepare_observation(obs, resize_size)
+            save_dir = "/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
+            os.makedirs(save_dir, exist_ok=True)
+            for idx, frame in enumerate(replay_images):
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                save_path = os.path.join(save_dir, f"episode_{t}_frame_{idx:04d}.jpg")
+                cv2.imwrite(save_path, frame_bgr)
+            assert 1==2
             continue
 
         # Prepare observation
