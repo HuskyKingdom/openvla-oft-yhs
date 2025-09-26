@@ -133,7 +133,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     h_decoding = False
     save_video = False
-    e_decoding = True
+    e_decoding = False
 
     # fmt: on
 
@@ -438,7 +438,7 @@ def run_task(
 
         # loading energy model
         if cfg.e_decoding:
-            hnn_potential_mlp_head = EnergyModel(model.llm_dim,7,512,2,NUM_ACTIONS_CHUNK).to(model.device).to(torch.bfloat16)
+            hnn_potential_mlp_head = EnergyModel(model.llm_dim,7,512).to(model.device)
             hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/energy_model--200000_checkpoint.pt"))
         else:
             hnn_potential_mlp_head = None

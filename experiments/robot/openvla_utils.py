@@ -740,8 +740,74 @@ def action_contrastive_fusion(selected_layer_action,final_layer_action,coffes):
 
 
 
+def extend_mask_after_last_true(mask: torch.Tensor) -> torch.Tensor:
+    """
+    Args:
+        mask: Bool tensor of shape [B, S] (True = valid, False = masked)
+    Returns:
+        new_mask: Bool tensor of shape [B, S] with all positions after
+                  the last True set to True as well.
+    """
+    B, S = mask.shape
+    device = mask.device
+
+    last_true_idx = torch.where(mask, torch.arange(S, device=device).expand(B, S), -1)
+    last_true_idx = last_true_idx.max(dim=1).values  # [B]
+
+    arange = torch.arange(S, device=device).unsqueeze(0).expand(B, S)  # [B,S]
+    new_mask = arange >= last_true_idx.unsqueeze(1)  # [B,S]
+
+    new_mask = new_mask | mask
+    return new_mask
+
+
+def get_context_mask_for_inference(context_hidden, action_head, num_patches):
+    """
+    为 inference 构建 context mask，参考 retriving_data.py 中的实现
+    
+    Args:
+        context_hidden: 最后一层的 hidden states (B, seq_len, D)
+        action_head: action head 用于获取 action 维度信息
+        num_patches: vision patches 的数量
+        
+    Returns:
+        context_mask: 用于 energy model 的 context mask (B, seq_len)
+    """
+    from prismatic.training.train_utils import get_current_action_mask, get_next_actions_mask
+    from prismatic.vla.constants import NUM_ACTIONS_CHUNK, ACTION_DIM
+    
+    B, seq_len, D = context_hidden.shape
+    device = context_hidden.device
+    
+    # 创建假的 labels 来获取 action masks
+    # 假设 action tokens 在序列的后半部分
+    fake_labels = torch.full((B, seq_len), -100, device=device)  # IGNORE_INDEX = -100
+    
+    # 设置 action 部分为有效 tokens
+    action_start = num_patches + (seq_len - num_patches - 1) // 2  # 大概的 action 开始位置
+    action_end = action_start + NUM_ACTIONS_CHUNK * ACTION_DIM
+    fake_labels[:, action_start:action_end] = 1  # 设置为非 IGNORE_INDEX
+    
+    # 获取 action masks
+    current_action_mask = get_current_action_mask(fake_labels)
+    next_actions_mask = get_next_actions_mask(fake_labels)
+    action_mask = current_action_mask | next_actions_mask
+    action_mask = extend_mask_after_last_true(action_mask)
+    
+    # 创建 patch mask (vision patches 部分设为 False)
+    patch_mask = torch.zeros(B, num_patches, dtype=torch.bool, device=device)
+    
+    # 创建 eos mask (EOS token 部分设为 True)
+    eos_mask = torch.ones(B, 1, dtype=torch.bool, device=device)
+    
+    # 拼接成完整的 context mask
+    context_mask = torch.cat([patch_mask, action_mask, eos_mask], dim=1)
+    
+    return context_mask
+
+
 def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.2,
-                                   act_range=None, correct_first_only=False):
+                                   act_range=None, correct_first_only=False, context_mask=None):
     """
     A_bc: [H, Da] (numpy array or torch tensor)
     """
@@ -752,7 +818,10 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, alpha=0.1, clip_frac=0.
     A = A_bc.detach().clone().requires_grad_(True)   # [B,H,Da]
 
     with torch.enable_grad():
-        E, _ = energy_head(h, A, reduce="sum")
+        if context_mask is not None:
+            E = energy_head(h, A, reduce="sum", pad_mask=context_mask)
+        else:
+            E = energy_head(h, A, reduce="sum")
         grad_A = torch.autograd.grad(E.sum(), A)[0]      # [B,H,Da]
 
 
@@ -824,6 +893,7 @@ def get_vla_action(
 
         # Process primary image
         inputs = processor(prompt, primary_image).to(DEVICE, dtype=torch.bfloat16)
+
 
         # Process additional wrist images if any
         if all_images:
@@ -921,11 +991,17 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-        action = one_step_energy_correction_seq(h_head,hiddens[-1],action)
+        # 获取 num_patches 信息
+        num_patches = vla.vision_backbone.get_num_patches() * vla.vision_backbone.get_num_images_in_input()
+        if cfg.use_proprio:
+            num_patches += 1
+        if cfg.use_diffusion:
+            num_patches += 1
+            
+        # 获取 context mask 用于 energy correction
+        context_mask = get_context_mask_for_inference(hiddens[-1], action_head, num_patches)
+        action = one_step_energy_correction_seq(h_head, hiddens[-1], action, context_mask=context_mask)
         
-
-
-
 
     # Return action chunk as list of actions
     return [action[i] for i in range(len(action))]
