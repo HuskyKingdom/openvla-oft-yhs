@@ -1,6 +1,6 @@
 (define (problem LIBERO_Tabletop_Manipulation)
   (:domain robosuite)
-  (:language Pick the akita black bowl on the table and place it on the plate)
+  (:language Pick the akita black bowl on the cabinet and place it on the plate)
     (:regions
       (plate_region
           (:target main_table)
