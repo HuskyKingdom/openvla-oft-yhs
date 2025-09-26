@@ -401,7 +401,7 @@ def run_task(
     # Initialize environment and get task description
     # env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
     
-    env_args = {"bddl_file_name": "/home/YuhangWorkspace/LIBERO/libero/libero/bddl_files/libero_spatial", "camera_heights": 256, "camera_widths": 256}
+    env_args = {"bddl_file_name": "/home/aup/YuhangWorkspace/LIBERO/libero/libero/bddl_files/libero_spatial", "camera_heights": 256, "camera_widths": 256}
     env = OffScreenRenderEnv(**env_args)
     env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     task_description = "Pick the akita black bowl on the stove and place it on the plate"
