@@ -335,16 +335,17 @@ def run_episode(
             obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
             t += 1
 
-            # saving image
-            observation, img = prepare_observation(obs, resize_size)
-            frames_holder.append(img)
-            save_dir = "/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
-            os.makedirs(save_dir, exist_ok=True)
-            for idx, frame in enumerate(frames_holder):
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                save_path = os.path.join(save_dir, f"episode_test_frame_{idx:04d}.jpg")
-                cv2.imwrite(save_path, frame_bgr)
-            assert 1==2
+            # # saving image
+            # observation, img = prepare_observation(obs, resize_size)
+            # frames_holder.append(img)
+            # save_dir = "/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
+            # os.makedirs(save_dir, exist_ok=True)
+            # for idx, frame in enumerate(frames_holder):
+            #     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            #     save_path = os.path.join(save_dir, f"episode_test_frame_{idx:04d}.jpg")
+            #     cv2.imwrite(save_path, frame_bgr)
+            # assert 1==2
+
             continue
 
         # Prepare observation
@@ -422,7 +423,7 @@ def run_task(
 
     # Start episodes
     task_episodes, task_successes = 0, 0
-    for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+    for episode_idx in tqdm.tqdm(range(1)):
         log_message(f"\nTask: {task_description}", log_file)
 
         # Handle initial state
@@ -488,7 +489,7 @@ def run_task(
             total_successes += 1
 
         # Save replay video
-        if cfg.save_video:
+        if True:
             save_rollout_video(
                 replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
             )
@@ -505,16 +506,7 @@ def run_task(
     log_message(f"Current task success rate: {task_success_rate}", log_file)
     log_message(f"Current total success rate: {total_success_rate}", log_file)
 
-    # Log to wandb if enabled
-    if cfg.use_wandb:
-        wandb.log(
-            {
-                f"success_rate/{task_description}": task_success_rate,
-                f"num_episodes/{task_description}": task_episodes,
-            }
-        )
 
-    
     assert 1==2
 
     return total_episodes, total_successes
