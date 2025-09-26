@@ -299,13 +299,13 @@ def run_episode(
 ):
     """Run a single episode in the environment."""
     # Reset environment
-    env.reset()
+    obs = env.reset()
 
     # Set initial state if provided
     if initial_state is not None:
         obs = env.set_init_state(initial_state)
     else:
-        obs = env.get_observation()
+        pass
 
     # Initialize action queue
     if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
