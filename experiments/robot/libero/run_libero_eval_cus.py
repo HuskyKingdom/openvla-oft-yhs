@@ -342,7 +342,7 @@ def run_episode(
             os.makedirs(save_dir, exist_ok=True)
             for idx, frame in enumerate(replay_images):
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                save_path = os.path.join(save_dir, f"episode_{0}_frame_{idx:04d}.jpg")
+                save_path = os.path.join(save_dir, f"episode_test_frame_{idx:04d}.jpg")
                 cv2.imwrite(save_path, frame_bgr)
             assert 1==2
             continue
