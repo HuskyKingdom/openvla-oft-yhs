@@ -440,22 +440,24 @@ def run_task(
     for episode_idx in tqdm.tqdm(range(1)):
         log_message(f"\nTask: {task_description}", log_file)
 
-        # Handle initial state
-        if cfg.initial_states_path == "DEFAULT":
-            # Use default initial state
-            initial_state = initial_states[episode_idx]
-        else:
-            # Get keys for fetching initial episode state from JSON
-            initial_states_task_key = task_description.replace(" ", "_")
-            episode_key = f"demo_{episode_idx}"
+        # # Handle initial state
+        # if cfg.initial_states_path == "DEFAULT":
+        #     # Use default initial state
+        #     initial_state = initial_states[episode_idx]
+        # else:
+        #     # Get keys for fetching initial episode state from JSON
+        #     initial_states_task_key = task_description.replace(" ", "_")
+        #     episode_key = f"demo_{episode_idx}"
 
-            # Skip episode if expert demonstration failed to complete the task
-            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-                log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
-                continue
+        #     # Skip episode if expert demonstration failed to complete the task
+        #     if not all_initial_states[initial_states_task_key][episode_key]["success"]:
+        #         log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
+        #         continue
 
-            # Get initial state
-            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+        #     # Get initial state
+        #     initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+        
+        initial_states = None
 
         log_message(f"Starting episode {task_episodes + 1}...", log_file)
 
