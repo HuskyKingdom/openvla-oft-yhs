@@ -948,10 +948,12 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             inputs_embeds=multimodal_embeddings,
             labels=None,
             use_cache=None,
-            output_attentions=False,
+            output_attentions=True,
             output_hidden_states=True,
             return_dict=True,
         )
+
+        print(language_model_output)
 
         # Extract hidden states for action tokens
         last_hidden_states = language_model_output.hidden_states[-1]  # (B, seq_len, D)
