@@ -133,7 +133,7 @@ class GenerateConfig:
     h_decoding:bool = False
     save_video:bool = False
     e_decoding:bool = False
-    task_label:str = ""
+    task_label:str = "dummy"
 
     # fmt: on
 
