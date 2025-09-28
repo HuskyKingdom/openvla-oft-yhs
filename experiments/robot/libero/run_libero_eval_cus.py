@@ -523,7 +523,7 @@ def run_task(
     log_message(f"Current total success rate: {total_success_rate}", log_file)
 
 
-    assert 1==2
+    # assert 1==2
 
     return total_episodes, total_successes
 
