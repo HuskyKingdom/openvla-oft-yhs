@@ -427,12 +427,12 @@ def run_task(
     initial_states, all_initial_states = load_initial_states(cfg, task_suite, task_id, log_file)
 
     # Initialize environment and get task description
-    # env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
+    env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
     
-    env_args = {"bddl_file_name": "/home/aup/YuhangWorkspace/openvla-oft-yhs/customize.bddl", "camera_heights": 256, "camera_widths": 256}
-    env = OffScreenRenderEnv(**env_args)
-    env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
-    task_description = "Pick the akita black bowl from the cabinet and place it on the plate"
+    # env_args = {"bddl_file_name": "/home/aup/YuhangWorkspace/openvla-oft-yhs/customize.bddl", "camera_heights": 256, "camera_widths": 256}
+    # env = OffScreenRenderEnv(**env_args)
+    # env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
+    # task_description = "Pick the akita black bowl from the cabinet and place it on the plate"
     
 
     # Start episodes
@@ -440,22 +440,22 @@ def run_task(
     for episode_idx in tqdm.tqdm(range(1)):
         log_message(f"\nTask: {task_description}", log_file)
 
-        # # Handle initial state
-        # if cfg.initial_states_path == "DEFAULT":
-        #     # Use default initial state
-        #     initial_state = initial_states[episode_idx]
-        # else:
-        #     # Get keys for fetching initial episode state from JSON
-        #     initial_states_task_key = task_description.replace(" ", "_")
-        #     episode_key = f"demo_{episode_idx}"
+        # Handle initial state
+        if cfg.initial_states_path == "DEFAULT":
+            # Use default initial state
+            initial_state = initial_states[episode_idx]
+        else:
+            # Get keys for fetching initial episode state from JSON
+            initial_states_task_key = task_description.replace(" ", "_")
+            episode_key = f"demo_{episode_idx}"
 
-        #     # Skip episode if expert demonstration failed to complete the task
-        #     if not all_initial_states[initial_states_task_key][episode_key]["success"]:
-        #         log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
-        #         continue
+            # Skip episode if expert demonstration failed to complete the task
+            if not all_initial_states[initial_states_task_key][episode_key]["success"]:
+                log_message(f"Skipping task {task_id} episode {episode_idx} due to failed expert demo!", log_file)
+                continue
 
-        #     # Get initial state
-        #     initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
+            # Get initial state
+            initial_state = np.array(all_initial_states[initial_states_task_key][episode_key]["initial_state"])
         
         initial_state = None
 
@@ -523,7 +523,7 @@ def run_task(
     log_message(f"Current total success rate: {total_success_rate}", log_file)
 
 
-    assert 1==2
+    # assert 1==2
 
     return total_episodes, total_successes
 
