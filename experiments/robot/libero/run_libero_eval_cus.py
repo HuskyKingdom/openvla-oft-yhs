@@ -132,7 +132,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     h_decoding:bool = False
     save_video:bool = False
-    e_decoding:bool = False
+    e_decoding:bool = True
     task_label:str = ""
 
     # fmt: on
