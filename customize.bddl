@@ -82,8 +82,8 @@
 
   (:init
     (On alphabet_soup_1 living_room_table_alphabet_soup_init_region)
-    (On cream_cheese_1 living_room_table_cream_cheese_init_region)
-    (On tomato_sauce_1 living_room_table_tomato_sauce_init_region)
+    (On cream_cheese_1 living_room_table_tomato_sauce_init_region)
+    (On tomato_sauce_1 living_room_table_cream_cheese_init_region)
     (On ketchup_1 living_room_table_ketchup_init_region)
     (On basket_1 living_room_table_basket_init_region)
   )
