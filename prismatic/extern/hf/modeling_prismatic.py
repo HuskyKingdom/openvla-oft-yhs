@@ -1109,9 +1109,8 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
 
         # visulization last layer attention
-        last_attn = language_model_output.attentions[-1].shape
+        last_attn = language_model_output.attentions[-1]
         save_attention_heatmap(last_attn,NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,"/home/aup/YuhangWorkspace/openvla-oft-yhs/attention_last.png")
-
         assert 1==2
 
         # Extract hidden states for action tokens
