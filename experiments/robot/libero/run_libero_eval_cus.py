@@ -432,7 +432,7 @@ def run_task(
     env_args = {"bddl_file_name": "/home/aup/YuhangWorkspace/openvla-oft-yhs/customize.bddl", "camera_heights": 256, "camera_widths": 256}
     env = OffScreenRenderEnv(**env_args)
     env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
-    task_description = "put both the alphabet soup and the cream cheese box in the basket"
+    task_description = "put both the tomato sauce and the cream cheese box in the basket"
     
 
     # Start episodes
