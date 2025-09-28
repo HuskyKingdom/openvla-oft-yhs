@@ -1,6 +1,6 @@
 (define (problem LIBERO_Tabletop_Manipulation)
   (:domain robosuite)
-  (:language Pick the cookies from the cabinet and place it on the plate)
+  (:language Pick the akita black bowl from the cabinet and place it on the plate)
     (:regions
       (plate_region
           (:target main_table)
@@ -127,9 +127,9 @@
 
   (:init
     (On akita_black_bowl_1 main_table_ramekin_region)
-    (On akita_black_bowl_2 main_table_table_center)
+    (On akita_black_bowl_2 wooden_cabinet_1_top_side)
     (On plate_1 main_table_plate_region)
-    (On cookies_1 wooden_cabinet_1_top_side)
+    (On cookies_1 main_table_table_center)
     (On glazed_rim_porcelain_ramekin_1 main_table_table_center_side)
     (On wooden_cabinet_1 main_table_cabinet_region)
     (On flat_stove_1 main_table_stove_region)
