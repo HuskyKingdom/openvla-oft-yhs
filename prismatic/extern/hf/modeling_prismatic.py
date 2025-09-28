@@ -953,7 +953,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             return_dict=True,
         )
 
-        print(language_model_output.hidden_states)
+        print(language_model_output.hidden_states[-1].shape)
 
         assert 1==2
 
