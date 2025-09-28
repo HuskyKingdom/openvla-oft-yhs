@@ -9,7 +9,7 @@ but exactly replicate the logic in `prismatic.models.vlms.prismatic.py`.
 import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, ClassVar, Dict, List, Optional, Tuple, Union, Sequence
 
 import numpy as np
 import timm
@@ -20,6 +20,9 @@ import transformers
 from timm.models.vision_transformer import LayerScale
 from transformers import AutoModelForCausalLM, PretrainedConfig, PreTrainedModel
 from transformers.modeling_outputs import ModelOutput
+
+import numpy as np
+import matplotlib.pyplot as plt
 
 from prismatic.training.train_utils import (
     get_current_action_mask,
@@ -36,6 +39,157 @@ from prismatic.vla.constants import (
 )
 
 from .configuration_prismatic import OpenVLAConfig, PrismaticConfig
+
+
+def _segments_from_types(token_types: Sequence[str]) -> List[Tuple[int, int, str]]:
+    """Collapse consecutive equal labels into segments: (start, end_exclusive, label)."""
+    if not token_types:
+        return []
+    segs = []
+    s = 0
+    cur = token_types[0]
+    for i in range(1, len(token_types)):
+        if token_types[i] != cur:
+            segs.append((s, i, cur))
+            s = i
+            cur = token_types[i]
+    segs.append((s, len(token_types), cur))
+    return segs
+
+
+def _midpoints_labels(segments: List[Tuple[int, int, str]]):
+    mids, labs = [], []
+    for s, e, lab in segments:
+        mids.append((s + e - 1) / 2.0)
+        labs.append(lab)
+    return mids, labs
+
+
+def save_attention_heatmap(
+    attentions: Union[np.ndarray, "torch.Tensor"],
+    NUM_PATCHES: int,
+    NUM_PROMPT_TOKENS: int,
+    ACTION_DIM: int,
+    NUM_ACTIONS_CHUNK: int,
+    save_path: str,
+    head: Optional[int] = None,      # None → mean over heads
+    batch: int = 0,                  # pick batch index when attentions are 4D
+    query_subset: Optional[Union[str, Sequence[str]]] = "action",  # default: only action queries
+    key_subset: Optional[Union[str, Sequence[str]]] = None,        # default: all keys
+    title: Optional[str] = None,
+) -> str:
+    """
+    Save a 2D attention heatmap, segmenting axes via NUM_* variables.
+
+    `attentions` accepts shapes:
+      - (B, H, Q, K)  # HF typical
+      - (H, Q, K)
+      - (Q, K)
+
+    Sequence layout assumed (per your indexing code):
+      [patches | prompt_tokens | action_tokens | (optional) other]
+
+    Returns the path where the figure is saved.
+    """
+    # Lazy import torch typing
+    try:
+        import torch  # noqa
+        _is_torch = True
+    except Exception:
+        _is_torch = False
+
+    attn = attentions
+    if _is_torch and "torch" in str(type(attentions)):
+        attn = attentions.detach().cpu().numpy()
+
+    if attn.ndim == 4:
+        # (B, H, Q, K)
+        attn = attn[batch]  # -> (H, Q, K)
+    elif attn.ndim == 3:
+        pass  # (H, Q, K)
+    elif attn.ndim == 2:
+        pass  # (Q, K)
+    else:
+        raise ValueError(f"Unexpected attention ndim={attn.ndim}, expected 2/3/4")
+
+    # Reduce/choose head
+    if attn.ndim == 3:
+        if head is None:
+            attn2d = attn.mean(axis=0)  # (Q, K)
+        else:
+            attn2d = attn[head]
+    else:
+        attn2d = attn  # already (Q, K)
+
+    Q, K = attn2d.shape
+
+    # Build token types by NUM_* variables
+    num_patches = int(NUM_PATCHES)
+    num_prompt = int(NUM_PROMPT_TOKENS)
+    num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
+    remaining = max(0, K - (num_patches + num_prompt + num_actions))
+
+    token_types = (
+        ["patch"] * num_patches
+        + ["prompt"] * num_prompt
+        + ["action"] * num_actions
+        + (["other"] * remaining)
+    )
+
+    # Subset indices by type helper
+    def _indices_for(types: Sequence[str], wanted: Union[str, Sequence[str]]):
+        if isinstance(wanted, str):
+            wanted = [wanted]
+        wanted = set(wanted)
+        return np.array([i for i, t in enumerate(types) if t in wanted], dtype=int)
+
+    # Apply optional subsets
+    q_idx = np.arange(Q)
+    k_idx = np.arange(K)
+    if query_subset is not None:
+        q_idx = _indices_for(token_types, query_subset)
+    if key_subset is not None:
+        k_idx = _indices_for(token_types, key_subset)
+
+    attn_view = attn2d[np.ix_(q_idx, k_idx)]
+
+    # Prepare visible types for the (possibly) sliced axes
+    q_types_view = [token_types[i] for i in q_idx]
+    k_types_view = [token_types[i] for i in k_idx]
+    q_segments = _segments_from_types(q_types_view)
+    k_segments = _segments_from_types(k_types_view)
+
+    # Plot (no explicit colors; single figure; no show)
+    fig = plt.figure(figsize=(8, 6), dpi=160)
+    ax = plt.gca()
+    ax.imshow(attn_view, aspect="auto")  # default colormap, no style specified
+
+    # Draw boundaries
+    for s, _, _ in q_segments:
+        ax.axhline(s - 0.5, linewidth=0.6)
+    for s, _, _ in k_segments:
+        ax.axvline(s - 0.5, linewidth=0.6)
+
+    # Tick labels at segment midpoints
+    y_mids, y_labs = _midpoints_labels(q_segments)
+    x_mids, x_labs = _midpoints_labels(k_segments)
+    ax.set_yticks(y_mids)
+    ax.set_yticklabels(y_labs, fontsize=8)
+    ax.set_xticks(x_mids)
+    ax.set_xticklabels(x_labs, rotation=45, ha="right", fontsize=8)
+
+    ax.set_xlabel("Keys (columns)")
+    ax.set_ylabel("Queries (rows)")
+    if title is None:
+        head_txt = f"head=mean" if head is None else f"head={head}"
+        title = f"Attention (softmax weights), {head_txt}, B={batch}"
+    ax.set_title(title)
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    return save_path
+
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -916,7 +1070,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         )
 
         return mm_exclusion
-
+    
     def _regression_or_discrete_prediction(
         self,
         input_embeddings,
@@ -953,7 +1107,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             return_dict=True,
         )
 
-        print(language_model_output.attentions[-1].shape)
+
+        # visulization last layer attention
+        last_attn = language_model_output.attentions[-1].shape
+        save_attention_heatmap(last_attn,NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,"/home/aup/YuhangWorkspace/openvla-oft-yhs/attention_last.png")
 
         assert 1==2
 
