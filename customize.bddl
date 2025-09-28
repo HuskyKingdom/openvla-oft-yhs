@@ -54,7 +54,7 @@
       (table_center_side
           (:target main_table)
           (:ranges (
-              (-0.04 -0.01 0.01 0.01)
+              (-0.10 -0.13 -0.05 -0.11)
             )
           )
       )
