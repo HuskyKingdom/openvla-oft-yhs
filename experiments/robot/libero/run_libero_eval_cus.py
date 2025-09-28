@@ -132,7 +132,7 @@ class GenerateConfig:
     seed: int = 7                                    # Random Seed (for reproducibility)
     h_decoding:bool = False
     save_video:bool = False
-    e_decoding:bool = False
+    e_decoding:bool = True
     task_label:str = ""
 
     # fmt: on
@@ -476,7 +476,7 @@ def run_task(
         # loading energy model
         if cfg.e_decoding:
             hnn_potential_mlp_head = EnergyModel(model.llm_dim,7).to(model.device)
-            hnn_potential_mlp_head.load_state_dict(torch.load("/mnt/nfs/sgyson10/openvla-oft-yhs/ckpoints/energy_refined_80000.pt"))
+            hnn_potential_mlp_head.load_state_dict(torch.load("/home/aup/YuhangWorkspace/openvla-oft-yhs/ckpts/energy_refined_80000.pt"))
         else:
             hnn_potential_mlp_head = None
 
