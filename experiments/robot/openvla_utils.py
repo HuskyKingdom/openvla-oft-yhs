@@ -851,7 +851,7 @@ def get_context_mask_for_inference(context_hidden, action_head, num_patches):
     return context_mask
 
 
-def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=1.0, clip_frac=0.1,
+def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1, clip_frac=0.2,
                                    act_range=None, correct_first_only=False):
     """
     A_bc: [H, Da] (numpy array or torch tensor)
