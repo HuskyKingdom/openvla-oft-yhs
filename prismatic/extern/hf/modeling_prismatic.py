@@ -74,7 +74,7 @@ def save_attention_heatmap(
     save_path: str,
     head: Optional[int] = None,      # None → mean over heads
     batch: int = 0,                  # pick batch index when attentions are 4D
-    query_subset: Optional[Union[str, Sequence[str]]] = "action",  # default: only action queries
+    query_subset: Optional[Union[str, Sequence[str]]] = None,  # default: only action queries
     key_subset: Optional[Union[str, Sequence[str]]] = None,        # default: all keys
     title: Optional[str] = None,
 ) -> str:
