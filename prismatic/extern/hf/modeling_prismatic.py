@@ -162,7 +162,7 @@ def save_attention_heatmap(
     # Plot (no explicit colors; single figure; no show)
     fig = plt.figure(figsize=(8, 6), dpi=160)
     ax = plt.gca()
-    ax.imshow(attn_view, aspect="auto")  # default colormap, no style specified
+    im = ax.imshow(attn_view, aspect="auto", cmap="coolwarm")  # default colormap, no style specified
 
     # Draw boundaries
     for s, _, _ in q_segments:
@@ -184,6 +184,8 @@ def save_attention_heatmap(
         head_txt = f"head=mean" if head is None else f"head={head}"
         title = f"Attention (softmax weights), {head_txt}, B={batch}"
     ax.set_title(title)
+
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches="tight")
