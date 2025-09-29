@@ -887,6 +887,8 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Compute vocab size for de-tokenization -- revert added "multiple of"
         self.vocab_size = self.config.text_config.vocab_size - self.config.pad_to_multiple_of
 
+        self.timestep_track = 0
+
     def _prepare_input_for_action_prediction(self, input_ids, attention_mask):
         """Prepares input for action prediction by adding necessary tokens"""
         # Add (ACTION_DIM * NUM_ACTIONS_CHUNK) placeholder tokens to input_ids to simulate action tokens
@@ -1112,9 +1114,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # visulization last layer attention
         last_attn = language_model_output.attentions[25]
-        save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,"/home/aup/YuhangWorkspace/openvla-oft-yhs/attention_last.png")
-        assert 1==2
-
+        save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
+        self.timestep_track += 8
+        
+        
         # Extract hidden states for action tokens
         last_hidden_states = language_model_output.hidden_states[-1]  # (B, seq_len, D)
         all_hiddens_processed = []
