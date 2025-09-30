@@ -135,8 +135,8 @@ class GenerateConfig:
     e_decoding:bool = False
     task_label:str = "dummy"
 
-    cus_task: str = None
-    remove_wrap: bool = False
+    cus_task:str = None
+    remove_wrap:bool = False
 
     # fmt: on
 
