@@ -88,7 +88,7 @@ def save_strongest_column_attention_1d(
     remaining   = max(0, K - (num_other_token + num_patches + num_other_token + num_prompt + num_actions))
     token_types = (["<BOS>"] + ["patch"]*num_patches + ["pro."] + ["prot."]*num_prompt +
                    ["action"]*num_actions + (["other"]*remaining))
-    print(token_types)
+    print(f"token types len {len(token_types)}")
     assert len(token_types) == K
 
     # --- 选择 query 子集（可选）
@@ -113,7 +113,7 @@ def save_strongest_column_attention_1d(
         col_scores = col_vecs.max(axis=0)
     else:
         raise ValueError(f"Unsupported col_reduce={col_reduce}")
-    best_col = int(120)
+    best_col = int(col_scores.argmax())
 
     # --- 取该列的一维注意力（针对选定 queries）
     one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
@@ -122,6 +122,7 @@ def save_strongest_column_attention_1d(
     ax  = plt.gca()
 
     band = one_d[None, :]  # (1, L)
+    print(band.shape)
     im = ax.imshow(band, aspect="auto", cmap="coolwarm")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
