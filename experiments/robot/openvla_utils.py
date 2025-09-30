@@ -933,7 +933,10 @@ def get_vla_action(
         primary_image = all_images.pop(0)
 
         # Build VLA prompt
-        prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
+        if cfg.remove_wrap:
+            prompt = task_label.lower()
+        else:
+            prompt = f"In: What action should the robot take to {task_label.lower()}?\nOut:"
 
         # Process primary image
         inputs = processor(prompt, primary_image).to(DEVICE, dtype=torch.bfloat16)
