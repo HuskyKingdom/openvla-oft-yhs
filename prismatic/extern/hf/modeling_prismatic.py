@@ -48,12 +48,11 @@ def save_strongest_column_attention_1d(
     ACTION_DIM: int,
     NUM_ACTIONS_CHUNK: int,
     save_path: str,
-    head: Optional[int] = None,     # None→对所有头取均值
-    batch: int = 0,                 # 当输入是4D时选哪个batch
-    query_subset: Optional[Union[str, Sequence[str]]] = None,  # 限定只看哪些query类型（默认 None = 全部）
-    col_reduce: str = "mean",       # 计算“最深列”的归约方式: "mean" | "sum" | "max"
+    head: Optional[int] = None,
+    batch: int = 0,
+    query_subset: Optional[Union[str, Sequence[str]]] = None,
+    col_reduce: str = "mean",
 ) -> Tuple[int, str]:
-
     # --- to numpy & squeeze to (Q,K)
     try:
         import torch  # noqa
@@ -65,42 +64,31 @@ def save_strongest_column_attention_1d(
     if is_torch and "torch" in str(type(attentions)):
         attn = attentions.detach().cpu().numpy()
 
-    if attn.ndim == 4:
-        # (B,H,Q,K) -> (H,Q,K)
-        attn = attn[batch]
-    elif attn.ndim == 3:
-        # (H,Q,K)
+    if attn.ndim == 4:      # (B,H,Q,K)
+        attn = attn[batch]  # -> (H,Q,K)
+    elif attn.ndim == 3:    # (H,Q,K)
         pass
-    elif attn.ndim == 2:
-        # (Q,K)
+    elif attn.ndim == 2:    # (Q,K)
         pass
     else:
         raise ValueError(f"Unexpected attention ndim={attn.ndim}")
 
     # 选/聚合头 -> (Q,K)
     if attn.ndim == 3:
-        if head is None:
-            attn2d = attn.mean(axis=0)
-        else:
-            attn2d = attn[head]
+        attn2d = attn.mean(axis=0) if head is None else attn[head]
     else:
-        attn2d = attn  # already (Q,K)
+        attn2d = attn
 
     Q, K = attn2d.shape
 
-    # --- 构造 token 类型表（Q/K 同长，decoder自注意里Q与K长度相同）
+
     num_patches = int(NUM_PATCHES)
     num_prompt  = int(NUM_PROMPT_TOKENS)
     num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
     remaining   = max(0, K - (num_patches + num_prompt + num_actions))
-
-    token_types = (
-        ["patch"]  * num_patches +
-        ["prompt"] * num_prompt  +
-        ["action"] * num_actions +
-        (["other"] * remaining)
-    )
-    assert len(token_types) == K, f"token_types({len(token_types)}) != K({K})"
+    token_types = (["patch"]*num_patches + ["prompt"]*num_prompt +
+                   ["action"]*num_actions + (["other"]*remaining))
+    assert len(token_types) == K
 
     # --- 选择 query 子集（可选）
     def _indices_for(types: Sequence[str], wanted: Union[str, Sequence[str]]):
@@ -111,11 +99,11 @@ def save_strongest_column_attention_1d(
 
     q_idx = np.arange(Q)
     if query_subset is not None:
-        q_types_for_q_axis = token_types[:Q]  # Q维上也按照同样布局
+        q_types_for_q_axis = token_types[:Q]
         q_idx = _indices_for(q_types_for_q_axis, query_subset)
 
-    # --- 计算“最深列” (对每列在选定的 queries 上归约)
-    col_vecs = attn2d[q_idx, :]  # shape: (len(q_idx), K)
+    # --- 计算“最深列”
+    col_vecs = attn2d[q_idx, :]  # (len(q_idx), K)
     if col_reduce == "mean":
         col_scores = col_vecs.mean(axis=0)
     elif col_reduce == "sum":
@@ -124,42 +112,40 @@ def save_strongest_column_attention_1d(
         col_scores = col_vecs.max(axis=0)
     else:
         raise ValueError(f"Unsupported col_reduce={col_reduce}")
-
     best_col = int(col_scores.argmax())
 
-    # --- 取该列的 1D 注意力: 长度 = 选定 queries 的个数
+    # --- 取该列的一维注意力（针对选定 queries）
     one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
 
-    # --- 画 1D 热力图（1 x len(q_idx) 的条带），并标注 token 边界
     fig = plt.figure(figsize=(10, 2.4), dpi=160)
     ax  = plt.gca()
 
-    # 画热力图条带
     band = one_d[None, :]  # (1, L)
     im = ax.imshow(band, aspect="auto", cmap="coolwarm")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    
-    ax.set_xticks(np.arange(len(q_idx)))
-    ax.set_xticklabels([str(int(i)) for i in q_idx], rotation=90, fontsize=7)
-    ax.set_yticks([])
 
     q_types_view = [token_types[i] for i in q_idx]
-    q_segments = _segments_from_types(q_types_view)                 # 用你上面的工具
+    q_segments = _segments_from_types(q_types_view)      # [(s,e,label), ...]
     x_mids, x_labs = _midpoints_labels(q_segments)
 
+ 
     for s, _, _ in q_segments:
         ax.axvline(s - 0.5, linewidth=0.6)
+
+    ax.set_xticks([])
+    ax.set_xlabel("") 
+    ax.tick_params(bottom=False)
 
     ax2 = ax.twiny()
     ax2.set_xlim(ax.get_xlim())
     ax2.set_xticks(x_mids)
     ax2.set_xticklabels(x_labs, fontsize=8)
     ax2.tick_params(axis='x', pad=2)
+    ax.set_yticks([])
 
-    ax.set_xlabel("Query token index (after optional subset)")
     ax.set_title(f"1D attention toward strongest key column = {best_col} "
-                 f"[type={token_types[best_col]}]  (reduce={col_reduce})")
+                 f"[type={token_types[best_col]}]")
 
     plt.tight_layout()
     plt.savefig(save_path, bbox_inches="tight")
