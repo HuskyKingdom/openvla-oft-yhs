@@ -88,7 +88,7 @@ def save_strongest_column_attention_1d(
     remaining   = max(0, K - (num_other_token + num_patches + num_other_token + num_prompt + num_actions))
     token_types = (["<BOS>"] + ["patch"]*num_patches + ["pro."] + ["prot."]*num_prompt +
                    ["action"]*num_actions + (["other"]*remaining))
-    print(remaining)
+    print(token_types)
     assert len(token_types) == K
 
     # --- 选择 query 子集（可选）
@@ -113,7 +113,7 @@ def save_strongest_column_attention_1d(
         col_scores = col_vecs.max(axis=0)
     else:
         raise ValueError(f"Unsupported col_reduce={col_reduce}")
-    best_col = int(col_scores.argmax())
+    best_col = int(120)
 
     # --- 取该列的一维注意力（针对选定 queries）
     one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
@@ -1227,19 +1227,19 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # visulization last layer attention
         last_attn = language_model_output.attentions[-1]
-        save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
-        # best_col_idx, best_col_type = save_strongest_column_attention_1d(
-        #     last_attn.to(torch.float32),
-        #     NUM_PATCHES=NUM_PATCHES,
-        #     NUM_PROMPT_TOKENS=NUM_PROMPT_TOKENS,
-        #     ACTION_DIM=ACTION_DIM,
-        #     NUM_ACTIONS_CHUNK=NUM_ACTIONS_CHUNK,
-        #     save_path=f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_STRONGCOL_t_{self.timestep_track}.png",
-        #     head=None,          
-        #     batch=0,
-        #     query_subset=None,  
-        #     col_reduce="sum",   
-        # )
+        # save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
+        best_col_idx, best_col_type = save_strongest_column_attention_1d(
+            last_attn.to(torch.float32),
+            NUM_PATCHES=NUM_PATCHES,
+            NUM_PROMPT_TOKENS=NUM_PROMPT_TOKENS,
+            ACTION_DIM=ACTION_DIM,
+            NUM_ACTIONS_CHUNK=NUM_ACTIONS_CHUNK,
+            save_path=f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_STRONGCOL_t_{self.timestep_track}.png",
+            head=None,          
+            batch=0,
+            query_subset=None,  
+            col_reduce="sum",   
+        )
         self.timestep_track += 8
         
         
