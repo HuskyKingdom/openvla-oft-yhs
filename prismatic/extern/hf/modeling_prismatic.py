@@ -1243,7 +1243,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             inputs_embeds=multimodal_embeddings,
             labels=None,
             use_cache=None,
-            output_attentions=True,
+            output_attentions=False, # set true
             output_hidden_states=True,
             return_dict=True,
         )

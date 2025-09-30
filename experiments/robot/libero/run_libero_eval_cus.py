@@ -516,7 +516,7 @@ def run_task(
             total_successes += 1
 
         # Save replay video
-        if True:
+        if cfg.save_video:
             save_rollout_video(
                 replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
             )
