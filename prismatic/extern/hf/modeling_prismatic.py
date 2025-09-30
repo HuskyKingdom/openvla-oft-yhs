@@ -41,6 +41,132 @@ from prismatic.vla.constants import (
 from .configuration_prismatic import OpenVLAConfig, PrismaticConfig
 
 
+def save_strongest_column_attention_1d(
+    attentions: Union[np.ndarray, "torch.Tensor"],
+    NUM_PATCHES: int,
+    NUM_PROMPT_TOKENS: int,
+    ACTION_DIM: int,
+    NUM_ACTIONS_CHUNK: int,
+    save_path: str,
+    head: Optional[int] = None,     # None→对所有头取均值
+    batch: int = 0,                 # 当输入是4D时选哪个batch
+    query_subset: Optional[Union[str, Sequence[str]]] = None,  # 限定只看哪些query类型（默认 None = 全部）
+    col_reduce: str = "mean",       # 计算“最深列”的归约方式: "mean" | "sum" | "max"
+) -> Tuple[int, str]:
+
+    # --- to numpy & squeeze to (Q,K)
+    try:
+        import torch  # noqa
+        is_torch = True
+    except Exception:
+        is_torch = False
+
+    attn = attentions
+    if is_torch and "torch" in str(type(attentions)):
+        attn = attentions.detach().cpu().numpy()
+
+    if attn.ndim == 4:
+        # (B,H,Q,K) -> (H,Q,K)
+        attn = attn[batch]
+    elif attn.ndim == 3:
+        # (H,Q,K)
+        pass
+    elif attn.ndim == 2:
+        # (Q,K)
+        pass
+    else:
+        raise ValueError(f"Unexpected attention ndim={attn.ndim}")
+
+    # 选/聚合头 -> (Q,K)
+    if attn.ndim == 3:
+        if head is None:
+            attn2d = attn.mean(axis=0)
+        else:
+            attn2d = attn[head]
+    else:
+        attn2d = attn  # already (Q,K)
+
+    Q, K = attn2d.shape
+
+    # --- 构造 token 类型表（Q/K 同长，decoder自注意里Q与K长度相同）
+    num_patches = int(NUM_PATCHES)
+    num_prompt  = int(NUM_PROMPT_TOKENS)
+    num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
+    remaining   = max(0, K - (num_patches + num_prompt + num_actions))
+
+    token_types = (
+        ["patch"]  * num_patches +
+        ["prompt"] * num_prompt  +
+        ["action"] * num_actions +
+        (["other"] * remaining)
+    )
+    assert len(token_types) == K, f"token_types({len(token_types)}) != K({K})"
+
+    # --- 选择 query 子集（可选）
+    def _indices_for(types: Sequence[str], wanted: Union[str, Sequence[str]]):
+        if isinstance(wanted, str):
+            wanted = [wanted]
+        wanted = set(wanted)
+        return np.array([i for i, t in enumerate(types) if t in wanted], dtype=int)
+
+    q_idx = np.arange(Q)
+    if query_subset is not None:
+        q_types_for_q_axis = token_types[:Q]  # Q维上也按照同样布局
+        q_idx = _indices_for(q_types_for_q_axis, query_subset)
+
+    # --- 计算“最深列” (对每列在选定的 queries 上归约)
+    col_vecs = attn2d[q_idx, :]  # shape: (len(q_idx), K)
+    if col_reduce == "mean":
+        col_scores = col_vecs.mean(axis=0)
+    elif col_reduce == "sum":
+        col_scores = col_vecs.sum(axis=0)
+    elif col_reduce == "max":
+        col_scores = col_vecs.max(axis=0)
+    else:
+        raise ValueError(f"Unsupported col_reduce={col_reduce}")
+
+    best_col = int(col_scores.argmax())
+
+    # --- 取该列的 1D 注意力: 长度 = 选定 queries 的个数
+    one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
+
+    # --- 画 1D 热力图（1 x len(q_idx) 的条带），并标注 token 边界
+    fig = plt.figure(figsize=(10, 2.4), dpi=160)
+    ax  = plt.gca()
+
+    # 画热力图条带
+    band = one_d[None, :]  # (1, L)
+    im = ax.imshow(band, aspect="auto", cmap="coolwarm")
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    
+    ax.set_xticks(np.arange(len(q_idx)))
+    ax.set_xticklabels([str(int(i)) for i in q_idx], rotation=90, fontsize=7)
+    ax.set_yticks([])
+
+    q_types_view = [token_types[i] for i in q_idx]
+    q_segments = _segments_from_types(q_types_view)                 # 用你上面的工具
+    x_mids, x_labs = _midpoints_labels(q_segments)
+
+    for s, _, _ in q_segments:
+        ax.axvline(s - 0.5, linewidth=0.6)
+
+    ax2 = ax.twiny()
+    ax2.set_xlim(ax.get_xlim())
+    ax2.set_xticks(x_mids)
+    ax2.set_xticklabels(x_labs, fontsize=8)
+    ax2.tick_params(axis='x', pad=2)
+
+    ax.set_xlabel("Query token index (after optional subset)")
+    ax.set_title(f"1D attention toward strongest key column = {best_col} "
+                 f"[type={token_types[best_col]}]  (reduce={col_reduce})")
+
+    plt.tight_layout()
+    plt.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+
+    return best_col, token_types[best_col]
+
 def _segments_from_types(token_types: Sequence[str]) -> List[Tuple[int, int, str]]:
     """Collapse consecutive equal labels into segments: (start, end_exclusive, label)."""
     if not token_types:
@@ -1113,8 +1239,20 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
 
         # visulization last layer attention
-        last_attn = language_model_output.attentions[12]
-        save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
+        last_attn = language_model_output.attentions[-1]
+        # save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
+        best_col_idx, best_col_type = save_strongest_column_attention_1d(
+            last_attn.to(torch.float32),
+            NUM_PATCHES=NUM_PATCHES,
+            NUM_PROMPT_TOKENS=NUM_PROMPT_TOKENS,
+            ACTION_DIM=ACTION_DIM,
+            NUM_ACTIONS_CHUNK=NUM_ACTIONS_CHUNK,
+            save_path=f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_STRONGCOL_t_{self.timestep_track}.png",
+            head=None,          
+            batch=0,
+            query_subset=None,  
+            col_reduce="mean",   
+        )
         self.timestep_track += 8
         
         
