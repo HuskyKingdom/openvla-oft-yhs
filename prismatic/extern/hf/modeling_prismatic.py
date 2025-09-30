@@ -86,7 +86,7 @@ def save_strongest_column_attention_1d(
     num_prompt  = int(NUM_PROMPT_TOKENS)
     num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
     remaining   = max(0, K - (num_other_token + num_other_token + num_patches  + num_prompt + num_actions))
-    token_types = (["patch"]*num_patches + 2 + ["prot."]*num_prompt +
+    token_types = (["patch"]* (num_patches + 2) + ["prot."]*num_prompt +
                    ["action"]*num_actions + (["other"]*remaining)) # +2 plus patch label and <bos>
     
     print(f"path len {num_patches}, prompt len {num_prompt}, action len {num_actions}")
