@@ -82,12 +82,15 @@ def save_strongest_column_attention_1d(
     Q, K = attn2d.shape
 
     num_other_token = 1
-    num_patches = int(NUM_PATCHES)
+    num_patches = int(NUM_PATCHES) # includes props.
     num_prompt  = int(NUM_PROMPT_TOKENS)
     num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
     remaining   = max(0, K - (num_other_token + num_other_token + num_patches  + num_prompt + num_actions))
-    token_types = (["<BOS>"] + ["im <cls>"] + ["patch"]*num_patches + ["prot."]*num_prompt +
-                   ["action"]*num_actions + (["other"]*remaining))
+    token_types = (["patch"]*num_patches + 2 + ["prot."]*num_prompt +
+                   ["action"]*num_actions + (["other"]*remaining)) # +2 plus patch label and <bos>
+    
+    print(f"path len {num_patches}, prompt len {num_prompt}, action len {num_actions}")
+    # <BOS> + <PatchLabel> + <Patch> + <Prot> + <Actions>
     assert len(token_types) == K
 
     # --- 选择 query 子集（可选）
