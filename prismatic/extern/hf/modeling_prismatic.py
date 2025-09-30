@@ -85,10 +85,9 @@ def save_strongest_column_attention_1d(
     num_patches = int(NUM_PATCHES)
     num_prompt  = int(NUM_PROMPT_TOKENS)
     num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
-    remaining   = max(0, K - (num_other_token + num_patches + num_other_token + num_prompt + num_actions))
-    token_types = (["<BOS>"] + ["patch"]*num_patches + ["pro."] + ["prot."]*num_prompt +
+    remaining   = max(0, K - (num_other_token + num_other_token + num_patches  + num_prompt + num_actions))
+    token_types = (["<BOS>"] + ["im <cls>"] + ["patch"]*num_patches + ["prot."]*num_prompt +
                    ["action"]*num_actions + (["other"]*remaining))
-    print(f"token types len {len(token_types)}")
     assert len(token_types) == K
 
     # --- 选择 query 子集（可选）
@@ -122,14 +121,13 @@ def save_strongest_column_attention_1d(
     ax  = plt.gca()
 
     band = one_d[None, :]  # (1, L)
-    print(band.shape)
     im = ax.imshow(band, aspect="auto", cmap="coolwarm")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
 
     q_types_view = [token_types[i] for i in q_idx]
     q_segments = _segments_from_types(q_types_view)      # [(s,e,label), ...]
-    x_mids, x_labs = _midpoints_labels(q_segments)
+    x_start, x_labs = _starts_labels(q_segments)
 
  
     for s, _, _ in q_segments:
@@ -141,7 +139,7 @@ def save_strongest_column_attention_1d(
 
     ax2 = ax.twiny()
     ax2.set_xlim(ax.get_xlim())
-    ax2.set_xticks(x_mids)
+    ax2.set_xticks(x_start)
     ax2.set_xticklabels(x_labs, fontsize=8)
     ax2.tick_params(axis='x', pad=2)
     ax.set_yticks([])
@@ -155,28 +153,50 @@ def save_strongest_column_attention_1d(
 
     return best_col, token_types[best_col]
 
-def _segments_from_types(token_types: Sequence[str]) -> List[Tuple[int, int, str]]:
-    """Collapse consecutive equal labels into segments: (start, end_exclusive, label)."""
-    if not token_types:
-        return []
+# def _segments_from_types(token_types: Sequence[str]) -> List[Tuple[int, int, str]]:
+#     """Collapse consecutive equal labels into segments: (start, end_exclusive, label)."""
+#     if not token_types:
+#         return []
+#     segs = []
+#     s = 0
+#     cur = token_types[0]
+#     for i in range(1, len(token_types)):
+#         if token_types[i] != cur:
+#             segs.append((s, i, cur))
+#             s = i
+#             cur = token_types[i]
+#     segs.append((s, len(token_types), cur))
+#     return segs
+
+
+# def _midpoints_labels(segments: List[Tuple[int, int, str]]):
+#     mids, labs = [], []
+#     for s, e, lab in segments:
+#         mids.append((s + e - 1) / 2.0)
+#         labs.append(lab)
+#     return mids, labs
+
+
+
+def _segments_from_types(types):
+    """[(start, end_exclusive, label), ...]"""
     segs = []
+    if not types:
+        return segs
     s = 0
-    cur = token_types[0]
-    for i in range(1, len(token_types)):
-        if token_types[i] != cur:
+    cur = types[0]
+    for i, t in enumerate(types + ["<END>"]):
+        if i == len(types) or t != cur:
             segs.append((s, i, cur))
-            s = i
-            cur = token_types[i]
-    segs.append((s, len(token_types), cur))
+            if i < len(types):
+                s = i; cur = t
     return segs
 
-
-def _midpoints_labels(segments: List[Tuple[int, int, str]]):
-    mids, labs = [], []
-    for s, e, lab in segments:
-        mids.append((s + e - 1) / 2.0)
-        labs.append(lab)
-    return mids, labs
+def _starts_labels(segs):
+    # 段起点（与图像格线 s-0.5 对齐）。刻度直接放在 s 即可
+    starts = [s for s, _, _ in segs]
+    labs   = [lbl for _, _, lbl in segs]
+    return starts, labs
 
 
 def save_attention_heatmap(
