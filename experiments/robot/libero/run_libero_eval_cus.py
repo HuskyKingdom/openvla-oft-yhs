@@ -135,7 +135,7 @@ class GenerateConfig:
     e_decoding:bool = False
     task_label:str = "dummy"
 
-    cus_task:str = None
+    cus_task:str = ""
     remove_wrap:bool = False
 
     # fmt: on
@@ -424,7 +424,7 @@ def run_task(
 ):
     """Run evaluation for a single task."""
 
-    if cfg.cus_task is not None:
+    if cfg.cus_task != "":
 
         # env_args = {"bddl_file_name": "/home/aup/YuhangWorkspace/openvla-oft-yhs/customize.bddl", "camera_heights": 256, "camera_widths": 256}
         # env = OffScreenRenderEnv(**env_args)
