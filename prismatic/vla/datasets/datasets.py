@@ -27,7 +27,7 @@ from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_
 
 
 class TextParaphraser:
-    def __init__(self, model_name='t5-small'):
+    def __init__(self, model_name='t5-base'):
         """
         reprash by T5
         """
@@ -65,7 +65,8 @@ class TextParaphraser:
                 repetition_penalty=3.0,
                 length_penalty=2.0,
                 temperature=0.9,
-                top_k=50,
+                do_sample = True,
+                top_k=50
             )
         
         # 解码输出
