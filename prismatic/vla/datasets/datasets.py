@@ -14,7 +14,7 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase, T5ForConditionalGeneration, T5Tokenizer
-
+import random
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
@@ -25,65 +25,29 @@ from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_da
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights
 
 
+def rephrase():
 
-class TextParaphraser:
-    def __init__(self, model_name='t5-base'):
-        """
-        reprash by T5
-        """
-        self.tokenizer = T5Tokenizer.from_pretrained(model_name)
-        self.model = T5ForConditionalGeneration.from_pretrained(model_name)
-        
-    def paraphrase(self, text, max_length=128, num_return_sequences=1):
-        """
-        reprash
-        
-        参数:
-            text
-            max_length
-            num_return_sequences
-        """
-        # 构建T5输入格式
-        input_text = f"rewrite this: {text}"
-        
-        # 编码输入
-        inputs = self.tokenizer.encode(
-            input_text, 
-            return_tensors='pt', 
-            max_length=max_length, 
-            truncation=True
-        )
-        
-        # 生成输出
-        with torch.no_grad():
-            outputs = self.model.generate(
-                inputs,
-                max_length=max_length,
-                num_return_sequences=num_return_sequences,
-                num_beams=5,
-                early_stopping=True,
-                repetition_penalty=3.0,
-                length_penalty=2.0,
-                temperature=0.9,
-                do_sample = True,
-                top_k=50
-            )
-        
-        # 解码输出
-        paraphrases = []
-        for output in outputs:
-            paraphrase = self.tokenizer.decode(
-                output, 
-                skip_special_tokens=True,
-                clean_up_tokenization_spaces=True
-            )
-            paraphrases.append(paraphrase)
-        
-        return paraphrases[0] if num_return_sequences == 1 else paraphrases
+    templates = ["What action should the robot take to",
+                 "What is the appropriate action for the robot to",
+                 "What is the correct procedure for the robot to",
+                 "What is the required robot action to",
+                 "What operation should the robot execute to",
+                 "What is the robot's required move to",
+                 "What course of action should the robot follow to",
+                 "which action would the robot take to achive",
+                 "Determine the robot's next move to",
+                 "Identify the action for the robot to",
+                 "Specify the action the robot needs to",
+                 "Define the robot's action to",
+                 "What is the robot's assigned action to",
+                 "what is the robot action required for"]
+    
+    random_index = random.randrange(len(templates))
 
-def paraphrase_with_model(text):
-    paraphraser = TextParaphraser()
-    return paraphraser.paraphrase(text)
+    return templates[random_index]
+
+
+
 
 @dataclass
 class RLDSBatchTransform:
@@ -102,10 +66,6 @@ class RLDSBatchTransform:
         lang = rlds_batch["task"]["language_instruction"].decode().lower()
         actions = rlds_batch["action"]
 
-        lang_re = paraphrase_with_model(lang)
-        print(lang,lang_re)
-        assert 1==2
-
         # Construct Chat-based Prompt =>> Input is default query + language instruction, output are the action tokens
         prompt_builder = self.prompt_builder_fn("openvla")
 
@@ -119,7 +79,7 @@ class RLDSBatchTransform:
         action_chunk_len = len(action_chunk_string)
 
         conversation = [
-            {"from": "human", "value": f"What action should the robot take to {lang}?"},
+            {"from": "human", "value": f"{rephrase()} {lang}"},
             {"from": "gpt", "value": action_chunk_string},
         ]
         for turn in conversation:
