@@ -44,7 +44,7 @@ class TextParaphraser:
             num_return_sequences
         """
         # 构建T5输入格式
-        input_text = f"paraphrase: {text}"
+        input_text = f"rewrite this: {text}"
         
         # 编码输入
         inputs = self.tokenizer.encode(
@@ -62,9 +62,10 @@ class TextParaphraser:
                 num_return_sequences=num_return_sequences,
                 num_beams=5,
                 early_stopping=True,
-                repetition_penalty=2.5,
-                length_penalty=1.0,
-                temperature=0.7
+                repetition_penalty=3.0,
+                length_penalty=2.0,
+                temperature=0.9,
+                top_k=50,
             )
         
         # 解码输出
