@@ -23,7 +23,7 @@ echo N | python experiments/robot/libero/run_libero_eval.py \
 
 echo N | python experiments/robot/libero/run_libero_eval.py \
     --pretrained_checkpoint /mnt/nfs/$FARM_USER/openvla-oft-yhs/ckpoints/pre-trained_universal \
-    --task_suite_name libero_long --e_decoding True --energy_k 3 --task_label energy_k4_long
+    --task_suite_name libero_long --e_decoding True --energy_k 4 --task_label energy_k4_long
 
 
 
@@ -46,5 +46,5 @@ echo N | python experiments/robot/libero/run_libero_eval.py \
 
 echo N | python experiments/robot/libero/run_libero_eval.py \
     --pretrained_checkpoint /mnt/nfs/$FARM_USER/openvla-oft-yhs/ckpoints/pre-trained_universal \
-    --task_suite_name libero_spatial --e_decoding True --energy_k 3 --task_label energy_k4_spatial
+    --task_suite_name libero_spatial --e_decoding True --energy_k 4 --task_label energy_k4_spatial
 
