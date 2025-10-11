@@ -136,6 +136,7 @@ class GenerateConfig:
     e_decoding:bool = False
     task_label:str = ""
     remove_wrap:bool = False
+    energy_k:int = 1
 
     # fmt: on
 

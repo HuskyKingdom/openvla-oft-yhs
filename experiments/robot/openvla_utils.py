@@ -890,6 +890,76 @@ def one_step_energy_correction_seq(energy_head, h, A_bc, energy_mask, alpha=0.1,
     return A_ref.squeeze(0).detach().cpu().to(torch.float32).numpy()
 
 
+def k_step_energy_correction_seq(
+    energy_head,
+    h,
+    A_bc,
+    energy_mask,
+    k: int = 1,
+    alpha: float = 0.1,
+    clip_frac: float = 0.2,
+    act_range=None,                # Optional[np.ndarray or torch.Tensor], per-dim range
+    correct_first_only: bool = False,
+):
+    """
+    k steps energy correction sequentially
+    return :: [H, Da] 的 numpy float32。
+    """
+    device = h.device
+    dtype  = torch.bfloat16
+
+    # -- to torch [1,H,Da]
+    if isinstance(A_bc, np.ndarray):
+        A0 = torch.tensor(A_bc, dtype=dtype, device=device).unsqueeze(0)
+    else:
+        A0 = A_bc
+        if A0.dim() == 2:
+            A0 = A0.unsqueeze(0)
+        A0 = A0.to(device=device, dtype=dtype)
+
+    B, H_, Da = A0.shape
+    assert B == 1, "该极简版假定 batch=1。"
+
+    base_norm = A0.flatten(1).norm(dim=-1, keepdim=True) + 1e-6  # [1,1]
+
+
+    A = invert_gripper_action_tensor(normalize_gripper_action_tensor(A0)).detach().clone()
+    A[..., -1] = torch.where(A[..., -1] == -1, 1, 0)
+
+
+    if act_range is not None:
+        if isinstance(act_range, np.ndarray):
+            act_range_t = torch.tensor(act_range, device=device, dtype=dtype)
+        else:
+            act_range_t = act_range.to(device=device, dtype=dtype)
+        act_range_t = act_range_t.view(1, 1, -1)  # [1,1,Da]
+
+    # k iterations of residule correction
+    for _ in range(max(1, int(k))):
+        A = A.detach().clone().requires_grad_(True)
+        with torch.enable_grad():
+            E = energy_head(h, A, energy_mask)
+            E_sum = E.sum() if E.dim() > 0 else E
+            grad_A = torch.autograd.grad(E_sum, A)[0]  # [1,H,Da]
+
+        if correct_first_only:
+            mask = torch.zeros_like(grad_A); mask[:, 0, :] = 1.0
+            grad_A = grad_A * mask
+
+        step = alpha * grad_A
+
+        if act_range is not None:
+            max_step = (clip_frac * act_range_t).to(step.dtype)
+            step = torch.clamp(step, -max_step, max_step)
+        else:
+            step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+            coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
+            step = step * coef.view(1, 1, 1)
+
+        A = (A - step).detach()
+
+    return A.squeeze(0).detach().cpu().to(torch.float32).numpy()
+
 def get_vla_action(
     cfg: Any,
     vla: torch.nn.Module,
@@ -1039,8 +1109,8 @@ def get_vla_action(
             action = model_actions
         
     if cfg.e_decoding:
-        action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
-        
+        # action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
+        action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
 
 
 
