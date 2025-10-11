@@ -80,7 +80,7 @@ class RLDSBatchTransform:
 
 
         conversation = [
-            {"from": "human", "value": f"What action should the robot take to {lang}"},
+            {"from": "human", "value": f"{rephrase()} {lang}"},
             {"from": "gpt", "value": action_chunk_string},
         ]
         for turn in conversation:

@@ -932,6 +932,9 @@ def get_vla_action(
         # Extract primary image and additional images
         primary_image = all_images.pop(0)
 
+        print(task_label)
+        assert 1==2
+
         # Build VLA prompt
         if cfg.remove_wrap:
             prompt = task_label.lower()
