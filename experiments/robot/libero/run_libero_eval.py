@@ -135,6 +135,7 @@ class GenerateConfig:
     save_video:bool = False
     e_decoding:bool = False
     task_label:str = ""
+    remove_wrap:bool = False
 
     # fmt: on
 
