@@ -567,22 +567,38 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
-    for task_id in tqdm.tqdm(range(num_tasks)):
-        task_id = 8
-        total_episodes, total_successes = run_task(
-            cfg,
-            task_suite,
-            task_id,
-            model,
-            resize_size,
-            processor,
-            action_head,
-            proprio_projector,
-            noisy_action_projector,
-            total_episodes,
-            total_successes,
-            log_file,
-        )
+    # for task_id in tqdm.tqdm(range(num_tasks)):
+    #     task_id = 8
+    #     total_episodes, total_successes = run_task(
+    #         cfg,
+    #         task_suite,
+    #         task_id,
+    #         model,
+    #         resize_size,
+    #         processor,
+    #         action_head,
+    #         proprio_projector,
+    #         noisy_action_projector,
+    #         total_episodes,
+    #         total_successes,
+    #         log_file,
+    #     )
+
+    task_id = 8
+    total_episodes, total_successes = run_task(
+        cfg,
+        task_suite,
+        task_id,
+        model,
+        resize_size,
+        processor,
+        action_head,
+        proprio_projector,
+        noisy_action_projector,
+        total_episodes,
+        total_successes,
+        log_file,
+    )
 
     # Calculate final success rate
     final_success_rate = float(total_successes) / float(total_episodes) if total_episodes > 0 else 0
