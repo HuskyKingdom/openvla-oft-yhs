@@ -399,7 +399,7 @@ def save_rollout_video(rollout_images, idx, success, task_description, log_file=
     rollout_dir = f"/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
-    mp4_path = f"{rollout_dir}/frames_video.mp4"
+    mp4_path = f"{rollout_dir}/frames_video_{idx}.mp4"
     video_writer = imageio.get_writer(mp4_path, fps=30)
     for img in rollout_images:
         video_writer.append_data(img)
