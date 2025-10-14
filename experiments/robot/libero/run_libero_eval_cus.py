@@ -399,7 +399,7 @@ def save_rollout_video(rollout_images, idx, success, task_description, log_file=
     rollout_dir = f"/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
-    mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t7.mp4"
+    mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t6.mp4"
     video_writer = imageio.get_writer(mp4_path, fps=30)
     for img in rollout_images:
         video_writer.append_data(img)
@@ -584,7 +584,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     #         log_file,
     #     )
 
-    task_id = 7
+    task_id = 6
     total_episodes, total_successes = run_task(
         cfg,
         task_suite,
