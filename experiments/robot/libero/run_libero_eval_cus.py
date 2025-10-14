@@ -137,6 +137,7 @@ class GenerateConfig:
 
     cus_task:str = ""
     remove_wrap:bool = False
+    energy_k:int = 1
 
     # fmt: on
 
