@@ -463,19 +463,6 @@ def run_task(
     log_file=None,
 ):
     """Run evaluation for a single task."""
-    
-    # Define agentview camera intrinsic and extrinsic parameters
-    camera_intrinsic = np.array([
-        [309.019, 0.000, 128.000],
-        [0.000, 309.019, 128.000],
-        [0.000, 0.000, 1.000]
-    ])
-    camera_extrinsic = np.array([
-        [-0.000, 0.529, -0.849, 0.607],
-        [1.000, 0.000, -0.000, 0.000],
-        [-0.000, -0.849, -0.529, 0.960],
-        [0.000, 0.000, 0.000, 1.000]
-    ])
 
     if cfg.cus_task != "":
 
@@ -498,6 +485,13 @@ def run_task(
         env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
         
     
+    # Get camera parameters dynamically from environment
+    from experiments.robot.libero.libero_utils import get_camera_parameters
+    camera_intrinsic, camera_extrinsic = get_camera_parameters(env, camera_name="agentview", img_width=256, img_height=256)
+    
+    # Debug: print camera parameters
+    log_message(f"[CAMERA DEBUG] Intrinsic matrix:\n{camera_intrinsic}", log_file)
+    log_message(f"[CAMERA DEBUG] Extrinsic matrix:\n{camera_extrinsic}", log_file)
 
     # Start episodes
     task_episodes, task_successes = 0, 0

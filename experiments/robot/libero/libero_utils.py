@@ -31,6 +31,53 @@ def get_libero_env(task, model_family, resolution=256):
     return env, task_description
 
 
+def get_camera_parameters(env, camera_name="agentview", img_width=256, img_height=256):
+    """
+    Extracts camera intrinsic and extrinsic parameters from LIBERO environment.
+    
+    Args:
+        env: LIBERO OffScreenRenderEnv environment
+        camera_name: Name of the camera (default: "agentview")
+        img_width: Image width in pixels
+        img_height: Image height in pixels
+    
+    Returns:
+        intrinsic: (3,3) camera intrinsic matrix
+        extrinsic: (4,4) world-to-camera extrinsic matrix
+    """
+    sim = env.sim
+    
+    # Get camera ID
+    camera_id = sim.model.camera_name2id(camera_name)
+    
+    # Get camera field of view and calculate intrinsic matrix
+    fovy = sim.model.cam_fovy[camera_id]  # Field of view in Y direction (degrees)
+    
+    # Calculate focal length in pixels
+    # f = height / (2 * tan(fovy/2))
+    f = img_height / (2 * np.tan(np.radians(fovy) / 2))
+    
+    # Construct intrinsic matrix (assumes principal point at image center)
+    intrinsic = np.array([
+        [f, 0, img_width / 2],
+        [0, f, img_height / 2],
+        [0, 0, 1]
+    ])
+    
+    # Get camera pose in world frame
+    cam_pos = sim.data.cam_xpos[camera_id]  # (3,) camera position in world frame
+    cam_mat = sim.data.cam_xmat[camera_id].reshape(3, 3)  # (3,3) camera rotation matrix
+    
+    # Build extrinsic matrix (world-to-camera transformation)
+    # MuJoCo camera convention: camera looks along +Z axis
+    # Extrinsic matrix transforms points from world frame to camera frame
+    extrinsic = np.eye(4)
+    extrinsic[:3, :3] = cam_mat.T  # Rotation: world-to-camera
+    extrinsic[:3, 3] = -cam_mat.T @ cam_pos  # Translation component
+    
+    return intrinsic, extrinsic
+
+
 def get_libero_dummy_action(model_family: str):
     """Get dummy/no-op action, used to roll out the simulation while the robot does nothing."""
     return [0, 0, 0, 0, 0, 0, -1]
