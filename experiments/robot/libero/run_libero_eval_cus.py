@@ -498,6 +498,9 @@ def run_task(
     # Start episodes
     task_episodes, task_successes = 0, 0
     for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
+
+        episode_idx = 46
+        
         log_message(f"\nTask: {task_description}", log_file)
 
         # Handle initial state
