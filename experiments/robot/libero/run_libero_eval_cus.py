@@ -416,7 +416,8 @@ def save_rollout_video(
     camera_intrinsic=None,
     camera_extrinsic=None,
     draw_trajectory=True,
-    history_length=15
+    history_length=15,
+    accumulate_trajectory=False
 ):
     import imageio
     """Saves an MP4 replay of an episode."""
@@ -436,7 +437,8 @@ def save_rollout_video(
                 gripper_actions,
                 camera_extrinsic,
                 camera_intrinsic,
-                history_length=history_length
+                history_length=history_length,
+                accumulate=accumulate_trajectory
             )
     
     video_writer = imageio.get_writer(mp4_path, fps=30)
@@ -575,7 +577,8 @@ def run_task(
                 camera_intrinsic=camera_intrinsic,
                 camera_extrinsic=camera_extrinsic,
                 draw_trajectory=True,
-                history_length=15
+                history_length=15,
+                accumulate_trajectory=True  # Enable accumulate mode: trajectory never disappears
             )
 
         # Log results

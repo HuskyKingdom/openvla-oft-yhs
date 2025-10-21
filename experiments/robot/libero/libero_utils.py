@@ -319,7 +319,8 @@ def draw_trajectory_on_episode(
     gripper_actions: List[float],
     extrinsic: np.ndarray,
     intrinsic: np.ndarray,
-    history_length: int = 15
+    history_length: int = 15,
+    accumulate: bool = False
 ) -> List[np.ndarray]:
     """
     Draws trajectory on all frames of an episode.
@@ -330,7 +331,8 @@ def draw_trajectory_on_episode(
         gripper_actions: Gripper actions executed at each frame (post-processed values)
         extrinsic: (4,4) World-to-camera extrinsic matrix
         intrinsic: (3,3) Camera intrinsic matrix
-        history_length: Length of history window
+        history_length: Length of history window (only used if accumulate=False)
+        accumulate: If True, show full trajectory from start; if False, use sliding window
     
     Returns:
         List of frames with trajectory drawn
@@ -364,17 +366,23 @@ def draw_trajectory_on_episode(
     # Draw trajectory for each frame
     annotated_frames = []
     for i, frame in enumerate(frames):
-        # Get trajectory points for current frame and history window
-        start_idx = max(0, i + 1 - history_length)
-        trajectory_window = pixel_trajectory[start_idx:i+1]
-        gripper_window = gripper_actions[start_idx:i+1]
+        # Get trajectory points for current frame
+        if accumulate:
+            # Accumulate mode: show all trajectory from start to current frame (never disappears)
+            trajectory_window = pixel_trajectory[0:i+1]
+            gripper_window = gripper_actions[0:i+1]
+        else:
+            # Sliding window mode: show only recent history_length frames
+            start_idx = max(0, i + 1 - history_length)
+            trajectory_window = pixel_trajectory[start_idx:i+1]
+            gripper_window = gripper_actions[start_idx:i+1]
         
         # Draw trajectory
         annotated_frame = draw_trajectory_on_frame(
             frame,
             trajectory_window,
             gripper_window,
-            history_length=history_length
+            history_length=len(trajectory_window) if accumulate else history_length
         )
         annotated_frames.append(annotated_frame)
     
