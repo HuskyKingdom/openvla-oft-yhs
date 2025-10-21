@@ -16,6 +16,10 @@ from experiments.robot.robot_utils import (
     DATE_TIME,
 )
 
+# Global debug counters for projection debugging
+_projection_debug_count = 0
+_projection_debug_limit = 5  # Only print first 5 failures
+
 
 def get_libero_env(task, model_family, resolution=256):
     """Initializes and returns the LIBERO environment, along with the task description."""
@@ -121,7 +125,8 @@ def project_world_to_pixel(
     intrinsic: np.ndarray,
     img_width: int = 256,
     img_height: int = 256,
-    apply_180_rotation: bool = True
+    apply_180_rotation: bool = True,
+    debug: bool = False
 ) -> Optional[Tuple[int, int]]:
     """
     Projects a 3D point from world coordinates to pixel coordinates.
@@ -133,10 +138,13 @@ def project_world_to_pixel(
         img_width: Image width for boundary checking
         img_height: Image height for boundary checking
         apply_180_rotation: Whether to apply 180-degree rotation compensation for rotated images
+        debug: Whether to print debug information for failed projections
     
     Returns:
         Pixel coordinates (u, v), or None if point is outside the field of view
     """
+    global _projection_debug_count
+    
     # 1. Transform world coordinates to camera coordinates (homogeneous transformation)
     world_pos_homog = np.append(world_pos, 1.0)  # (4,)
     camera_pos = extrinsic @ world_pos_homog     # (4,)
@@ -144,6 +152,9 @@ def project_world_to_pixel(
     
     # 2. Check if point is behind the camera
     if camera_pos[2] <= 0:
+        if debug and _projection_debug_count < _projection_debug_limit:
+            print(f"[PROJECTION DEBUG] Point behind camera: world_pos={world_pos}, camera_pos={camera_pos}, z={camera_pos[2]}")
+            _projection_debug_count += 1
         return None
     
     # 3. Project camera coordinates to pixel (pinhole camera model)
@@ -154,6 +165,9 @@ def project_world_to_pixel(
     # 4. Check if within image bounds BEFORE rotation
     # (This ensures we validate coordinates in the original camera frame)
     if not (0 <= u < img_width and 0 <= v < img_height):
+        if debug and _projection_debug_count < _projection_debug_limit:
+            print(f"[PROJECTION DEBUG] Out of bounds: world_pos={world_pos}, camera_pos={camera_pos}, pixel=({u:.1f}, {v:.1f}), bounds=[0, {img_width}) x [0, {img_height})")
+            _projection_debug_count += 1
         return None
     
     # 5. Apply 180-degree rotation compensation (after boundary check)
@@ -269,10 +283,14 @@ def draw_trajectory_on_episode(
     assert len(frames) == len(eef_positions) == len(gripper_actions), \
         f"Data length mismatch: frames={len(frames)}, eef={len(eef_positions)}, gripper={len(gripper_actions)}"
     
+    # Reset debug counter for each episode
+    global _projection_debug_count
+    _projection_debug_count = 0
+    
     # First project all eef positions to pixel coordinates
     pixel_trajectory = []
     for eef_pos in eef_positions:
-        pixel_pos = project_world_to_pixel(eef_pos, extrinsic, intrinsic, apply_180_rotation=True)
+        pixel_pos = project_world_to_pixel(eef_pos, extrinsic, intrinsic, apply_180_rotation=True, debug=True)
         pixel_trajectory.append(pixel_pos)
     
     # Debug: count valid projections
