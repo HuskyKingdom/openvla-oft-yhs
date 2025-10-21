@@ -326,6 +326,13 @@ def run_episode(
     actions_accum = []
     flag = 0
 
+    import robosuite
+    print(robosuite.utils.camera_utils.get_camera_intrinsic_matrix(env.sim, "agentview", 256, 256))
+    print(robosuite.utils.camera_utils.get_camera_extrinsic_matrix(env.sim, "agentview"))
+    assert 1==2 
+
+
+
     # Run episode
     success = False
     # try:
@@ -373,7 +380,7 @@ def run_episode(
         t += 1
 
     # except Exception as e:
-    #     log_message(f"Episode error: {e}", log_file)
+    #     log_message(f"Episode error: {e}", log_file) 要画轨迹多帧累积：将历史若干帧的末端投影点连线，使用第三人称agentview_image绘制，需要物理上正确的投影
 
 
     return success, replay_images
