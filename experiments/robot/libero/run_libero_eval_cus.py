@@ -358,6 +358,9 @@ def run_episode(
         # Prepare observation
         observation, img = prepare_observation(obs, resize_size)
         replay_images.append(img)
+        
+        # Record current eef position BEFORE action execution (for trajectory visualization)
+        current_eef_pos = obs["robot0_eef_pos"].copy()
 
         # If action queue is empty, requery model
         if len(action_queue) == 0:
@@ -387,8 +390,8 @@ def run_episode(
         # Execute action in environment
         obs, reward, done, info = env.step(action.tolist())
         
-        # Record eef position and action after execution (for trajectory visualization)
-        eef_positions.append(obs["robot0_eef_pos"].copy())
+        # Record data for current frame (time-aligned: image matches eef position)
+        eef_positions.append(current_eef_pos)  # Use position BEFORE execution
         executed_actions.append(action.copy())
         
         if done:
@@ -420,7 +423,7 @@ def save_rollout_video(
     rollout_dir = f"/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
-    mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t0.mp4"  # task_id
+    mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t9.mp4"  # task_id
     
     # Draw trajectory on frames if trajectory data is provided
     if draw_trajectory and eef_positions is not None and executed_actions is not None:
@@ -643,7 +646,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     #         log_file,
     #     )
 
-    task_id = 0
+    task_id = 9
     total_episodes, total_successes = run_task(
         cfg,
         task_suite,

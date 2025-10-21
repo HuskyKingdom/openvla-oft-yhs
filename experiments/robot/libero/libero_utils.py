@@ -120,7 +120,8 @@ def project_world_to_pixel(
     extrinsic: np.ndarray,
     intrinsic: np.ndarray,
     img_width: int = 256,
-    img_height: int = 256
+    img_height: int = 256,
+    apply_180_rotation: bool = True
 ) -> Optional[Tuple[int, int]]:
     """
     Projects a 3D point from world coordinates to pixel coordinates.
@@ -131,6 +132,7 @@ def project_world_to_pixel(
         intrinsic: (3,3) Camera intrinsic matrix
         img_width: Image width for boundary checking
         img_height: Image height for boundary checking
+        apply_180_rotation: Whether to apply 180-degree rotation compensation for rotated images
     
     Returns:
         Pixel coordinates (u, v), or None if point is outside the field of view
@@ -149,7 +151,13 @@ def project_world_to_pixel(
     u = pixel_homog[0] / pixel_homog[2]
     v = pixel_homog[1] / pixel_homog[2]
     
-    # 4. Check if within image bounds
+    # 4. Apply 180-degree rotation compensation if image was rotated
+    # LIBERO images are rotated 180 degrees via img[::-1, ::-1]
+    if apply_180_rotation:
+        u = img_width - 1 - u
+        v = img_height - 1 - v
+    
+    # 5. Check if within image bounds
     if 0 <= u < img_width and 0 <= v < img_height:
         return int(u), int(v)
     
@@ -256,7 +264,7 @@ def draw_trajectory_on_episode(
     # First project all eef positions to pixel coordinates
     pixel_trajectory = []
     for eef_pos in eef_positions:
-        pixel_pos = project_world_to_pixel(eef_pos, extrinsic, intrinsic)
+        pixel_pos = project_world_to_pixel(eef_pos, extrinsic, intrinsic, apply_180_rotation=True)
         pixel_trajectory.append(pixel_pos)
     
     # Draw trajectory for each frame
