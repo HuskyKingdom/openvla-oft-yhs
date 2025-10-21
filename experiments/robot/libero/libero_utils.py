@@ -66,14 +66,23 @@ def get_camera_parameters(env, camera_name="agentview", img_width=256, img_heigh
     
     # Get camera pose in world frame
     cam_pos = sim.data.cam_xpos[camera_id]  # (3,) camera position in world frame
-    cam_mat = sim.data.cam_xmat[camera_id].reshape(3, 3)  # (3,3) camera rotation matrix
+    cam_mat = sim.data.cam_xmat[camera_id].reshape(3, 3)  # (3,3) camera-to-world rotation matrix
     
     # Build extrinsic matrix (world-to-camera transformation)
-    # MuJoCo camera convention: camera looks along +Z axis
-    # Extrinsic matrix transforms points from world frame to camera frame
+    # MuJoCo camera convention: cam_xmat is camera-to-world rotation
+    # In MuJoCo camera frame: +X = right, +Y = down, +Z = forward (away from camera)
+    # We need to flip Z axis to match standard camera convention (camera looks along -Z)
+    
+    # Standard camera convention adjustment
+    flip_z = np.diag([1, 1, -1])  # Flip Z axis
+    
+    # Construct world-to-camera transformation
+    R_world_to_cam = flip_z @ cam_mat.T  # Apply flip after world-to-camera rotation
+    t_world_to_cam = -R_world_to_cam @ cam_pos  # Translation component
+    
     extrinsic = np.eye(4)
-    extrinsic[:3, :3] = cam_mat.T  # Rotation: world-to-camera
-    extrinsic[:3, 3] = -cam_mat.T @ cam_pos  # Translation component
+    extrinsic[:3, :3] = R_world_to_cam
+    extrinsic[:3, 3] = t_world_to_cam
     
     return intrinsic, extrinsic
 
