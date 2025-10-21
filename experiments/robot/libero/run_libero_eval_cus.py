@@ -427,8 +427,8 @@ def save_rollout_video(
     rollout_dir = f"/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
-    # mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t{EPISODE_ID}.mp4"  # task_id
-    mp4_path = f"{rollout_dir}/frames_video.mp4"  # task_id
+    mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t{TASK_ID}.mp4"  # task_id
+    # mp4_path = f"{rollout_dir}/frames_video.mp4"  # task_id
     
     # Draw trajectory on frames if trajectory data is provided
     if draw_trajectory and eef_positions is not None and executed_actions is not None:
@@ -503,7 +503,7 @@ def run_task(
     task_episodes, task_successes = 0, 0
     for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
 
-        episode_idx = EPISODE_ID
+        # episode_idx = EPISODE_ID
 
         log_message(f"\nTask: {task_description}", log_file)
 
