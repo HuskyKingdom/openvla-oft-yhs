@@ -151,17 +151,18 @@ def project_world_to_pixel(
     u = pixel_homog[0] / pixel_homog[2]
     v = pixel_homog[1] / pixel_homog[2]
     
-    # 4. Apply 180-degree rotation compensation if image was rotated
+    # 4. Check if within image bounds BEFORE rotation
+    # (This ensures we validate coordinates in the original camera frame)
+    if not (0 <= u < img_width and 0 <= v < img_height):
+        return None
+    
+    # 5. Apply 180-degree rotation compensation (after boundary check)
     # LIBERO images are rotated 180 degrees via img[::-1, ::-1]
     if apply_180_rotation:
         u = img_width - 1 - u
         v = img_height - 1 - v
     
-    # 5. Check if within image bounds
-    if 0 <= u < img_width and 0 <= v < img_height:
-        return int(u), int(v)
-    
-    return None
+    return (int(u), int(v))
 
 
 def draw_trajectory_on_frame(
@@ -273,6 +274,18 @@ def draw_trajectory_on_episode(
     for eef_pos in eef_positions:
         pixel_pos = project_world_to_pixel(eef_pos, extrinsic, intrinsic, apply_180_rotation=True)
         pixel_trajectory.append(pixel_pos)
+    
+    # Debug: count valid projections
+    valid_count = sum(1 for p in pixel_trajectory if p is not None)
+    print(f"[TRAJECTORY DEBUG] Total frames: {len(frames)}, Valid projections: {valid_count}/{len(pixel_trajectory)}")
+    
+    if valid_count > 0:
+        sample_points = [p for p in pixel_trajectory if p is not None][:5]
+        print(f"[TRAJECTORY DEBUG] Sample projected points: {sample_points}")
+    else:
+        # Print first eef position for debugging
+        if len(eef_positions) > 0:
+            print(f"[TRAJECTORY DEBUG] Sample eef world position: {eef_positions[0]}")
     
     # Draw trajectory for each frame
     annotated_frames = []
