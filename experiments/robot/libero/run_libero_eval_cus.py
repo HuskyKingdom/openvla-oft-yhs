@@ -326,6 +326,10 @@ def run_episode(
     # Drawing Utils
     actions_accum = []
     flag = 0
+    
+    # Trajectory recording for visualization
+    eef_positions = []      # Record end-effector world coordinates for each frame
+    executed_actions = []   # Record executed actions for each frame (post-processed)
 
     # Run episode
     success = False
@@ -382,6 +386,11 @@ def run_episode(
 
         # Execute action in environment
         obs, reward, done, info = env.step(action.tolist())
+        
+        # Record eef position and action after execution (for trajectory visualization)
+        eef_positions.append(obs["robot0_eef_pos"].copy())
+        executed_actions.append(action.copy())
+        
         if done:
             success = True
             break
@@ -391,15 +400,42 @@ def run_episode(
     #     log_message(f"Episode error: {e}", log_file)
 
 
-    return success, replay_images
+    return success, replay_images, eef_positions, executed_actions
 
-def save_rollout_video(rollout_images, idx, success, task_description, log_file=None):
+def save_rollout_video(
+    rollout_images,
+    idx,
+    success,
+    task_description,
+    log_file=None,
+    eef_positions=None,
+    executed_actions=None,
+    camera_intrinsic=None,
+    camera_extrinsic=None,
+    draw_trajectory=True,
+    history_length=15
+):
     import imageio
     """Saves an MP4 replay of an episode."""
     rollout_dir = f"/home/aup/YuhangWorkspace/openvla-oft-yhs/frames"
     os.makedirs(rollout_dir, exist_ok=True)
     processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
     mp4_path = f"{rollout_dir}/frames_video_{idx}_{success}_t0.mp4"  # task_id
+    
+    # Draw trajectory on frames if trajectory data is provided
+    if draw_trajectory and eef_positions is not None and executed_actions is not None:
+        if camera_intrinsic is not None and camera_extrinsic is not None:
+            from experiments.robot.libero.libero_utils import draw_trajectory_on_episode
+            gripper_actions = [action[-1] for action in executed_actions]
+            rollout_images = draw_trajectory_on_episode(
+                rollout_images,
+                eef_positions,
+                gripper_actions,
+                camera_extrinsic,
+                camera_intrinsic,
+                history_length=history_length
+            )
+    
     video_writer = imageio.get_writer(mp4_path, fps=30)
     for img in rollout_images:
         video_writer.append_data(img)
@@ -424,6 +460,19 @@ def run_task(
     log_file=None,
 ):
     """Run evaluation for a single task."""
+    
+    # Define agentview camera intrinsic and extrinsic parameters
+    camera_intrinsic = np.array([
+        [309.019, 0.000, 128.000],
+        [0.000, 309.019, 128.000],
+        [0.000, 0.000, 1.000]
+    ])
+    camera_extrinsic = np.array([
+        [-0.000, 0.529, -0.849, 0.607],
+        [1.000, 0.000, -0.000, 0.000],
+        [-0.000, -0.849, -0.529, 0.960],
+        [0.000, 0.000, 0.000, 1.000]
+    ])
 
     if cfg.cus_task != "":
 
@@ -494,7 +543,7 @@ def run_task(
 
 
         # Run episode
-        success, replay_images = run_episode(
+        success, replay_images, eef_positions, executed_actions = run_episode(
             cfg,
             env,
             task_description,
@@ -519,7 +568,17 @@ def run_task(
         # Save replay video
         if cfg.save_video:
             save_rollout_video(
-                replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
+                replay_images,
+                total_episodes,
+                success=success,
+                task_description=task_description,
+                log_file=log_file,
+                eef_positions=eef_positions,
+                executed_actions=executed_actions,
+                camera_intrinsic=camera_intrinsic,
+                camera_extrinsic=camera_extrinsic,
+                draw_trajectory=True,
+                history_length=15
             )
 
         # Log results
