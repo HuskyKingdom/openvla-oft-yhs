@@ -326,9 +326,9 @@ def run_episode(
     actions_accum = []
     flag = 0
 
-    import robosuite
-    print(robosuite.utils.camera_utils.get_camera_intrinsic_matrix(env.sim, "agentview", 256, 256))
-    print(robosuite.utils.camera_utils.get_camera_extrinsic_matrix(env.sim, "agentview"))
+    from robosuite.utils.camera_utils import get_camera_intrinsic_matrix, get_camera_extrinsic_matrix
+    print(get_camera_intrinsic_matrix(env.sim, "agentview", 256, 256))
+    print(get_camera_extrinsic_matrix(env.sim, "agentview"))
     assert 1==2 
 
 
