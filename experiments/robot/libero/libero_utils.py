@@ -194,11 +194,18 @@ def draw_trajectory_on_frame(
     recent_points = trajectory_points[start_idx:]
     recent_grippers = gripper_states[start_idx:]
     
+    # Filter out None points to check if we have any valid points
+    valid_points = [p for p in recent_points if p is not None]
+    if len(valid_points) == 0:
+        # No valid points to draw, return original frame
+        return frame_copy
+    
     # If only one point, just draw a marker
     if len(recent_points) == 1:
-        u, v = recent_points[0]
-        # Draw cross marker (yellow)
-        cv2.drawMarker(frame_copy, (u, v), (255, 255, 0), cv2.MARKER_CROSS, 8, 2)
+        if recent_points[0] is not None:
+            u, v = recent_points[0]
+            # Draw cross marker (yellow)
+            cv2.drawMarker(frame_copy, (u, v), (255, 255, 0), cv2.MARKER_CROSS, 8, 2)
         return frame_copy
     
     # Draw connecting lines (gradient color: blue->red)
