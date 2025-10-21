@@ -22,6 +22,9 @@ from libero.libero import benchmark
 from libero.libero.envs import OffScreenRenderEnv
 import wandb
 
+TASK_ID = 3
+EPISODE_ID = 34
+
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
 from experiments.robot.libero.libero_utils import (
@@ -499,7 +502,7 @@ def run_task(
     task_episodes, task_successes = 0, 0
     for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
 
-        episode_idx = 45
+        episode_idx = EPISODE_ID
 
         log_message(f"\nTask: {task_description}", log_file)
 
@@ -646,7 +649,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     #         log_file,
     #     )
 
-    task_id = 9
+    task_id = TASK_ID
     total_episodes, total_successes = run_task(
         cfg,
         task_suite,
