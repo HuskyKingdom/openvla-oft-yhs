@@ -1112,15 +1112,11 @@ def get_vla_action(
             model_actions[:,3:6] = model_rot
 
             action = model_actions
-        
+    
+    E_action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
     if cfg.e_decoding:
         # action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
-        action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
-    
-
-
-
-
+        action = E_action
 
 
     # Return action chunk as list of actions
