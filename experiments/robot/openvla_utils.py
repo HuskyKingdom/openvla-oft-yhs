@@ -960,7 +960,7 @@ def k_step_energy_correction_seq(
 
 
         A_corrected = (A - step).detach()
-        A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
+        # A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
 
    
     E_corrected = energy_head(h, A_corrected, energy_mask)   
