@@ -948,7 +948,7 @@ def k_step_energy_correction_seq(
             mask = torch.zeros_like(grad_A); mask[:, 0, :] = 1.0
             grad_A = grad_A * mask
 
-        step = alpha * grad_A
+        step = 1.0 * grad_A
 
         # if act_range is not None:
         #     max_step = (clip_frac * act_range_t).to(step.dtype)
