@@ -959,7 +959,7 @@ def k_step_energy_correction_seq(
             step = step * coef.view(1, 1, 1)
 
 
-        A_corrected = (A - step).detach()
+        A_corrected = (A + step).detach()
         A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
 
    
