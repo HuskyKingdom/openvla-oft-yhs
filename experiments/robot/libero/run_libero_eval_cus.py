@@ -23,7 +23,7 @@ from libero.libero.envs import OffScreenRenderEnv
 import wandb
 
 TASK_ID = 8
-EPISODE_ID = 45
+EPISODE_ID = 8
 
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")

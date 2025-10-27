@@ -907,6 +907,8 @@ def k_step_energy_correction_seq(
     """
     device = h.device
     dtype  = torch.bfloat16
+    
+    # energy_head.eval()
 
     # -- to torch [1,H,Da]
     if isinstance(A_bc, np.ndarray):
@@ -918,7 +920,7 @@ def k_step_energy_correction_seq(
         A0 = A0.to(device=device, dtype=dtype)
 
     B, H_, Da = A0.shape
-    assert B == 1, "该极简版假定 batch=1。"
+    assert B == 1, "for inference, batch should be 1"
 
     base_norm = A0.flatten(1).norm(dim=-1, keepdim=True) + 1e-6  # [1,1]
 
@@ -956,9 +958,18 @@ def k_step_energy_correction_seq(
             coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
             step = step * coef.view(1, 1, 1)
 
-        A = (A - step).detach()
 
-    return A.squeeze(0).detach().cpu().to(torch.float32).numpy()
+        A_corrected = (A - step).detach()
+        # A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
+
+   
+    E_corrected = energy_head(h, A_corrected, energy_mask)   
+    E_corrected_sum = E_corrected.sum() if E_corrected.dim() > 0 else E_corrected
+
+    # print action energy
+    print(f"Action Energy: {E_sum.item():.10f} | Corrected Action Energy: {E_corrected_sum.item():.10f}")
+    
+    return A_corrected.squeeze(0).detach().cpu().to(torch.float32).numpy()
 
 def get_vla_action(
     cfg: Any,
@@ -1107,12 +1118,11 @@ def get_vla_action(
             model_actions[:,3:6] = model_rot
 
             action = model_actions
-        
+    
+    
     if cfg.e_decoding:
         # action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
         action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
-
-
 
 
     # Return action chunk as list of actions
