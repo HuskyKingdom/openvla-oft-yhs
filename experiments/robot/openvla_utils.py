@@ -962,7 +962,7 @@ def k_step_energy_correction_seq(
         A = (A - step).detach()
         # A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
 
-
+    print(grad_A)
     E_corrected = energy_head(h, A, energy_mask)
     E_corrected_sum = E_corrected.sum() if E_corrected.dim() > 0 else E_corrected
 
