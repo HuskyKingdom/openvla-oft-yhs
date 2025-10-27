@@ -962,7 +962,7 @@ def k_step_energy_correction_seq(
 
     E_corrected = energy_head(h, A, energy_mask)
     E_corrected_sum = E_corrected.sum() if E_corrected.dim() > 0 else E_corrected
-    print(E_corrected.shape)
+
     # print action energy
     print(f"Action Energy: {E_sum.item():.10f} | Corrected Action Energy: {E_corrected.item():.10f}")
     
