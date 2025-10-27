@@ -958,6 +958,7 @@ def k_step_energy_correction_seq(
         #     coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
         #     step = step * coef.view(1, 1, 1)
 
+        print(step.shape)
         A = (A - step).detach()
 
 
