@@ -22,7 +22,7 @@ from libero.libero import benchmark
 from libero.libero.envs import OffScreenRenderEnv
 import wandb
 
-TASK_ID = 8
+TASK_ID = 3
 EPISODE_ID = 8
 
 # Append current directory so that interpreter can find experiments.robot
