@@ -959,17 +959,17 @@ def k_step_energy_correction_seq(
             step = step * coef.view(1, 1, 1)
 
 
-        A = (A - step).detach()
+        A_corrected = (A - step).detach()
         # A[..., -1] = torch.round(A[..., -1]).clamp(0, 1)
 
-    print(grad_A)
-    E_corrected = energy_head(h, A, energy_mask)
+    print(A,A_corrected)
+    E_corrected = energy_head(h, A_corrected, energy_mask)   
     E_corrected_sum = E_corrected.sum() if E_corrected.dim() > 0 else E_corrected
 
     # print action energy
     print(f"Action Energy: {E_sum.item():.10f} | Corrected Action Energy: {E_corrected_sum.item():.10f}")
     
-    return A.squeeze(0).detach().cpu().to(torch.float32).numpy()
+    return A_corrected.squeeze(0).detach().cpu().to(torch.float32).numpy()
 
 def get_vla_action(
     cfg: Any,
