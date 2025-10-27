@@ -1113,10 +1113,10 @@ def get_vla_action(
 
             action = model_actions
     
-    E_action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
+    
     if cfg.e_decoding:
         # action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
-        action = E_action
+        E_action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
 
 
     # Return action chunk as list of actions
