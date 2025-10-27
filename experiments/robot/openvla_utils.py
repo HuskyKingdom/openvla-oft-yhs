@@ -949,13 +949,13 @@ def k_step_energy_correction_seq(
 
         step = alpha * grad_A
 
-        if act_range is not None:
-            max_step = (clip_frac * act_range_t).to(step.dtype)
-            step = torch.clamp(step, -max_step, max_step)
-        else:
-            step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
-            coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
-            step = step * coef.view(1, 1, 1)
+        # if act_range is not None:
+        #     max_step = (clip_frac * act_range_t).to(step.dtype)
+        #     step = torch.clamp(step, -max_step, max_step)
+        # else:
+        #     step_norm = step.flatten(1).norm(dim=-1, keepdim=True) + 1e-6
+        #     coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
+        #     step = step * coef.view(1, 1, 1)
 
         A = (A - step).detach()
 
