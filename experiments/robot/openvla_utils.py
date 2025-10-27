@@ -964,7 +964,7 @@ def k_step_energy_correction_seq(
     E_corrected = energy_head(h, A_corrected, energy_mask)
     energy_head.train()
 
-    # print(f"Action Energy: {E.item():.10f} | Corrected Action Energy: {E_corrected.item():.10f}")
+    print(f"Action Energy: {E.item():.10f} | Corrected Action Energy: {E_corrected.item():.10f}")
     return A.squeeze(0).detach().cpu().to(torch.float32).numpy()
 
 def get_vla_action(
