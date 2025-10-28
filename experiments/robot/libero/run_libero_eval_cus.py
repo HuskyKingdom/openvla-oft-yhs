@@ -255,6 +255,31 @@ def load_initial_states(cfg: GenerateConfig, task_suite, task_id: int, log_file=
         return initial_states, None
 
 
+def concatenate_images_horizontal(img1, img2):
+    """
+    Concatenate two images horizontally (side by side).
+    
+    Args:
+        img1: First image (numpy array, shape: H x W x C)
+        img2: Second image (numpy array, shape: H x W x C)
+    
+    Returns:
+        Concatenated image (numpy array, shape: H x (W1+W2) x C)
+    """
+    # Ensure both images have the same height
+    h1, w1 = img1.shape[:2]
+    h2, w2 = img2.shape[:2]
+    
+    if h1 != h2:
+        # Resize img2 to match img1's height
+        import cv2
+        img2 = cv2.resize(img2, (w2, h1), interpolation=cv2.INTER_LINEAR)
+    
+    # Concatenate horizontally
+    concatenated = np.concatenate([img1, img2], axis=1)
+    return concatenated
+
+
 def prepare_observation(obs, resize_size):
     """Prepare observation for policy input."""
     # Get preprocessed images
@@ -274,7 +299,10 @@ def prepare_observation(obs, resize_size):
         ),
     }
 
-    return observation, img  # Return both processed observation and original image for replay
+    # Concatenate main camera and wrist camera images for video saving
+    concatenated_img = concatenate_images_horizontal(img, wrist_img)
+
+    return observation, concatenated_img  # Return both processed observation and concatenated image for replay
 
 
 def process_action(action, model_family):
