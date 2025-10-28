@@ -907,7 +907,7 @@ def k_step_energy_correction_seq(
     """
     device = h.device
     dtype  = torch.bfloat16
-    energy_head.eval()
+    
 
     # -- to torch [1,H,Da]
     if isinstance(A_bc, np.ndarray):
