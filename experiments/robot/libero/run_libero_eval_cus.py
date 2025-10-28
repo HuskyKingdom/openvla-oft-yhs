@@ -611,7 +611,7 @@ def run_task(
                 executed_actions=executed_actions,
                 camera_intrinsic=camera_intrinsic,
                 camera_extrinsic=camera_extrinsic,
-                draw_trajectory=True,
+                draw_trajectory=False,
                 history_length=15,
                 accumulate_trajectory=True  # Enable accumulate mode: trajectory never disappears
             )
