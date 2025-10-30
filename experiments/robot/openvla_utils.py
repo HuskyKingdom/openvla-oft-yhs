@@ -22,6 +22,9 @@ from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq,
 # Apply JSON numpy patch for serialization
 json_numpy.patch()
 
+# Global flag for FLOPs calculation (only compute once)
+_FLOPS_CALCULATED = False
+
 from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
 from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
 from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
@@ -997,6 +1000,8 @@ def get_vla_action(
     Returns:
         List[np.ndarray]: Predicted actions
     """
+    global _FLOPS_CALCULATED
+    
     with torch.inference_mode():
 
         # Collect all input images
@@ -1039,6 +1044,11 @@ def get_vla_action(
             obs["state"] = normalize_proprio(proprio, proprio_norm_stats)
             proprio = obs["state"]
 
+        # Start timing for VLA forward pass
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        vla_start_time = time.time()
+
         # Generate action
         if action_head is None:
             # Standard VLA output (single-image inputs, discrete actions)
@@ -1080,6 +1090,55 @@ def get_vla_action(
                         use_film=use_film,
                     )
 
+        # End timing for VLA forward pass
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        vla_end_time = time.time()
+        vla_elapsed_time = (vla_end_time - vla_start_time) * 1000  # Convert to ms
+        
+        # Print VLA forward pass timing
+        print(f"\n{'='*80}")
+        print(f"[TIMING] VLA Forward Pass: {vla_elapsed_time:.2f} ms ({vla_elapsed_time/1000:.4f} s)")
+        print(f"{'='*80}\n")
+        
+        # Calculate FLOPs only once
+        if not _FLOPS_CALCULATED:
+            try:
+                from thop import profile, clever_format
+                
+                # Create a wrapper function for profiling
+                def forward_wrapper():
+                    if action_head is None:
+                        return vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
+                    else:
+                        return vla.predict_action(
+                            **inputs,
+                            unnorm_key=cfg.unnorm_key,
+                            do_sample=False,
+                            proprio=proprio,
+                            proprio_projector=proprio_projector,
+                            noisy_action_projector=noisy_action_projector,
+                            action_head=action_head,
+                            use_film=use_film,
+                        )
+                
+                # Note: FLOPs calculation for transformer models with predict_action method is complex
+                # We'll print a message instead
+                print(f"[INFO] FLOPs calculation for VLA predict_action requires custom profiling.")
+                print(f"[INFO] Model type: {type(vla).__name__}")
+                print(f"[INFO] Input shape: pixel_values={inputs['pixel_values'].shape}")
+                if 'input_ids' in inputs:
+                    print(f"[INFO] Input shape: input_ids={inputs['input_ids'].shape}")
+                
+                _FLOPS_CALCULATED = True
+                
+            except ImportError:
+                print("[WARNING] thop library not available. Skipping FLOPs calculation.")
+                print("[INFO] Install with: pip install thop")
+                _FLOPS_CALCULATED = True
+            except Exception as e:
+                print(f"[WARNING] Could not calculate FLOPs: {e}")
+                _FLOPS_CALCULATED = True
 
         if cfg.h_decoding:
 

@@ -128,6 +128,11 @@ def get_action(
     Raises:
         ValueError: If model family is not supported
     """
+    # Start timing for get_action
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    start_time = time.time()
+    
     with torch.no_grad():
         if cfg.model_family == "openvla":
             action = get_vla_action(
@@ -144,6 +149,16 @@ def get_action(
             )
         else:
             raise ValueError(f"Unsupported model family: {cfg.model_family}")
+    
+    # End timing and print results
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    end_time = time.time()
+    elapsed_time = (end_time - start_time) * 1000  # Convert to ms
+    
+    print(f"{'='*80}")
+    print(f"[TIMING] get_action: {elapsed_time:.2f} ms ({elapsed_time/1000:.4f} s)")
+    print(f"{'='*80}")
 
     return action
 
