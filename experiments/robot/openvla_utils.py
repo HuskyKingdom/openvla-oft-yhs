@@ -1116,28 +1116,47 @@ def get_vla_action(
                 # Try to profile the model's forward pass
                 # Note: This may not capture the full pipeline including action_head
                 try:
-                    # Create minimal inputs for profiling
-                    profile_inputs = (inputs['input_ids'], inputs['pixel_values'])
+                    # Attempt to profile using the vision backbone and language model separately
+                    # since full model profiling with custom methods is complex
                     
-                    # Profile the base model forward pass
-                    with torch.no_grad():
-                        flops, params = profile(vla.model, inputs=profile_inputs, verbose=False)
+                    # Method 1: Try to get basic parameter count
+                    total_params = sum(p.numel() for p in vla.parameters())
+                    params_readable = clever_format([total_params], "%.3f")[0]
                     
-                    flops_readable, params_readable = clever_format([flops, params], "%.3f")
-                    print(f"\n[FLOPS ESTIMATE] Base VLA Model:")
-                    print(f"  Total FLOPs: {flops_readable} ({flops:.2e})")
-                    print(f"  Total Params: {params_readable}")
+                    print(f"\n[MODEL STATISTICS]")
+                    print(f"  Total Parameters: {params_readable} ({total_params:,})")
+                    
+                    # Method 2: Estimate FLOPs based on common VLA architecture
+                    # For transformer models: FLOPs ≈ 2 * params * sequence_length
+                    # This is a rough approximation
+                    seq_len = inputs['input_ids'].shape[1]
+                    if hasattr(vla, 'vision_backbone'):
+                        # Add vision processing FLOPs estimation
+                        vision_flops = 0
+                        if hasattr(vla.vision_backbone, 'parameters'):
+                            vision_params = sum(p.numel() for p in vla.vision_backbone.parameters())
+                            # Vision processing: params * image_patches
+                            num_patches = (224 // 16) ** 2  # Assuming 16x16 patches for 224x224 image
+                            vision_flops = 2 * vision_params * num_patches
+                    
+                    # Estimate total FLOPs (very rough approximation)
+                    estimated_flops = 2 * total_params * seq_len
+                    flops_readable = clever_format([estimated_flops], "%.3f")[0]
+                    
+                    print(f"\n[FLOPS ESTIMATION] (Approximate)")
+                    print(f"  Estimated FLOPs per inference: {flops_readable} ({estimated_flops:.2e})")
+                    print(f"  Note: This is a rough estimate for transformer forward pass")
                     
                     # Estimate FLOPs per second
                     if vla_elapsed_time > 0:
-                        flops_per_sec = flops / (vla_elapsed_time / 1000)
+                        flops_per_sec = estimated_flops / (vla_elapsed_time / 1000)
                         gflops = flops_per_sec / 1e9
                         tflops = flops_per_sec / 1e12
-                        print(f"  GFLOPS: {gflops:.2f} GFLOP/s")
-                        print(f"  TFLOPS: {tflops:.4f} TFLOP/s")
+                        print(f"  Estimated GFLOPS: {gflops:.2f} GFLOP/s")
+                        print(f"  Estimated TFLOPS: {tflops:.4f} TFLOP/s")
                     
                 except Exception as profile_err:
-                    print(f"\n[INFO] Could not compute exact FLOPs: {profile_err}")
+                    print(f"\n[INFO] Could not compute FLOPs statistics: {profile_err}")
                     print(f"[INFO] Transformer models with custom predict_action may require manual profiling.")
                 
                 print(f"{'='*80}\n")
