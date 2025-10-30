@@ -1106,38 +1106,49 @@ def get_vla_action(
             try:
                 from thop import profile, clever_format
                 
-                # Create a wrapper function for profiling
-                def forward_wrapper():
-                    if action_head is None:
-                        return vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
-                    else:
-                        return vla.predict_action(
-                            **inputs,
-                            unnorm_key=cfg.unnorm_key,
-                            do_sample=False,
-                            proprio=proprio,
-                            proprio_projector=proprio_projector,
-                            noisy_action_projector=noisy_action_projector,
-                            action_head=action_head,
-                            use_film=use_film,
-                        )
-                
-                # Note: FLOPs calculation for transformer models with predict_action method is complex
-                # We'll print a message instead
-                print(f"[INFO] FLOPs calculation for VLA predict_action requires custom profiling.")
-                print(f"[INFO] Model type: {type(vla).__name__}")
-                print(f"[INFO] Input shape: pixel_values={inputs['pixel_values'].shape}")
+                print(f"\n{'='*80}")
+                print(f"[MODEL INFO]")
+                print(f"  Model type: {type(vla).__name__}")
+                print(f"  Input shape: pixel_values={inputs['pixel_values'].shape}")
                 if 'input_ids' in inputs:
-                    print(f"[INFO] Input shape: input_ids={inputs['input_ids'].shape}")
+                    print(f"  Input shape: input_ids={inputs['input_ids'].shape}")
                 
+                # Try to profile the model's forward pass
+                # Note: This may not capture the full pipeline including action_head
+                try:
+                    # Create minimal inputs for profiling
+                    profile_inputs = (inputs['input_ids'], inputs['pixel_values'])
+                    
+                    # Profile the base model forward pass
+                    with torch.no_grad():
+                        flops, params = profile(vla.model, inputs=profile_inputs, verbose=False)
+                    
+                    flops_readable, params_readable = clever_format([flops, params], "%.3f")
+                    print(f"\n[FLOPS ESTIMATE] Base VLA Model:")
+                    print(f"  Total FLOPs: {flops_readable} ({flops:.2e})")
+                    print(f"  Total Params: {params_readable}")
+                    
+                    # Estimate FLOPs per second
+                    if vla_elapsed_time > 0:
+                        flops_per_sec = flops / (vla_elapsed_time / 1000)
+                        gflops = flops_per_sec / 1e9
+                        tflops = flops_per_sec / 1e12
+                        print(f"  GFLOPS: {gflops:.2f} GFLOP/s")
+                        print(f"  TFLOPS: {tflops:.4f} TFLOP/s")
+                    
+                except Exception as profile_err:
+                    print(f"\n[INFO] Could not compute exact FLOPs: {profile_err}")
+                    print(f"[INFO] Transformer models with custom predict_action may require manual profiling.")
+                
+                print(f"{'='*80}\n")
                 _FLOPS_CALCULATED = True
                 
             except ImportError:
-                print("[WARNING] thop library not available. Skipping FLOPs calculation.")
-                print("[INFO] Install with: pip install thop")
+                print("\n[WARNING] thop library not available. Skipping FLOPs calculation.")
+                print("[INFO] Install with: pip install thop\n")
                 _FLOPS_CALCULATED = True
             except Exception as e:
-                print(f"[WARNING] Could not calculate FLOPs: {e}")
+                print(f"\n[WARNING] Could not calculate FLOPs: {e}\n")
                 _FLOPS_CALCULATED = True
 
         if cfg.h_decoding:
