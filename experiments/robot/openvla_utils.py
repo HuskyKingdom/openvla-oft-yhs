@@ -1097,9 +1097,9 @@ def get_vla_action(
         vla_elapsed_time = (vla_end_time - vla_start_time) * 1000  # Convert to ms
         
         # Print VLA forward pass timing
-        print(f"\n{'='*80}")
-        print(f"[TIMING] VLA Forward Pass: {vla_elapsed_time:.2f} ms ({vla_elapsed_time/1000:.4f} s)")
-        print(f"{'='*80}\n")
+        # print(f"\n{'='*80}")
+        # print(f"[TIMING] VLA Forward Pass: {vla_elapsed_time:.2f} ms ({vla_elapsed_time/1000:.4f} s)")
+        # print(f"{'='*80}\n")
         
         # Calculate FLOPs only once
         if not _FLOPS_CALCULATED:
@@ -1148,12 +1148,12 @@ def get_vla_action(
                     print(f"  Note: This is a rough estimate for transformer forward pass")
                     
                     # Estimate FLOPs per second
-                    if vla_elapsed_time > 0:
-                        flops_per_sec = estimated_flops / (vla_elapsed_time / 1000)
-                        gflops = flops_per_sec / 1e9
-                        tflops = flops_per_sec / 1e12
-                        print(f"  Estimated GFLOPS: {gflops:.2f} GFLOP/s")
-                        print(f"  Estimated TFLOPS: {tflops:.4f} TFLOP/s")
+                    # if vla_elapsed_time > 0:
+                    #     flops_per_sec = estimated_flops / (vla_elapsed_time / 1000)
+                    #     gflops = flops_per_sec / 1e9
+                    #     tflops = flops_per_sec / 1e12
+                    #     print(f"  Estimated GFLOPS: {gflops:.2f} GFLOP/s")
+                    #     print(f"  Estimated TFLOPS: {tflops:.4f} TFLOP/s")
                     
                 except Exception as profile_err:
                     print(f"\n[INFO] Could not compute FLOPs statistics: {profile_err}")
@@ -1207,7 +1207,7 @@ def get_vla_action(
         
     if cfg.e_decoding:
         # action = one_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask)
-        action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k)
+        action = k_step_energy_correction_seq(h_head,hiddens[-1],action,energy_pad_mask,cfg.energy_k,alpha=cfg.energy_alpha)
 
 
 

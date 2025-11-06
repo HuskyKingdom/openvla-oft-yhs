@@ -137,6 +137,7 @@ class GenerateConfig:
     task_label:str = ""
     remove_wrap:bool = False
     energy_k:int = 1
+    energy_alpha:float = 0.5
 
     # fmt: on
 
