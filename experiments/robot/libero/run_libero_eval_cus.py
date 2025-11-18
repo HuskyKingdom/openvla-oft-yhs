@@ -141,6 +141,7 @@ class GenerateConfig:
     cus_task:str = ""
     remove_wrap:bool = False
     energy_k:int = 1
+    energy_alpha:float = 0.5
 
     # fmt: on
 
@@ -531,7 +532,7 @@ def run_task(
     task_episodes, task_successes = 0, 0
     for episode_idx in tqdm.tqdm(range(cfg.num_trials_per_task)):
 
-        # episode_idx = EPISODE_ID
+        episode_idx = EPISODE_ID
 
         log_message(f"\nTask: {task_description}", log_file)
 
