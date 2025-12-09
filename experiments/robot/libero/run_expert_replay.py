@@ -483,7 +483,7 @@ def main(args):
     
     # Generate output filename
     output_filename = f"{args.suite}__episode_{args.episode_idx}__{task_name}__success_{success}.mp4"
-    output_path = os.path.join(args.output_dir, output_filename)
+    output_path = os.path.join(args.output_dir, "expert_replay.mp4")
     
     # Save video
     save_video(frames, output_path, fps=args.fps)
