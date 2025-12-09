@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -113,7 +114,7 @@ def extract_episode_data(episode: Dict) -> Tuple[np.ndarray, str, str]:
     Returns:
         (actions, language_instruction, task_name)
         - actions: (T, 7) action array
-        - language_instruction: instruction string
+        - language_instruction: instruction string (with scene prefix removed)
         - task_name: task name extracted from file_path
     """
     steps = episode['steps']
@@ -154,7 +155,20 @@ def extract_episode_data(episode: Dict) -> Tuple[np.ndarray, str, str]:
                     except:
                         pass
     
-    return np.array(actions), language_instruction.lower().strip(), task_name
+    # Clean up instruction: remove scene prefixes like "living room scene5", "kitchen scene3", etc.
+    language_instruction = language_instruction.lower().strip()
+    
+    # Remove common scene prefixes using regex
+    # Pattern matches: "living room scene5 ", "LIVING_ROOM_SCENE5_", etc.
+    # For space-separated format
+    scene_pattern_spaces = r'^(living\s+room|kitchen|study|bedroom|bathroom|office)\s+scene\d+\s+'
+    language_instruction = re.sub(scene_pattern_spaces, '', language_instruction, flags=re.IGNORECASE)
+    
+    # For underscore-separated format (in task_name)
+    scene_pattern_underscores = r'^(LIVING_ROOM|KITCHEN|STUDY|BEDROOM|BATHROOM|OFFICE)_SCENE\d+_'
+    task_name = re.sub(scene_pattern_underscores, '', task_name, flags=re.IGNORECASE)
+    
+    return np.array(actions), language_instruction, task_name
 
 
 def find_episode_labels(substep_labels: Dict, suite_name: str, task_name: str, episode_idx: int) -> Optional[Dict]:
@@ -177,16 +191,25 @@ def find_episode_labels(substep_labels: Dict, suite_name: str, task_name: str, e
         logger.warning(f"Suite '{suite_short}' not found in substep labels")
         return None
     
-    if task_name not in substep_labels[suite_short]:
-        logger.warning(f"Task '{task_name}' not found in substep labels for suite '{suite_short}'")
-        return None
+    # Try exact match first
+    if task_name in substep_labels[suite_short]:
+        episode_key = f"episode_{episode_idx}"
+        if episode_key in substep_labels[suite_short][task_name]:
+            return substep_labels[suite_short][task_name][episode_key]
     
-    episode_key = f"episode_{episode_idx}"
-    if episode_key not in substep_labels[suite_short][task_name]:
-        logger.warning(f"Episode '{episode_key}' not found for task '{task_name}'")
-        return None
+    # If exact match fails, try fuzzy matching (in case of scene prefix differences)
+    task_name_lower = task_name.lower()
+    for label_task_name in substep_labels[suite_short].keys():
+        label_task_name_lower = label_task_name.lower()
+        # Check if one is contained in the other (handles scene prefix differences)
+        if task_name_lower in label_task_name_lower or label_task_name_lower in task_name_lower:
+            logger.info(f"Fuzzy matched task '{task_name}' to '{label_task_name}'")
+            episode_key = f"episode_{episode_idx}"
+            if episode_key in substep_labels[suite_short][label_task_name]:
+                return substep_labels[suite_short][label_task_name][episode_key]
     
-    return substep_labels[suite_short][task_name][episode_key]
+    logger.warning(f"Task '{task_name}' not found in substep labels for suite '{suite_short}'")
+    return None
 
 
 def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step: str) -> np.ndarray:
@@ -432,7 +455,7 @@ def main(args):
     
     # Extract episode data
     actions, instruction, task_name = extract_episode_data(episode)
-    logger.info(f"Task: {instruction}")
+    logger.info(f"Task instruction: {instruction}")
     logger.info(f"Task name: {task_name}")
     logger.info(f"Total timesteps: {len(actions)}")
     
