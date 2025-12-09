@@ -25,6 +25,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from scipy.ndimage import gaussian_filter1d
 
 # Disable GPU for data loading
 tf.config.set_visible_devices([], 'GPU')
@@ -265,13 +266,17 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
 # ============================================================================
 
 def detect_gripper_transitions(gripper_states: np.ndarray, 
-                               threshold: float = 0.04) -> Tuple[List[int], List[int]]:
+                               threshold: float = 0.04,
+                               use_relative: bool = True,
+                               relative_threshold: float = 0.008) -> Tuple[List[int], List[int]]:
     """
-    Detect gripper open/close transition moments.
+    Detect gripper open/close transition moments using relative change detection.
     
     Args:
         gripper_states: (T, 2) gripper state array
-        threshold: Threshold for determining gripper open
+        threshold: Absolute threshold for determining gripper open (legacy, not used if use_relative=True)
+        use_relative: If True, use relative change detection instead of absolute threshold
+        relative_threshold: Minimum change in gripper value to count as transition
     
     Returns:
         (pick_moments, place_moments)
@@ -279,18 +284,48 @@ def detect_gripper_transitions(gripper_states: np.ndarray,
         - place_moments: List of gripper opening moments (close→open)
     """
     T = len(gripper_states)
-    is_gripper_open = gripper_states[:, 0] > threshold
+    gripper_values = gripper_states[:, 0]
     
     pick_moments = []
     place_moments = []
     
-    for t in range(1, T):
-        # Open → Close = Pick
-        if is_gripper_open[t-1] and not is_gripper_open[t]:
-            pick_moments.append(t)
-        # Close → Open = Place
-        elif not is_gripper_open[t-1] and is_gripper_open[t]:
-            place_moments.append(t)
+    if use_relative:
+        # Use relative change detection (better for different object sizes)
+        # Smooth gripper values to reduce noise
+        gripper_smooth = gaussian_filter1d(gripper_values, sigma=2)
+        
+        # Compute change over a window
+        window = 5
+        for t in range(window, T - window):
+            # Look at change over past and future windows
+            past_avg = np.mean(gripper_smooth[t-window:t])
+            current = gripper_smooth[t]
+            future_avg = np.mean(gripper_smooth[t+1:t+window+1])
+            
+            # Detect significant closing (decrease in gripper value)
+            if past_avg > current + relative_threshold and current > future_avg - relative_threshold/2:
+                # Gripper closing: past was more open, now closing
+                if not pick_moments or t - pick_moments[-1] > 15:  # Avoid duplicates
+                    pick_moments.append(t)
+                    logger.debug(f"    Pick detected at t={t}: {past_avg:.4f} → {current:.4f}")
+            
+            # Detect significant opening (increase in gripper value)
+            elif past_avg + relative_threshold < current and future_avg > current - relative_threshold/2:
+                # Gripper opening: was closed, now opening
+                if not place_moments or t - place_moments[-1] > 15:  # Avoid duplicates
+                    place_moments.append(t)
+                    logger.debug(f"    Place detected at t={t}: {past_avg:.4f} → {current:.4f}")
+    else:
+        # Legacy: absolute threshold method
+        is_gripper_open = gripper_values > threshold
+        
+        for t in range(1, T):
+            # Open → Close = Pick
+            if is_gripper_open[t-1] and not is_gripper_open[t]:
+                pick_moments.append(t)
+            # Close → Open = Place
+            elif not is_gripper_open[t-1] and is_gripper_open[t]:
+                place_moments.append(t)
     
     return pick_moments, place_moments
 
@@ -428,9 +463,19 @@ def label_actions(episode_data: Dict[str, np.ndarray],
     logger.debug(f"  Gripper threshold: {gripper_threshold}")
     logger.debug(f"  Gripper open count: {(gripper_states[:, 0] > gripper_threshold).sum()}/{T}")
     
-    # Detect gripper transitions
+    # Output complete gripper sequence for analysis
+    logger.debug(f"  Complete gripper sequence ({T} timesteps):")
+    for t in range(0, T, 10):  # Print every 10th timestep to avoid clutter
+        end_t = min(t + 10, T)
+        values_str = ', '.join([f"{gripper_states[i, 0]:.4f}" for i in range(t, end_t)])
+        logger.debug(f"    t={t:3d}-{end_t-1:3d}: [{values_str}]")
+    
+    # Detect gripper transitions using relative change detection
     pick_moments, place_moments = detect_gripper_transitions(
-        gripper_states, gripper_threshold
+        gripper_states, 
+        gripper_threshold,
+        use_relative=True,
+        relative_threshold=0.008
     )
     
     logger.debug(f"  Found {len(pick_moments)} pick moments: {pick_moments}")
