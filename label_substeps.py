@@ -831,7 +831,8 @@ def process_single_episode(episode: Dict,
 def process_suite(rlds_data_dir: str,
                  suite_name: str,
                  apd_plans: Dict,
-                 max_episodes: Optional[int] = None) -> Dict:
+                 max_episodes: Optional[int] = None,
+                 episode_ids: Optional[List[int]] = None) -> Dict:
     """
     Process entire task suite.
     
@@ -840,6 +841,7 @@ def process_suite(rlds_data_dir: str,
         suite_name: Task suite name
         apd_plans: APD plans dictionary
         max_episodes: Maximum episodes to process (None = all)
+        episode_ids: Specific episode IDs to process (None = all)
     
     Returns:
         All labeling results for this suite
@@ -847,6 +849,9 @@ def process_suite(rlds_data_dir: str,
     logger.info(f"\n{'='*60}")
     logger.info(f"Processing suite: {suite_name}")
     logger.info(f"{'='*60}")
+    
+    if episode_ids:
+        logger.info(f"Processing specific episodes: {episode_ids}")
     
     # Load dataset
     dataset = load_rlds_dataset(rlds_data_dir, suite_name)
@@ -858,6 +863,11 @@ def process_suite(rlds_data_dir: str,
     episode_count = 0
     
     for episode_idx, episode in enumerate(dataset):
+        # Skip if not in specified episode_ids
+        if episode_ids is not None and episode_idx not in episode_ids:
+            continue
+        
+        # Stop if max_episodes limit reached
         if max_episodes and episode_count >= max_episodes:
             logger.info(f"Reached max_episodes limit: {max_episodes}")
             break
@@ -884,7 +894,8 @@ def main(apd_path: str,
         rlds_data_dir: str,
         output_path: str,
         suites: Optional[List[str]] = None,
-        max_episodes_per_suite: Optional[int] = None) -> None:
+        max_episodes_per_suite: Optional[int] = None,
+        episode_ids: Optional[List[int]] = None) -> None:
     """
     Main function: Process all suites and generate output.
     
@@ -894,6 +905,7 @@ def main(apd_path: str,
         output_path: Output JSON file path
         suites: List of suites to process (None = all)
         max_episodes_per_suite: Max episodes per suite
+        episode_ids: Specific episode IDs to process (None = all)
     """
     logger.info("="*60)
     logger.info("LIBERO Substep Labeling Tool")
@@ -919,7 +931,8 @@ def main(apd_path: str,
             rlds_data_dir,
             suite_name,
             apd_plans,
-            max_episodes_per_suite
+            max_episodes_per_suite,
+            episode_ids
         )
         
         if suite_results:
@@ -991,6 +1004,14 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
+        "--episode_ids",
+        type=int,
+        nargs='+',
+        default=None,
+        help="Specific episode IDs to process (e.g., --episode_ids 0 5 10 15)"
+    )
+    
+    parser.add_argument(
         "--debug",
         action='store_true',
         help="Enable debug logging"
@@ -1008,6 +1029,7 @@ if __name__ == "__main__":
         rlds_data_dir=args.rlds_data_dir,
         output_path=args.output_path,
         suites=args.suites,
-        max_episodes_per_suite=args.max_episodes
+        max_episodes_per_suite=args.max_episodes,
+        episode_ids=args.episode_ids
     )
 
