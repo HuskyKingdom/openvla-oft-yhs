@@ -207,15 +207,30 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
     
     # Get language instruction from episode level if not found in steps
     if not language_instruction:
-        # Try different possible keys at episode level
-        for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
-            if key in episode:
-                try:
-                    language_instruction = episode[key].numpy().decode('utf-8')
-                    logger.debug(f"Found instruction in episode['{key}']")
-                    break
-                except:
-                    pass
+        # Check episode_metadata first (LIBERO RLDS format)
+        if 'episode_metadata' in episode:
+            metadata = episode['episode_metadata']
+            logger.debug(f"episode_metadata keys: {list(metadata.keys())}")
+            
+            for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
+                if key in metadata:
+                    try:
+                        language_instruction = metadata[key].numpy().decode('utf-8')
+                        logger.debug(f"Found instruction in episode_metadata['{key}']")
+                        break
+                    except:
+                        pass
+        
+        # Try direct episode level as fallback
+        if not language_instruction:
+            for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
+                if key in episode:
+                    try:
+                        language_instruction = episode[key].numpy().decode('utf-8')
+                        logger.debug(f"Found instruction in episode['{key}']")
+                        break
+                    except:
+                        pass
     
     return {
         "action": np.array(actions),
