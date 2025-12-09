@@ -33,13 +33,13 @@ tf.config.set_visible_devices([], 'GPU')
 # Global configuration
 CONFIG = {
     "gripper_threshold": 0.025,          # Gripper open threshold (adjusted for LIBERO data range 0.002-0.04)
-    "pick_expand_backward": 50,          # Pick backward expansion max steps (increased from 30)
-    "pick_expand_forward": 30,           # Pick forward expansion max steps (increased from 20)
-    "place_expand_backward": 60,         # Place backward expansion max steps (increased significantly)
-    "place_expand_forward": 50,          # Place forward expansion max steps (increased significantly)
-    "z_descent_threshold": -0.005,       # Z-axis descent threshold
-    "z_ascent_threshold": 0.01,          # Z-axis ascent threshold
-    "movement_threshold": 0.05,          # Movement threshold
+    "pick_expand_backward": 50,          # Pick backward expansion max steps
+    "pick_expand_forward": 30,           # Pick forward expansion max steps
+    "place_expand_backward": 100,        # Place backward expansion max steps (much larger)
+    "place_expand_forward": 80,          # Place forward expansion max steps (much larger)
+    "z_descent_threshold": -0.002,       # Z-axis descent threshold (more sensitive)
+    "z_ascent_threshold": 0.005,         # Z-axis ascent threshold (more sensitive)
+    "movement_threshold": 0.03,          # Movement threshold (more sensitive)
     "suite_names": [
         "libero_spatial_no_noops",
         "libero_object_no_noops",
@@ -360,27 +360,15 @@ def expand_pick_range(ee_states: np.ndarray,
     """
     z_positions = ee_states[:, 2]
     
-    # Backward expansion: Find when descent starts
+    # Backward expansion: Use max range by default
+    # Capture the entire approach and descent phase
     start_t = max(0, pick_t - max_backward)
-    for t in range(pick_t-1, max(0, pick_t-max_backward), -1):
-        if t >= 5:
-            # Check if Z is descending
-            z_trend = z_positions[t] - z_positions[t-5]
-            if z_trend < CONFIG['z_descent_threshold']:
-                start_t = t - 5
-                break
     
-    # Forward expansion: Find when ascent stops (object lifted)
+    # Forward expansion: Use max range by default
+    # Capture the entire lifting phase
     end_t = min(T, pick_t + max_forward)
-    max_z_after_pick = z_positions[pick_t]
     
-    for t in range(pick_t+1, min(T, pick_t+max_forward)):
-        if z_positions[t] > max_z_after_pick:
-            max_z_after_pick = z_positions[t]
-            end_t = t + 1
-        elif z_positions[t] < max_z_after_pick - 0.01:
-            # Z starts descending, stop expansion
-            break
+    logger.debug(f"    Pick range: t={start_t} to {end_t} (max expansion used)")
     
     return start_t, end_t
 
@@ -411,29 +399,19 @@ def expand_place_range(ee_states: np.ndarray,
     z_positions = ee_states[:, 2]
     positions = ee_states[:, :3]
     
-    # Backward expansion: Find when descent/approach starts
+    # Backward expansion: Use max range by default, only stop if clear stopping condition
     start_t = max(0, place_t - max_backward)
-    for t in range(place_t-1, max(0, place_t-max_backward), -1):
-        if t >= 5:
-            # Check if descending or moving rapidly
-            z_trend = z_positions[t] - z_positions[t-5]
-            movement = np.linalg.norm(positions[t] - positions[t-5])
-            
-            if z_trend < CONFIG['z_descent_threshold'] or movement > CONFIG['movement_threshold']:
-                start_t = t - 5
-                break
     
-    # Forward expansion: Find when gripper stabilizes or moves away after opening
+    # Don't stop early - use the full backward range unless we find a clear pick moment
+    # This ensures we capture the entire approach and descent phase
+    
+    # Forward expansion: Use max range by default
     end_t = min(T, place_t + max_forward)
-    for t in range(place_t+1, min(T, place_t+max_forward)):
-        if t < T - 5:
-            # Check if moving away (Z ascent or lateral movement)
-            z_trend = z_positions[t+5] - z_positions[t]
-            movement = np.linalg.norm(positions[t+5] - positions[t])
-            
-            if z_trend > CONFIG['z_ascent_threshold'] or movement > CONFIG['movement_threshold']:
-                end_t = t + 5
-                break
+    
+    # Don't stop early - capture the full departure phase
+    # The place action includes moving away after releasing
+    
+    logger.debug(f"    Place range: t={start_t} to {end_t} (max expansion used)")
     
     return start_t, end_t
 
