@@ -205,11 +205,13 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
     frame_copy = frame.copy()
     height, width = frame_copy.shape[:2]
     
-    # Define text properties
+    # Define text properties (scaled to image size)
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.25
+    # Scale font based on image width (for 256px width, this gives ~0.15)
+    font_scale = width / 1700.0
     thickness = 1
-    line_spacing = 12
+    # Scale line spacing based on image height
+    line_spacing = int(height / 21.0)
     
     # Define colors (BGR format)
     bg_color = (0, 0, 0)  # Black background
@@ -256,14 +258,15 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
         max_text_width = max(max_text_width, text_width)
         text_heights.append(text_height + baseline)
     
-    # Define text box position (top-right corner)
-    padding = 3
+    # Define text box position (top-right corner, scaled to image size)
+    padding = int(width / 85.0)  # ~3px for 256px width
     box_width = max_text_width + 2 * padding
     box_height = len(lines) * line_spacing + padding
     
-    box_x1 = width - box_width - 3
-    box_y1 = 3
-    box_x2 = width - 3
+    margin = int(width / 85.0)  # ~3px for 256px width
+    box_x1 = width - box_width - margin
+    box_y1 = margin
+    box_x2 = width - margin
     box_y2 = box_y1 + box_height
     
     # Draw semi-transparent background
@@ -275,7 +278,7 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
     cv2.rectangle(frame_copy, (box_x1, box_y1), (box_x2, box_y2), text_color, 1)
     
     # Draw text
-    y_offset = box_y1 + padding + 8
+    y_offset = box_y1 + padding + int(height / 32.0)  # ~8px for 256px height
     for text, color in lines:
         cv2.putText(frame_copy, text, (box_x1 + padding, y_offset), 
                    font, font_scale, color, thickness, cv2.LINE_AA)
