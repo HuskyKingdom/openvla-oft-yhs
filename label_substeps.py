@@ -212,14 +212,34 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
             metadata = episode['episode_metadata']
             logger.debug(f"episode_metadata keys: {list(metadata.keys())}")
             
-            for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
-                if key in metadata:
-                    try:
-                        language_instruction = metadata[key].numpy().decode('utf-8')
-                        logger.debug(f"Found instruction in episode_metadata['{key}']")
-                        break
-                    except:
-                        pass
+            # Try to extract from file_path
+            if 'file_path' in metadata:
+                try:
+                    file_path = metadata['file_path'].numpy().decode('utf-8')
+                    logger.debug(f"file_path: {file_path}")
+                    
+                    # Extract task name from file path
+                    # Expected format: .../task_name_demo.hdf5
+                    import os
+                    filename = os.path.basename(file_path)
+                    if filename.endswith('_demo.hdf5'):
+                        task_name = filename[:-10]  # Remove '_demo.hdf5'
+                        # Convert underscores to spaces for instruction
+                        language_instruction = task_name.replace('_', ' ')
+                        logger.debug(f"Extracted instruction from file_path: '{language_instruction}'")
+                except Exception as e:
+                    logger.debug(f"Failed to extract from file_path: {e}")
+            
+            # Try standard keys if file_path extraction didn't work
+            if not language_instruction:
+                for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
+                    if key in metadata:
+                        try:
+                            language_instruction = metadata[key].numpy().decode('utf-8')
+                            logger.debug(f"Found instruction in episode_metadata['{key}']")
+                            break
+                        except:
+                            pass
         
         # Try direct episode level as fallback
         if not language_instruction:
