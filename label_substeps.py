@@ -151,8 +151,9 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
     actions = []
     ee_states = []
     gripper_states = []
+    language_instruction = ""
     
-    for step in steps:
+    for step_idx, step in enumerate(steps):
         # Action
         action = step['action'].numpy()
         actions.append(action)
@@ -180,13 +181,15 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
             # Fallback: use last action dim as gripper
             gripper_state = np.array([action[-1], action[-1]]) if len(action) > 0 else np.zeros(2)
         gripper_states.append(gripper_state)
+        
+        # Get language instruction from first step if available
+        if step_idx == 0 and not language_instruction:
+            if 'language_instruction' in step['observation']:
+                language_instruction = step['observation']['language_instruction'].numpy().decode('utf-8')
     
-    # Get language instruction
-    language_instruction = ""
-    if 'language_instruction' in episode:
+    # Get language instruction from episode level if not found in steps
+    if not language_instruction and 'language_instruction' in episode:
         language_instruction = episode['language_instruction'].numpy().decode('utf-8')
-    elif len(steps) > 0 and 'language_instruction' in steps[0]['observation']:
-        language_instruction = steps[0]['observation']['language_instruction'].numpy().decode('utf-8')
     
     return {
         "action": np.array(actions),
