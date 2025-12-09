@@ -33,10 +33,10 @@ tf.config.set_visible_devices([], 'GPU')
 # Global configuration
 CONFIG = {
     "gripper_threshold": 0.025,          # Gripper open threshold (adjusted for LIBERO data range 0.002-0.04)
-    "pick_expand_backward": 30,          # Pick backward expansion max steps
-    "pick_expand_forward": 20,           # Pick forward expansion max steps
-    "place_expand_backward": 20,         # Place backward expansion max steps
-    "place_expand_forward": 15,          # Place forward expansion max steps
+    "pick_expand_backward": 50,          # Pick backward expansion max steps (increased from 30)
+    "pick_expand_forward": 30,           # Pick forward expansion max steps (increased from 20)
+    "place_expand_backward": 35,         # Place backward expansion max steps (increased from 20)
+    "place_expand_forward": 25,          # Place forward expansion max steps (increased from 15)
     "z_descent_threshold": -0.005,       # Z-axis descent threshold
     "z_ascent_threshold": 0.01,          # Z-axis ascent threshold
     "movement_threshold": 0.05,          # Movement threshold
