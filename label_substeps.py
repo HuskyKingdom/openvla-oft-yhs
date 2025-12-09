@@ -110,7 +110,7 @@ def load_rlds_dataset(data_dir: str, suite_name: str) -> Optional[tf.data.Datase
     Returns:
         TensorFlow Dataset object containing all episodes, or None if not found
     """
-    dataset_path = os.path.join(data_dir + "/1.0.0/", suite_name)
+    dataset_path = os.path.join(data_dir, suite_name) + "/1.0.0/"
     
     if not os.path.exists(dataset_path):
         logger.warning(f"Dataset not found: {dataset_path}")
