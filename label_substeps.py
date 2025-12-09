@@ -423,6 +423,11 @@ def label_actions(episode_data: Dict[str, np.ndarray],
     gripper_states = episode_data['gripper_states']
     T = len(ee_states)
     
+    # Debug: Print gripper state statistics
+    logger.debug(f"  Gripper states range: min={gripper_states[:, 0].min():.4f}, max={gripper_states[:, 0].max():.4f}")
+    logger.debug(f"  Gripper threshold: {gripper_threshold}")
+    logger.debug(f"  Gripper open count: {(gripper_states[:, 0] > gripper_threshold).sum()}/{T}")
+    
     # Detect gripper transitions
     pick_moments, place_moments = detect_gripper_transitions(
         gripper_states, gripper_threshold
@@ -509,6 +514,118 @@ def label_actions(episode_data: Dict[str, np.ndarray],
 # Module 2.3: Output Generation
 # ============================================================================
 
+def map_timesteps_to_apd_steps(action_labels: List[str], 
+                               summary: Dict,
+                               apd_plan: Optional[List[Dict]],
+                               instruction: str) -> List[Dict]:
+    """
+    Map timesteps to APD plan substeps.
+    
+    Args:
+        action_labels: List of action types for each timestep
+        summary: Summary dict with pick/place moments and segments
+        apd_plan: APD plan steps (or None if not found)
+        instruction: The instruction text
+    
+    Returns:
+        List of dicts with timestep and APD_step mapping
+    """
+    T = len(action_labels)
+    timestep_labels = []
+    
+    if apd_plan is None or len(apd_plan) == 0:
+        # No plan found, just label with action types
+        for t in range(T):
+            timestep_labels.append({
+                "timestep": t,
+                "action": action_labels[t],
+                "APD_step": "unknown"
+            })
+        return timestep_labels
+    
+    # Create action segments with their types
+    segments = []
+    
+    # Add pick segments
+    for i, (start, end) in enumerate(summary['pick_segments']):
+        segments.append({
+            'start': start,
+            'end': end,
+            'type': 'pick',
+            'index': i
+        })
+    
+    # Add place segments
+    for i, (start, end) in enumerate(summary['place_segments']):
+        segments.append({
+            'start': start,
+            'end': end,
+            'type': 'place',
+            'index': i
+        })
+    
+    # Add move segments
+    for i, (start, end) in enumerate(summary['move_segments']):
+        segments.append({
+            'start': start,
+            'end': end,
+            'type': 'move',
+            'index': i
+        })
+    
+    # Sort segments by start time
+    segments.sort(key=lambda x: x['start'])
+    
+    # Map segments to APD steps
+    # Typical pattern: move -> pick -> move -> place -> move
+    # APD pattern: Move step -> Pick step -> Move step -> Place step -> Return step
+    
+    apd_step_index = 0
+    
+    for seg in segments:
+        # Find matching APD step based on action type
+        while apd_step_index < len(apd_plan):
+            apd_subgoal = apd_plan[apd_step_index]['subgoal'].lower()
+            
+            if seg['type'] == 'move':
+                if any(kw in apd_subgoal for kw in ['move', 'reach', 'return']):
+                    break
+            elif seg['type'] == 'pick':
+                if any(kw in apd_subgoal for kw in ['pick', 'grasp', 'lift']):
+                    break
+            elif seg['type'] == 'place':
+                if any(kw in apd_subgoal for kw in ['place', 'put', 'lower', 'release']):
+                    break
+            
+            apd_step_index += 1
+        
+        # Assign APD step to this segment
+        if apd_step_index < len(apd_plan):
+            seg['apd_step'] = apd_plan[apd_step_index]['subgoal']
+            apd_step_index += 1
+        else:
+            seg['apd_step'] = apd_plan[-1]['subgoal'] if apd_plan else 'unknown'
+    
+    # Create timestep labels
+    for t in range(T):
+        # Find which segment this timestep belongs to
+        apd_step_text = 'unknown'
+        action_type = action_labels[t]
+        
+        for seg in segments:
+            if seg['start'] <= t < seg['end']:
+                apd_step_text = seg.get('apd_step', 'unknown')
+                break
+        
+        timestep_labels.append({
+            "timestep": t,
+            "action": action_type,
+            "APD_step": apd_step_text
+        })
+    
+    return timestep_labels
+
+
 def match_instruction_to_plan(instruction: str, 
                              apd_plans: Dict[str, Dict]) -> Optional[List[Dict]]:
     """
@@ -544,7 +661,8 @@ def create_output_structure(suite_name: str,
                            episode_idx: int,
                            instruction: str,
                            action_labels: List[str],
-                           summary: Dict) -> Dict:
+                           summary: Dict,
+                           apd_plan: Optional[List[Dict]] = None) -> Dict:
     """
     Create output data structure for single episode.
     
@@ -555,15 +673,18 @@ def create_output_structure(suite_name: str,
         instruction: Language instruction
         action_labels: Timestep-level action labels
         summary: Statistics summary
+        apd_plan: APD plan steps (optional)
     
     Returns:
         Formatted episode data dictionary
     """
-    # Create timestep labels list
-    timestep_labels = [
-        {"timestep": t, "action": action}
-        for t, action in enumerate(action_labels)
-    ]
+    # Map timesteps to APD steps
+    timestep_labels = map_timesteps_to_apd_steps(
+        action_labels, 
+        summary, 
+        apd_plan,
+        instruction
+    )
     
     return {
         "instruction": instruction,
@@ -620,6 +741,13 @@ def process_single_episode(episode: Dict,
         
         logger.info(f"  Episode {episode_idx}: '{instruction}'")
         
+        # Find matching APD plan
+        apd_plan = match_instruction_to_plan(instruction, apd_plans)
+        if apd_plan:
+            logger.info(f"    Found APD plan with {len(apd_plan)} steps")
+        else:
+            logger.warning(f"    No matching APD plan found")
+        
         # Label actions
         action_labels, summary = label_actions(
             episode_data,
@@ -634,7 +762,8 @@ def process_single_episode(episode: Dict,
             episode_idx,
             instruction,
             action_labels,
-            summary
+            summary,
+            apd_plan
         )
         
         # Log summary
