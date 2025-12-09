@@ -294,27 +294,32 @@ def detect_gripper_transitions(gripper_states: np.ndarray,
         # Smooth gripper values to reduce noise
         gripper_smooth = gaussian_filter1d(gripper_values, sigma=2)
         
-        # Compute change over a window
-        window = 5
+        # Method: Detect transitions by comparing before/after windows
+        window = 8  # Larger window for more stable detection
+        
         for t in range(window, T - window):
-            # Look at change over past and future windows
-            past_avg = np.mean(gripper_smooth[t-window:t])
+            # Compare windows before and after this timestep
+            before_window = gripper_smooth[t-window:t]
+            after_window = gripper_smooth[t+1:t+window+1]
+            
+            before_avg = np.mean(before_window)
+            after_avg = np.mean(after_window)
             current = gripper_smooth[t]
-            future_avg = np.mean(gripper_smooth[t+1:t+window+1])
             
-            # Detect significant closing (decrease in gripper value)
-            if past_avg > current + relative_threshold and current > future_avg - relative_threshold/2:
-                # Gripper closing: past was more open, now closing
-                if not pick_moments or t - pick_moments[-1] > 15:  # Avoid duplicates
+            # Detect significant closing (before > after)
+            if before_avg > after_avg + relative_threshold:
+                # Gripper closing: before was more open, after is more closed
+                if not pick_moments or t - pick_moments[-1] > 20:  # Avoid duplicates
                     pick_moments.append(t)
-                    logger.debug(f"    Pick detected at t={t}: {past_avg:.4f} → {current:.4f}")
+                    logger.debug(f"    Pick detected at t={t}: before={before_avg:.4f}, after={after_avg:.4f}, change={before_avg-after_avg:.4f}")
             
-            # Detect significant opening (increase in gripper value)
-            elif past_avg + relative_threshold < current and future_avg > current - relative_threshold/2:
-                # Gripper opening: was closed, now opening
-                if not place_moments or t - place_moments[-1] > 15:  # Avoid duplicates
+            # Detect significant opening (after > before)
+            # Use smaller threshold for place since opening can be gradual
+            elif after_avg > before_avg + relative_threshold * 0.4:  # More sensitive (0.4x)
+                # Gripper opening: before was closed, after is more open
+                if not place_moments or t - place_moments[-1] > 20:  # Avoid duplicates
                     place_moments.append(t)
-                    logger.debug(f"    Place detected at t={t}: {past_avg:.4f} → {current:.4f}")
+                    logger.debug(f"    Place detected at t={t}: before={before_avg:.4f}, after={after_avg:.4f}, change={after_avg-before_avg:.4f}")
     else:
         # Legacy: absolute threshold method
         is_gripper_open = gripper_values > threshold
