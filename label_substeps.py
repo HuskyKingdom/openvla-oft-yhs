@@ -31,7 +31,7 @@ tf.config.set_visible_devices([], 'GPU')
 
 # Global configuration
 CONFIG = {
-    "gripper_threshold": 0.04,           # Gripper open threshold
+    "gripper_threshold": 0.025,          # Gripper open threshold (adjusted for LIBERO data range 0.002-0.04)
     "pick_expand_backward": 30,          # Pick backward expansion max steps
     "pick_expand_forward": 20,           # Pick forward expansion max steps
     "place_expand_backward": 20,         # Place backward expansion max steps
