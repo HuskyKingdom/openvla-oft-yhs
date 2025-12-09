@@ -207,9 +207,9 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
     
     # Define text properties
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.3
+    font_scale = 0.25
     thickness = 1
-    line_spacing = 15
+    line_spacing = 12
     
     # Define colors (BGR format)
     bg_color = (0, 0, 0)  # Black background
@@ -228,7 +228,7 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
     ]
     
     # Split APD step into multiple lines if too long
-    max_apd_width = 40  # characters
+    max_apd_width = 45  # characters
     apd_words = apd_step.split()
     apd_lines = []
     current_line = ""
@@ -257,13 +257,13 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
         text_heights.append(text_height + baseline)
     
     # Define text box position (top-right corner)
-    padding = 5
+    padding = 3
     box_width = max_text_width + 2 * padding
     box_height = len(lines) * line_spacing + padding
     
-    box_x1 = width - box_width - 5
-    box_y1 = 5
-    box_x2 = width - 5
+    box_x1 = width - box_width - 3
+    box_y1 = 3
+    box_x2 = width - 3
     box_y2 = box_y1 + box_height
     
     # Draw semi-transparent background
@@ -275,7 +275,7 @@ def annotate_frame(frame: np.ndarray, timestep: int, action_type: str, apd_step:
     cv2.rectangle(frame_copy, (box_x1, box_y1), (box_x2, box_y2), text_color, 1)
     
     # Draw text
-    y_offset = box_y1 + padding + 10
+    y_offset = box_y1 + padding + 8
     for text, color in lines:
         cv2.putText(frame_copy, text, (box_x1 + padding, y_offset), 
                    font, font_scale, color, thickness, cv2.LINE_AA)
