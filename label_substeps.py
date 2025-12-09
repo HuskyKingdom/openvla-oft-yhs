@@ -35,8 +35,8 @@ CONFIG = {
     "gripper_threshold": 0.025,          # Gripper open threshold (adjusted for LIBERO data range 0.002-0.04)
     "pick_expand_backward": 50,          # Pick backward expansion max steps (increased from 30)
     "pick_expand_forward": 30,           # Pick forward expansion max steps (increased from 20)
-    "place_expand_backward": 35,         # Place backward expansion max steps (increased from 20)
-    "place_expand_forward": 25,          # Place forward expansion max steps (increased from 15)
+    "place_expand_backward": 60,         # Place backward expansion max steps (increased significantly)
+    "place_expand_forward": 50,          # Place forward expansion max steps (increased significantly)
     "z_descent_threshold": -0.005,       # Z-axis descent threshold
     "z_ascent_threshold": 0.01,          # Z-axis ascent threshold
     "movement_threshold": 0.05,          # Movement threshold
