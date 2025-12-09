@@ -153,6 +153,10 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
     gripper_states = []
     language_instruction = ""
     
+    # Debug: Check episode keys on first call
+    if len(actions) == 0:
+        logger.debug(f"Episode keys: {list(episode.keys())}")
+    
     for step_idx, step in enumerate(steps):
         # Action
         action = step['action'].numpy()
@@ -183,19 +187,41 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
         gripper_states.append(gripper_state)
         
         # Get language instruction from first step if available
-        if step_idx == 0 and not language_instruction:
-            if 'language_instruction' in step['observation']:
+        if step_idx == 0:
+            # Debug: log observation keys
+            logger.debug(f"Step 0 observation keys: {list(step['observation'].keys())}")
+            
+            if not language_instruction and 'language_instruction' in step['observation']:
                 language_instruction = step['observation']['language_instruction'].numpy().decode('utf-8')
+            
+            # Try common alternative keys
+            if not language_instruction:
+                for key in ['instruction', 'task', 'task_description', 'natural_language_instruction']:
+                    if key in step['observation']:
+                        try:
+                            language_instruction = step['observation'][key].numpy().decode('utf-8')
+                            logger.debug(f"Found instruction in step['observation']['{key}']")
+                            break
+                        except:
+                            pass
     
     # Get language instruction from episode level if not found in steps
-    if not language_instruction and 'language_instruction' in episode:
-        language_instruction = episode['language_instruction'].numpy().decode('utf-8')
+    if not language_instruction:
+        # Try different possible keys at episode level
+        for key in ['language_instruction', 'instruction', 'task', 'task_description', 'natural_language_instruction']:
+            if key in episode:
+                try:
+                    language_instruction = episode[key].numpy().decode('utf-8')
+                    logger.debug(f"Found instruction in episode['{key}']")
+                    break
+                except:
+                    pass
     
     return {
         "action": np.array(actions),
         "ee_states": np.array(ee_states),
         "gripper_states": np.array(gripper_states),
-        "language_instruction": language_instruction.lower().strip()
+        "language_instruction": language_instruction.lower().strip() if language_instruction else ""
     }
 
 
