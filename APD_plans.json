@@ -130,31 +130,26 @@
       "plan": [
         {
           "step": 1,
-          "subgoal": "Move gripper on top of the cookie box",
-          "expected_effect": "robot base positioned on top of the cookie box"
+          "subgoal": "Move gripper on top of the black bowl which next to the cookie box",
+          "expected_effect": "robot base positioned on top of the black bowl which next to the cookie box"
         },
         {
           "step": 2,
-          "subgoal": "Reach the black bowl with the right arm",
-          "expected_effect": "gripper aligned with the black bowl"
-        },
-        {
-          "step": 3,
           "subgoal": "Pick up the black bowl",
           "expected_effect": "robot holds the black bowl securely"
         },
         {
-          "step": 4,
+          "step": 3,
           "subgoal": "Move gripper above the plate",
           "expected_effect": "gripper positioned above the plate surface"
         },
         {
-          "step": 5,
+          "step": 4,
           "subgoal": "Place bowl on the plate",
           "expected_effect": "bowl stably placed on the plate surface"
         },
         {
-          "step": 6,
+          "step": 5,
           "subgoal": "Return to initial position",
           "expected_effect": "robot back at neutral home pose"
         }
