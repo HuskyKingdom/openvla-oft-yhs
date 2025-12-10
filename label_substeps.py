@@ -576,11 +576,16 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
     pick_moments = summary['pick_moments']
     place_moments = summary['place_moments']
     
+    logger.debug(f"  Building blocks: {len(pick_moments)} picks, {len(place_moments)} places")
+    logger.debug(f"  Pick moments: {pick_moments}")
+    logger.debug(f"  Place moments: {place_moments}")
+    
     # Create expanded blocks
     blocks = []
     
     # Process each pick-place cycle
     num_cycles = max(len(pick_moments), len(place_moments))
+    logger.debug(f"  Number of cycles: {num_cycles}")
     
     for cycle_idx in range(num_cycles):
         # Determine block boundaries
@@ -609,6 +614,7 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
                 'cycle': cycle_idx,
                 'core_moment': pick_t
             })
+            logger.debug(f"    Created Pick block {cycle_idx}: t={pick_start} to {pick_end} (core={pick_t})")
         
         if cycle_idx < len(place_moments):
             place_t = place_moments[cycle_idx]
@@ -634,6 +640,11 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
                 'cycle': cycle_idx,
                 'core_moment': place_t
             })
+            logger.debug(f"    Created Place block {cycle_idx}: t={place_start} to {place_end} (core={place_t})")
+    
+    logger.debug(f"  Total blocks created: {len(blocks)}")
+    for block in blocks:
+        logger.debug(f"    Block: {block['type']} cycle={block['cycle']}, t={block['start']}-{block['end']}")
     
     # Map blocks to APD steps
     apd_pick_steps = []
@@ -683,6 +694,12 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
     
     # Sort by timestep
     timestep_labels.sort(key=lambda x: x['timestep'])
+    
+    # Recalculate action counts based on filtered timesteps
+    pick_count = sum(1 for label in timestep_labels if label['action'] == 'pick')
+    place_count = sum(1 for label in timestep_labels if label['action'] == 'place')
+    
+    logger.debug(f"  Filtered timesteps: pick={pick_count}, place={place_count}, total={len(timestep_labels)}")
     
     return timestep_labels
 
@@ -747,11 +764,25 @@ def create_output_structure(suite_name: str,
         instruction
     )
     
+    # Update action counts to reflect only labeled timesteps (pick/place)
+    labeled_pick_count = sum(1 for label in timestep_labels if label['action'] == 'pick')
+    labeled_place_count = sum(1 for label in timestep_labels if label['action'] == 'place')
+    
+    summary_updated = summary.copy()
+    summary_updated['action_counts'] = {
+        "pick": labeled_pick_count,
+        "place": labeled_place_count,
+        "move": 0  # Move is merged into pick/place
+    }
+    summary_updated['labeled_timesteps'] = len(timestep_labels)
+    summary_updated['unlabeled_timesteps'] = len(action_labels) - len(timestep_labels)
+    
     return {
         "instruction": instruction,
         "total_timesteps": len(action_labels),
+        "labeled_timesteps": len(timestep_labels),
         "timestep_labels": timestep_labels,
-        "summary": summary
+        "summary": summary_updated
     }
 
 
@@ -829,7 +860,8 @@ def process_single_episode(episode: Dict,
         
         # Log summary
         logger.info(f"    Total timesteps: {len(action_labels)}")
-        logger.info(f"    Action counts: {summary['action_counts']}")
+        logger.info(f"    Labeled timesteps: {result['labeled_timesteps']}")
+        logger.info(f"    Labeled action counts: {result['summary']['action_counts']}")
         logger.info(f"    Pick-Place cycles: {summary['num_pick_place_cycles']}")
         
         return result
