@@ -587,25 +587,26 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
     num_cycles = max(len(pick_moments), len(place_moments))
     logger.debug(f"  Number of cycles: {num_cycles}")
     
+    # Create blocks in chronological order, ensuring no overlaps
     for cycle_idx in range(num_cycles):
-        # Determine block boundaries
+        # Pick block for this cycle
         if cycle_idx < len(pick_moments):
             pick_t = pick_moments[cycle_idx]
             
-            # Pick block starts from: previous place end OR episode start
-            if cycle_idx == 0:
-                pick_start = 0
+            # Pick block starts from: previous block end OR episode start
+            if len(blocks) > 0:
+                pick_start = blocks[-1]['end']  # Start from last block's end
             else:
-                prev_place_idx = cycle_idx - 1
-                if prev_place_idx < len(place_moments):
-                    # Start from previous place moment + some buffer
-                    prev_place_t = place_moments[prev_place_idx]
-                    pick_start = prev_place_t + 5
-                else:
-                    pick_start = 0
+                pick_start = 0
             
             # Pick block ends at: pick moment + forward expansion
             pick_end = min(T, pick_t + CONFIG['pick_expand_forward'])
+            
+            # Ensure we don't overlap with next pick
+            if cycle_idx + 1 < len(pick_moments):
+                next_pick_t = pick_moments[cycle_idx + 1]
+                # Leave gap before next pick
+                pick_end = min(pick_end, next_pick_t - CONFIG['pick_expand_backward'])
             
             blocks.append({
                 'start': pick_start,
@@ -616,22 +617,24 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
             })
             logger.debug(f"    Created Pick block {cycle_idx}: t={pick_start} to {pick_end} (core={pick_t})")
         
+        # Place block for this cycle
         if cycle_idx < len(place_moments):
             place_t = place_moments[cycle_idx]
             
-            # Place block starts from: pick end
-            if cycle_idx < len(pick_moments):
-                pick_t = pick_moments[cycle_idx]
-                place_start = min(T, pick_t + CONFIG['pick_expand_forward'])
+            # Place block starts from: last block's end
+            if len(blocks) > 0:
+                place_start = blocks[-1]['end']
             else:
                 place_start = 0
             
-            # Place block ends at: next pick start OR episode end
+            # Place block ends at: place moment + forward expansion
+            place_end = min(T, place_t + CONFIG['place_expand_forward'])
+            
+            # Ensure we don't overlap with next pick
             if cycle_idx + 1 < len(pick_moments):
                 next_pick_t = pick_moments[cycle_idx + 1]
-                place_end = max(place_t, next_pick_t - CONFIG['pick_expand_backward'])
-            else:
-                place_end = T
+                # Leave gap before next pick's backward expansion
+                place_end = min(place_end, next_pick_t - CONFIG['pick_expand_backward'])
             
             blocks.append({
                 'start': place_start,
