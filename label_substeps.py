@@ -549,6 +549,12 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
     """
     Map timesteps to APD plan substeps.
     
+    Strategy:
+    - Merge Move segments INTO subsequent Pick/Place segments
+    - Move before Pick → Part of Pick
+    - Move after Pick (carrying object) → Part of Place preparation
+    - Only output Pick and Place timesteps
+    
     Args:
         action_labels: List of action types for each timestep
         summary: Summary dict with pick/place moments and segments
@@ -556,100 +562,127 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
         instruction: The instruction text
     
     Returns:
-        List of dicts with timestep and APD_step mapping
+        List of dicts with timestep and APD_step mapping (only pick/place, no move)
     """
     T = len(action_labels)
     timestep_labels = []
     
     if apd_plan is None or len(apd_plan) == 0:
-        # No plan found, just label with action types
-        for t in range(T):
+        # No plan found, return empty list
+        logger.warning(f"  No APD plan found, cannot map timesteps")
+        return []
+    
+    # Build pick/place blocks with merged moves
+    pick_moments = summary['pick_moments']
+    place_moments = summary['place_moments']
+    
+    # Create expanded blocks
+    blocks = []
+    
+    # Process each pick-place cycle
+    num_cycles = max(len(pick_moments), len(place_moments))
+    
+    for cycle_idx in range(num_cycles):
+        # Determine block boundaries
+        if cycle_idx < len(pick_moments):
+            pick_t = pick_moments[cycle_idx]
+            
+            # Pick block starts from: previous place end OR episode start
+            if cycle_idx == 0:
+                pick_start = 0
+            else:
+                prev_place_idx = cycle_idx - 1
+                if prev_place_idx < len(place_moments):
+                    # Start from previous place moment + some buffer
+                    prev_place_t = place_moments[prev_place_idx]
+                    pick_start = prev_place_t + 5
+                else:
+                    pick_start = 0
+            
+            # Pick block ends at: pick moment + forward expansion
+            pick_end = min(T, pick_t + CONFIG['pick_expand_forward'])
+            
+            blocks.append({
+                'start': pick_start,
+                'end': pick_end,
+                'type': 'pick',
+                'cycle': cycle_idx,
+                'core_moment': pick_t
+            })
+        
+        if cycle_idx < len(place_moments):
+            place_t = place_moments[cycle_idx]
+            
+            # Place block starts from: pick end
+            if cycle_idx < len(pick_moments):
+                pick_t = pick_moments[cycle_idx]
+                place_start = min(T, pick_t + CONFIG['pick_expand_forward'])
+            else:
+                place_start = 0
+            
+            # Place block ends at: next pick start OR episode end
+            if cycle_idx + 1 < len(pick_moments):
+                next_pick_t = pick_moments[cycle_idx + 1]
+                place_end = max(place_t, next_pick_t - CONFIG['pick_expand_backward'])
+            else:
+                place_end = T
+            
+            blocks.append({
+                'start': place_start,
+                'end': place_end,
+                'type': 'place',
+                'cycle': cycle_idx,
+                'core_moment': place_t
+            })
+    
+    # Map blocks to APD steps
+    apd_pick_steps = []
+    apd_place_steps = []
+    
+    for step in apd_plan:
+        subgoal = step['subgoal'].lower()
+        if any(kw in subgoal for kw in ['pick', 'grasp', 'lift']):
+            apd_pick_steps.append(step)
+        elif any(kw in subgoal for kw in ['place', 'put', 'lower', 'release']):
+            apd_place_steps.append(step)
+    
+    # Assign APD steps to blocks
+    for block in blocks:
+        if block['type'] == 'pick':
+            cycle = block['cycle']
+            if cycle < len(apd_pick_steps):
+                # Include the Move step before this Pick
+                # Find Move step before this Pick in APD plan
+                for step in apd_plan:
+                    subgoal = step['subgoal'].lower()
+                    if any(kw in subgoal for kw in ['move', 'reach']) and step['step'] < apd_pick_steps[cycle]['step']:
+                        block['apd_step'] = apd_pick_steps[cycle]['subgoal']
+                        block['apd_prep_step'] = step['subgoal']
+                        break
+                if 'apd_step' not in block:
+                    block['apd_step'] = apd_pick_steps[cycle]['subgoal']
+            else:
+                block['apd_step'] = 'Pick (no APD match)'
+        
+        elif block['type'] == 'place':
+            cycle = block['cycle']
+            if cycle < len(apd_place_steps):
+                block['apd_step'] = apd_place_steps[cycle]['subgoal']
+            else:
+                block['apd_step'] = 'Place (no APD match)'
+    
+    # Generate timestep labels (only for pick and place blocks)
+    for block in blocks:
+        for t in range(block['start'], block['end']):
             timestep_labels.append({
                 "timestep": t,
-                "action": action_labels[t],
-                "APD_step": "unknown"
+                "action": block['type'],
+                "APD_step": block['apd_step'],
+                "cycle": block['cycle']
             })
-        return timestep_labels
     
-    # Create action segments with their types
-    segments = []
-    
-    # Add pick segments
-    for i, (start, end) in enumerate(summary['pick_segments']):
-        segments.append({
-            'start': start,
-            'end': end,
-            'type': 'pick',
-            'index': i
-        })
-    
-    # Add place segments
-    for i, (start, end) in enumerate(summary['place_segments']):
-        segments.append({
-            'start': start,
-            'end': end,
-            'type': 'place',
-            'index': i
-        })
-    
-    # Add move segments
-    for i, (start, end) in enumerate(summary['move_segments']):
-        segments.append({
-            'start': start,
-            'end': end,
-            'type': 'move',
-            'index': i
-        })
-    
-    # Sort segments by start time
-    segments.sort(key=lambda x: x['start'])
-    
-    # Map segments to APD steps
-    # Typical pattern: move -> pick -> move -> place -> move
-    # APD pattern: Move step -> Pick step -> Move step -> Place step -> Return step
-    
-    apd_step_index = 0
-    
-    for seg in segments:
-        # Find matching APD step based on action type
-        while apd_step_index < len(apd_plan):
-            apd_subgoal = apd_plan[apd_step_index]['subgoal'].lower()
-            
-            if seg['type'] == 'move':
-                if any(kw in apd_subgoal for kw in ['move', 'reach', 'return']):
-                    break
-            elif seg['type'] == 'pick':
-                if any(kw in apd_subgoal for kw in ['pick', 'grasp', 'lift']):
-                    break
-            elif seg['type'] == 'place':
-                if any(kw in apd_subgoal for kw in ['place', 'put', 'lower', 'release']):
-                    break
-            
-            apd_step_index += 1
-        
-        # Assign APD step to this segment
-        if apd_step_index < len(apd_plan):
-            seg['apd_step'] = apd_plan[apd_step_index]['subgoal']
-            apd_step_index += 1
-        else:
-            seg['apd_step'] = apd_plan[-1]['subgoal'] if apd_plan else 'unknown'
-    
-    # Create timestep labels
-    for t in range(T):
-        # Find which segment this timestep belongs to
-        apd_step_text = 'unknown'
-        action_type = action_labels[t]
-        
-        for seg in segments:
-            if seg['start'] <= t < seg['end']:
-                apd_step_text = seg.get('apd_step', 'unknown')
-                break
-        
-        timestep_labels.append({
-            "timestep": t,
-            "action": action_type,
-            "APD_step": apd_step_text
-        })
+    # Sort by timestep
+    timestep_labels.sort(key=lambda x: x['timestep'])
     
     return timestep_labels
 
