@@ -18,8 +18,8 @@ from torch.utils.data import IterableDataset
 from transformers import PreTrainedTokenizerBase
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
+from prismatic.models.backbones.vision import ImageTransform
 from prismatic.overwatch import initialize_overwatch
-from prismatic.util.data_utils import ImageTransform
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.constants import ACTION_PROPRIO_NORMALIZATION_TYPE, NUM_ACTIONS_CHUNK
 from prismatic.vla.datasets.datasets import rephrase
@@ -27,7 +27,6 @@ from prismatic.vla.datasets.rlds.oxe.materialize_substep import (
     get_oxe_dataset_kwargs_and_weights_with_episode_id,
 )
 from prismatic.vla.datasets.rlds.oxe.mixtures import OXE_NAMED_MIXTURES
-from prismatic.vla.datasets.rlds.utils.data_utils import NormalizationType
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)

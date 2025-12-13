@@ -46,7 +46,20 @@ Ensure you have a substep labels JSON file (e.g., `substep_labels_output.json`) 
 }
 ```
 
-### 2. Run Training
+### 2. Verify Installation (Optional)
+
+Test that all modules import correctly:
+
+```bash
+python test_substep_imports.py
+```
+
+If successful, you should see:
+```
+✓ All core substep training modules imported successfully!
+```
+
+### 3. Run Training
 
 ```bash
 python vla-scripts/finetune_substep.py \
@@ -66,7 +79,7 @@ python vla-scripts/finetune_substep.py \
     --wandb_project your-wandb-project
 ```
 
-### 3. All Configuration Options
+### 4. All Configuration Options
 
 The training script supports all parameters from the original `finetune.py`, plus:
 
@@ -128,6 +141,9 @@ Currently, episode tracking is implemented for:
 Other datasets will fall back to standard transforms (episode_id = 0).
 
 ## Troubleshooting
+
+### Issue: "cannot import name 'ImageTransform'"
+**Solution**: This has been fixed in the latest version. Make sure you're using the corrected `datasets_substep.py` file.
 
 ### Issue: "Substep labels file not found"
 **Solution**: Check that the path to `substep_labels_output.json` is correct
