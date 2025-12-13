@@ -7,6 +7,7 @@ Based on the original dataset.py but modified to track episode IDs through the d
 
 import inspect
 import json
+from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dlimp as dl
@@ -175,20 +176,17 @@ def make_dataset_from_rlds_with_episode_id(
             save_dir=data_dir,
         )
 
-    # Normalize actions and proprio
-    def normalize(traj):
-        traj = normalize_action_and_proprio(
-            traj,
-            dataset_statistics,
-            action_proprio_normalization_type,
-            action_normalization_mask,
-        )
-        return traj
-
     # Create dataset
     dataset = dl.DLataset.from_rlds(builder, split="train" if train else "val", shuffle=shuffle, num_parallel_reads=num_parallel_reads)
     dataset = dataset.traj_map(restructure, num_parallel_calls=num_parallel_calls)
-    dataset = dataset.traj_map(normalize, num_parallel_calls=num_parallel_calls)
+    dataset = dataset.traj_map(
+        partial(
+            normalize_action_and_proprio,
+            metadata=dataset_statistics,
+            normalization_type=action_proprio_normalization_type,
+        ),
+        num_parallel_calls,
+    )
 
     return dataset, dataset_statistics
 
