@@ -265,11 +265,17 @@ def make_dataset_from_rlds_with_episode_id(
     # [Important] Add action_normalization_mask to dataset_statistics if provided
     # This prevents normalization of specific action dimensions (e.g., gripper)
     if action_normalization_mask is not None:
-        import numpy as np
-        if len(action_normalization_mask) != dataset_statistics["action"]["mean"].shape[-1]:
+        # Get action dimension - handle both numpy arrays and lists
+        action_mean = dataset_statistics["action"]["mean"]
+        if isinstance(action_mean, (list, tuple)):
+            action_dim = len(action_mean)
+        else:
+            action_dim = action_mean.shape[-1]
+        
+        if len(action_normalization_mask) != action_dim:
             raise ValueError(
                 f"Length of action_normalization_mask ({len(action_normalization_mask)}) "
-                f"does not match action dimension ({dataset_statistics['action']['mean'].shape[-1]})."
+                f"does not match action dimension ({action_dim})."
             )
         dataset_statistics["action"]["mask"] = np.array(action_normalization_mask)
 
