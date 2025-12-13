@@ -391,12 +391,26 @@ class SubstepRLDSDataset(IterableDataset):
         """
         Create the interleaved dataset with episode ID tracking.
         
-        Note: This imports and uses the standard make_interleaved_dataset from RLDS.
-        The episode tracking is handled by the transforms specified in per_dataset_kwargs.
+        This uses our custom dataset loader that preserves episode IDs.
+        We need to temporarily replace the standard make_dataset_from_rlds
+        with our episode-tracking version.
         """
+        import prismatic.vla.datasets.rlds.dataset as rlds_dataset_module
         from prismatic.vla.datasets.rlds import make_interleaved_dataset
+        from prismatic.vla.datasets.rlds.dataset_substep import make_dataset_from_rlds_with_episode_id
         
-        return make_interleaved_dataset(**rlds_config)
+        # Temporarily replace the function with our episode-tracking version
+        original_func = rlds_dataset_module.make_dataset_from_rlds
+        rlds_dataset_module.make_dataset_from_rlds = make_dataset_from_rlds_with_episode_id
+        
+        try:
+            # Call make_interleaved_dataset, which will now use our custom function
+            result = make_interleaved_dataset(**rlds_config)
+        finally:
+            # Restore the original function
+            rlds_dataset_module.make_dataset_from_rlds = original_func
+        
+        return result
     
     def __iter__(self) -> Dict[str, Any]:
         for rlds_batch in self.dataset.as_numpy_iterator():
