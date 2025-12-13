@@ -167,6 +167,14 @@ def make_dataset_from_rlds_with_episode_id(
     if isinstance(dataset_statistics, str):
         with tf.io.gfile.GFile(dataset_statistics, "r") as f:
             dataset_statistics = json.load(f)
+        
+        # Convert lists to numpy arrays for TensorFlow compatibility
+        # JSON serialization converts numpy arrays to lists, need to convert back
+        for key in ["action", "proprio"]:
+            if key in dataset_statistics:
+                for stat_key in ["mean", "std", "min", "max", "q01", "q99"]:
+                    if stat_key in dataset_statistics[key]:
+                        dataset_statistics[key][stat_key] = np.array(dataset_statistics[key][stat_key])
     elif dataset_statistics is None:
         # [CRITICAL] For statistics computation, use original transform WITHOUT episode tracking
         # This prevents episode_id field from interfering with statistics calculation
