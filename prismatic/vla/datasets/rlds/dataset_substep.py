@@ -129,17 +129,17 @@ def make_dataset_from_rlds_with_episode_id(
             "observation": new_obs,
             "task": task,
             "action": tf.cast(traj["action"], tf.float32),
-            "dataset_name": tf.repeat(name, traj_len),
+            "dataset_name": tf.fill([traj_len], name),
         }
 
         # [CRITICAL] Preserve episode_id field if it exists
         # This field is added by standardize_fn (e.g., libero_dataset_transform_with_episode_id)
         if "episode_id" in traj:
-            traj_output["episode_id"] = traj["episode_id"]
+            traj_output["episode_id"] = tf.cast(traj["episode_id"], tf.int32)
         else:
             # If episode_id is not provided, default to 0
             # This maintains compatibility with datasets that don't use episode tracking
-            traj_output["episode_id"] = tf.repeat(0, traj_len)
+            traj_output["episode_id"] = tf.fill([traj_len], 0)
 
         if absolute_action_mask is not None:
             if len(absolute_action_mask) != traj["action"].shape[-1]:
