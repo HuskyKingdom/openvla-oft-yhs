@@ -197,8 +197,9 @@ class SubstepRLDSBatchTransform:
         # Get original task instruction
         original_instruction = rlds_batch["task"]["language_instruction"].decode().lower()
         
-        # Get episode_id and timestep
-        episode_id = int(rlds_batch.get("episode_id", 0))
+        # Get episode_id and timestep from observation dict
+        # Episode_id is now stored in observation to ensure proper handling by chunk_act_obs
+        episode_id = int(rlds_batch["observation"].get("episode_id", [0])[0])
         timestep = int(rlds_batch["observation"]["timestep"][0])
         
         # Query substep instruction
