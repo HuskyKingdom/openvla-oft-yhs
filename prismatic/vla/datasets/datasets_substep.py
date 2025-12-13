@@ -391,10 +391,10 @@ class SubstepRLDSDataset(IterableDataset):
         """
         Create the interleaved dataset with episode ID tracking.
         
-        Note: This imports and uses the standard make_interleaved_dataset from OXE.
+        Note: This imports and uses the standard make_interleaved_dataset from RLDS.
         The episode tracking is handled by the transforms specified in per_dataset_kwargs.
         """
-        from prismatic.vla.datasets.rlds.oxe import make_interleaved_dataset
+        from prismatic.vla.datasets.rlds import make_interleaved_dataset
         
         return make_interleaved_dataset(**rlds_config)
     

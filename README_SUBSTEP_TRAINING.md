@@ -142,8 +142,15 @@ Other datasets will fall back to standard transforms (episode_id = 0).
 
 ## Troubleshooting
 
-### Issue: "cannot import name 'ImageTransform'"
-**Solution**: This has been fixed in the latest version. Make sure you're using the corrected `datasets_substep.py` file.
+### Issue: "cannot import name 'ImageTransform'" or "cannot import name 'make_interleaved_dataset'"
+**Solution**: These import errors have been fixed in the latest version. Make sure you're using the corrected files:
+- `datasets_substep.py` (ImageTransform import)
+- `datasets_substep.py` (make_interleaved_dataset import)
+
+If you still see these errors, run the test script to diagnose:
+```bash
+python test_substep_imports.py
+```
 
 ### Issue: "Substep labels file not found"
 **Solution**: Check that the path to `substep_labels_output.json` is correct
