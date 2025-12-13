@@ -270,6 +270,16 @@ def make_dataset_from_rlds_with_episode_id(
             save_dir=data_dir,
         )
 
+    # [CRITICAL] Ensure all statistics are numpy arrays, not lists
+    # This is necessary for TensorFlow operations in normalize_action_and_proprio
+    # Convert any list-type statistics to numpy arrays
+    for key in ["action", "proprio"]:
+        if key in dataset_statistics:
+            for stat_key in ["mean", "std", "min", "max", "q01", "q99"]:
+                if stat_key in dataset_statistics[key]:
+                    if isinstance(dataset_statistics[key][stat_key], (list, tuple)):
+                        dataset_statistics[key][stat_key] = np.array(dataset_statistics[key][stat_key])
+    
     # [Important] Add action_normalization_mask to dataset_statistics if provided
     # This prevents normalization of specific action dimensions (e.g., gripper)
     if action_normalization_mask is not None:
