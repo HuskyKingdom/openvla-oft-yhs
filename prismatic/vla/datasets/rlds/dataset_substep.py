@@ -3,14 +3,20 @@ dataset_substep.py
 
 Extended RLDS dataset loader that preserves episode-level metadata for substep instruction support.
 Based on the original dataset.py but modified to track episode IDs through the data pipeline.
+
+Key difference from original:
+- Uses standardize_fn with episode tracking during data loading
+- Uses original transform (without episode tracking) for statistics computation
 """
 
+import copy
 import inspect
 import json
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import dlimp as dl
+import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 
@@ -129,17 +135,18 @@ def make_dataset_from_rlds_with_episode_id(
             "observation": new_obs,
             "task": task,
             "action": tf.cast(traj["action"], tf.float32),
-            "dataset_name": tf.fill([traj_len], name),
+            "dataset_name": tf.repeat(name, traj_len),
         }
 
         # [CRITICAL] Preserve episode_id field if it exists
         # This field is added by standardize_fn (e.g., libero_dataset_transform_with_episode_id)
         if "episode_id" in traj:
+            # Ensure episode_id is int32 tensor, not Python int
             traj_output["episode_id"] = tf.cast(traj["episode_id"], tf.int32)
         else:
             # If episode_id is not provided, default to 0
             # This maintains compatibility with datasets that don't use episode tracking
-            traj_output["episode_id"] = tf.fill([traj_len], 0)
+            traj_output["episode_id"] = tf.repeat(0, traj_len)
 
         if absolute_action_mask is not None:
             if len(absolute_action_mask) != traj["action"].shape[-1]:
@@ -161,9 +168,88 @@ def make_dataset_from_rlds_with_episode_id(
         with tf.io.gfile.GFile(dataset_statistics, "r") as f:
             dataset_statistics = json.load(f)
     elif dataset_statistics is None:
+        # [CRITICAL] For statistics computation, use original transform WITHOUT episode tracking
+        # This prevents episode_id field from interfering with statistics calculation
+        from prismatic.vla.datasets.rlds.oxe.transforms import OXE_STANDARDIZATION_TRANSFORMS
+        
+        # Create a temporary standardize function without episode tracking
+        standardize_fn_for_stats = OXE_STANDARDIZATION_TRANSFORMS.get(name, standardize_fn)
+        
+        # Create a temporary restructure function for statistics
+        def restructure_for_stats(traj):
+            """Restructure without episode tracking for statistics computation."""
+            if standardize_fn_for_stats is not None:
+                traj = standardize_fn_for_stats(traj)
+            
+            if not all(k in traj for k in REQUIRED_KEYS):
+                raise ValueError(
+                    f"Trajectory is missing keys: {REQUIRED_KEYS - set(traj.keys())}. "
+                    "Did you write a `standardize_fn`?"
+                )
+            
+            # Extract images, depth images and proprio from the "observation" dict
+            traj_len = tf.shape(traj["action"])[0]
+            old_obs = traj["observation"]
+            new_obs = {}
+            
+            for new, old in image_obs_keys.items():
+                if old is None:
+                    new_obs[f"image_{new}"] = tf.repeat("", traj_len)
+                else:
+                    new_obs[f"image_{new}"] = old_obs[old]
+            
+            for new, old in depth_obs_keys.items():
+                if old is None:
+                    new_obs[f"depth_{new}"] = tf.repeat("", traj_len)
+                else:
+                    new_obs[f"depth_{new}"] = old_obs[old]
+            
+            if state_obs_keys:
+                new_obs["proprio"] = tf.concat(
+                    [
+                        (
+                            tf.zeros((traj_len, 1), dtype=tf.float32)
+                            if key is None
+                            else tf.cast(old_obs[key], tf.float32)
+                        )
+                        for key in state_obs_keys
+                    ],
+                    axis=1,
+                )
+            
+            new_obs["timestep"] = tf.range(traj_len)
+            
+            task = {}
+            if language_key is not None:
+                if traj[language_key].dtype != tf.string:
+                    raise ValueError(f"Language key {language_key} has dtype {traj[language_key].dtype}, but it must be tf.string.")
+                task["language_instruction"] = traj.pop(language_key)
+            
+            # No episode_id here - this is for statistics only
+            traj_output = {
+                "observation": new_obs,
+                "task": task,
+                "action": tf.cast(traj["action"], tf.float32),
+                "dataset_name": tf.repeat(name, traj_len),
+            }
+            
+            if absolute_action_mask is not None:
+                if len(absolute_action_mask) != traj["action"].shape[-1]:
+                    raise ValueError(
+                        f"Length of absolute_action_mask ({len(absolute_action_mask)}) "
+                        f"does not match action dimension ({traj['action'].shape[-1]})."
+                    )
+                traj_output["absolute_action_mask"] = tf.tile(
+                    tf.convert_to_tensor(absolute_action_mask, dtype=tf.bool)[None],
+                    [traj_len, 1],
+                )
+            
+            return traj_output
+        
+        # Compute statistics using transform WITHOUT episode tracking
         full_dataset = dl.DLataset.from_rlds(
             builder, split="all", shuffle=False, num_parallel_reads=num_parallel_reads
-        ).traj_map(restructure, num_parallel_calls)
+        ).traj_map(restructure_for_stats, num_parallel_calls)
         
         # Try to load from cache, otherwise compute on the fly
         dataset_statistics = get_dataset_statistics(
@@ -171,10 +257,21 @@ def make_dataset_from_rlds_with_episode_id(
             hash_dependencies=(
                 str(builder.info),
                 str(state_obs_keys),
-                inspect.getsource(standardize_fn) if standardize_fn is not None else "",
+                inspect.getsource(standardize_fn_for_stats) if standardize_fn_for_stats is not None else "",
             ),
             save_dir=data_dir,
         )
+
+    # [Important] Add action_normalization_mask to dataset_statistics if provided
+    # This prevents normalization of specific action dimensions (e.g., gripper)
+    if action_normalization_mask is not None:
+        import numpy as np
+        if len(action_normalization_mask) != dataset_statistics["action"]["mean"].shape[-1]:
+            raise ValueError(
+                f"Length of action_normalization_mask ({len(action_normalization_mask)}) "
+                f"does not match action dimension ({dataset_statistics['action']['mean'].shape[-1]})."
+            )
+        dataset_statistics["action"]["mask"] = np.array(action_normalization_mask)
 
     # Create dataset
     dataset = dl.DLataset.from_rlds(builder, split="train" if train else "val", shuffle=shuffle, num_parallel_reads=num_parallel_reads)

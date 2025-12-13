@@ -56,16 +56,17 @@ def libero_dataset_transform_with_episode_id(trajectory: Dict[str, Any]) -> Dict
     # Apply original LIBERO transform first
     trajectory = libero_dataset_transform(trajectory)
     
-    # Get episode ID for this trajectory
+    # Get episode ID for this trajectory (Python int)
     episode_id = get_and_increment_episode_id()
     
     # Get trajectory length
     traj_len = tf.shape(trajectory["action"])[0]
     
     # Add episode_id as a repeated field for all timesteps in this trajectory
+    # Convert Python int to TensorFlow constant first, then repeat
     # This will be propagated through the pipeline to each individual frame
-    # Use tf.fill instead of tf.repeat for better TensorFlow compatibility
-    trajectory["episode_id"] = tf.fill([traj_len], episode_id)
+    episode_id_tensor = tf.constant(episode_id, dtype=tf.int32)
+    trajectory["episode_id"] = tf.repeat(episode_id_tensor, traj_len)
     
     return trajectory
 
@@ -129,8 +130,9 @@ def libero_dataset_transform_with_file_path(trajectory: Dict[str, Any]) -> Dict[
     traj_len = tf.shape(trajectory["action"])[0]
     
     # Add episode_id field
-    # Use tf.fill instead of tf.repeat for better TensorFlow compatibility
-    trajectory["episode_id"] = tf.fill([traj_len], episode_id)
+    # Convert Python int to TensorFlow constant first
+    episode_id_tensor = tf.constant(episode_id, dtype=tf.int32)
+    trajectory["episode_id"] = tf.repeat(episode_id_tensor, traj_len)
     
     return trajectory
 
