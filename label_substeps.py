@@ -878,7 +878,7 @@ def process_suite(rlds_data_dir: str,
                  suite_name: str,
                  apd_plans: Dict,
                  max_episodes: Optional[int] = None,
-                 episode_ids: Optional[List[int]] = None) -> Tuple[Dict, int, int]:
+                 episode_ids: Optional[List[int]] = None) -> Tuple[Dict, int, int, int, int]:
     """
     Process entire task suite.
     
@@ -890,7 +890,8 @@ def process_suite(rlds_data_dir: str,
         episode_ids: Specific episode IDs to process (None = all)
     
     Returns:
-        Tuple of (suite_results, total_instructions_count, labeled_instructions_count)
+        Tuple of (suite_results, total_instructions_count, labeled_instructions_count, 
+                  total_timesteps, total_labeled_timesteps)
     """
     logger.info(f"\n{'='*60}")
     logger.info(f"Processing suite: {suite_name}")
@@ -909,6 +910,8 @@ def process_suite(rlds_data_dir: str,
     episode_count = 0
     all_instructions = set()  # Track all instructions encountered
     labeled_instructions = set()  # Track successfully labeled instructions
+    total_timesteps = 0  # Track total timesteps across all episodes
+    total_labeled_timesteps = 0  # Track total labeled timesteps
     
     for episode_idx, episode in enumerate(dataset):
         # Skip if not in specified episode_ids
@@ -938,6 +941,10 @@ def process_suite(rlds_data_dir: str,
             # Track successfully labeled instructions
             labeled_instructions.add(instruction)
             
+            # Track timesteps
+            total_timesteps += result['total_timesteps']
+            total_labeled_timesteps += result['labeled_timesteps']
+            
             # Organize by task
             if task_name not in suite_results:
                 suite_results[task_name] = {}
@@ -947,7 +954,7 @@ def process_suite(rlds_data_dir: str,
     
     logger.info(f"Suite {suite_name}: Processed {episode_count} episodes")
     
-    return suite_results, len(all_instructions), len(labeled_instructions)
+    return suite_results, len(all_instructions), len(labeled_instructions), total_timesteps, total_labeled_timesteps
 
 
 def main(apd_path: str,
@@ -987,9 +994,11 @@ def main(apd_path: str,
     total_episodes = 0
     total_all_instructions = 0
     total_labeled_instructions = 0
+    grand_total_timesteps = 0
+    grand_total_labeled_timesteps = 0
     
     for suite_name in suites:
-        suite_results, all_instr_count, labeled_instr_count = process_suite(
+        suite_results, all_instr_count, labeled_instr_count, suite_timesteps, suite_labeled_timesteps = process_suite(
             rlds_data_dir,
             suite_name,
             apd_plans,
@@ -1008,6 +1017,8 @@ def main(apd_path: str,
             
             total_all_instructions += all_instr_count
             total_labeled_instructions += labeled_instr_count
+            grand_total_timesteps += suite_timesteps
+            grand_total_labeled_timesteps += suite_labeled_timesteps
     
     # Save results
     save_results(all_results, output_path)
@@ -1020,6 +1031,18 @@ def main(apd_path: str,
     logger.info(f"Total episodes processed: {total_episodes}")
     logger.info(f"Total unique instructions in original data: {total_all_instructions}")
     logger.info(f"Total unique instructions successfully labeled: {total_labeled_instructions}")
+    logger.info(f"Total timesteps: {grand_total_timesteps}")
+    logger.info(f"Total labeled timesteps: {grand_total_labeled_timesteps}")
+    
+    # Calculate and print average timesteps
+    if total_episodes > 0:
+        avg_timesteps = grand_total_timesteps / total_episodes
+        avg_labeled_timesteps = grand_total_labeled_timesteps / total_episodes
+        label_ratio = (grand_total_labeled_timesteps / grand_total_timesteps * 100) if grand_total_timesteps > 0 else 0
+        logger.info(f"Average timesteps per episode: {avg_timesteps:.2f}")
+        logger.info(f"Average labeled timesteps per episode: {avg_labeled_timesteps:.2f}")
+        logger.info(f"Label coverage: {label_ratio:.2f}%")
+    
     logger.info(f"Output saved to: {output_path}")
     
     # Print per-suite statistics
