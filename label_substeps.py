@@ -878,7 +878,7 @@ def process_suite(rlds_data_dir: str,
                  suite_name: str,
                  apd_plans: Dict,
                  max_episodes: Optional[int] = None,
-                 episode_ids: Optional[List[int]] = None) -> Dict:
+                 episode_ids: Optional[List[int]] = None) -> Tuple[Dict, int, int]:
     """
     Process entire task suite.
     
@@ -890,7 +890,7 @@ def process_suite(rlds_data_dir: str,
         episode_ids: Specific episode IDs to process (None = all)
     
     Returns:
-        All labeling results for this suite
+        Tuple of (suite_results, total_instructions_count, labeled_instructions_count)
     """
     logger.info(f"\n{'='*60}")
     logger.info(f"Processing suite: {suite_name}")
@@ -907,6 +907,8 @@ def process_suite(rlds_data_dir: str,
     # Process episodes
     suite_results = {}
     episode_count = 0
+    all_instructions = set()  # Track all instructions encountered
+    labeled_instructions = set()  # Track successfully labeled instructions
     
     for episode_idx, episode in enumerate(dataset):
         # Skip if not in specified episode_ids
@@ -918,11 +920,23 @@ def process_suite(rlds_data_dir: str,
             logger.info(f"Reached max_episodes limit: {max_episodes}")
             break
         
+        # Extract instruction to track all encountered instructions
+        try:
+            episode_data = extract_episode_data(episode)
+            instruction = episode_data['language_instruction']
+            if instruction:
+                all_instructions.add(instruction)
+        except:
+            pass
+        
         result = process_single_episode(episode, episode_idx, suite_name, apd_plans)
         
         if result is not None:
             instruction = result['instruction']
             task_name = instruction.replace(' ', '_')
+            
+            # Track successfully labeled instructions
+            labeled_instructions.add(instruction)
             
             # Organize by task
             if task_name not in suite_results:
@@ -933,7 +947,7 @@ def process_suite(rlds_data_dir: str,
     
     logger.info(f"Suite {suite_name}: Processed {episode_count} episodes")
     
-    return suite_results
+    return suite_results, len(all_instructions), len(labeled_instructions)
 
 
 def main(apd_path: str,
@@ -971,9 +985,11 @@ def main(apd_path: str,
     # Process each suite
     all_results = {}
     total_episodes = 0
+    total_all_instructions = 0
+    total_labeled_instructions = 0
     
     for suite_name in suites:
-        suite_results = process_suite(
+        suite_results, all_instr_count, labeled_instr_count = process_suite(
             rlds_data_dir,
             suite_name,
             apd_plans,
@@ -986,9 +1002,12 @@ def main(apd_path: str,
             suite_short = suite_name.replace('_no_noops', '')
             all_results[suite_short] = suite_results
             
-            # Count episodes
+            # Count episodes and instructions
             for task_results in suite_results.values():
                 total_episodes += len(task_results)
+            
+            total_all_instructions += all_instr_count
+            total_labeled_instructions += labeled_instr_count
     
     # Save results
     save_results(all_results, output_path)
@@ -999,6 +1018,8 @@ def main(apd_path: str,
     logger.info("="*60)
     logger.info(f"Total suites processed: {len(all_results)}")
     logger.info(f"Total episodes processed: {total_episodes}")
+    logger.info(f"Total unique instructions in original data: {total_all_instructions}")
+    logger.info(f"Total unique instructions successfully labeled: {total_labeled_instructions}")
     logger.info(f"Output saved to: {output_path}")
     
     # Print per-suite statistics
