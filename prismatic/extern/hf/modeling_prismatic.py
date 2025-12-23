@@ -172,12 +172,12 @@ def save_strongest_column_attention_1d(
 #     return segs
 
 
-# def _midpoints_labels(segments: List[Tuple[int, int, str]]):
-#     mids, labs = [], []
-#     for s, e, lab in segments:
-#         mids.append((s + e - 1) / 2.0)
-#         labs.append(lab)
-#     return mids, labs
+def _midpoints_labels(segments: List[Tuple[int, int, str]]):
+    mids, labs = [], []
+    for s, e, lab in segments:
+        mids.append((s + e - 1) / 2.0)
+        labs.append(lab)
+    return mids, labs
 
 
 
