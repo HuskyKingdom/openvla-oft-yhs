@@ -21,7 +21,7 @@ import numpy as np
 import tqdm
 from libero.libero import benchmark
 
-from experiments.robot.libero.LIBERO_PRO import perturbation
+from experiments.robot.libero import perturbation
 
 import wandb
 
