@@ -156,9 +156,9 @@ def get_action(
     end_time = time.time()
     elapsed_time = (end_time - start_time) * 1000  # Convert to ms
     
-    print(f"{'='*80}")
-    print(f"[TIMING] get_action: {elapsed_time:.2f} ms ({elapsed_time/1000:.4f} s)")
-    print(f"{'='*80}")
+    # print(f"{'='*80}")
+    # print(f"[TIMING] get_action: {elapsed_time:.2f} ms ({elapsed_time/1000:.4f} s)")
+    # print(f"{'='*80}")
 
     return action
 

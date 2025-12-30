@@ -1243,7 +1243,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             inputs_embeds=multimodal_embeddings,
             labels=None,
             use_cache=None,
-            output_attentions=True, # set true
+            output_attentions=False, # set true
             output_hidden_states=True,
             return_dict=True,
         )
@@ -1251,19 +1251,19 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # visulization last layer attention
         last_attn = language_model_output.attentions[-1]
-        save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
-        best_col_idx, best_col_type = save_strongest_column_attention_1d(
-            last_attn.to(torch.float32),
-            NUM_PATCHES=NUM_PATCHES,
-            NUM_PROMPT_TOKENS=NUM_PROMPT_TOKENS,
-            ACTION_DIM=ACTION_DIM,
-            NUM_ACTIONS_CHUNK=NUM_ACTIONS_CHUNK,
-            save_path=f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_STRONGCOL_t_{self.timestep_track}.png",
-            head=None,          
-            batch=0,
-            query_subset=None,  
-            col_reduce="sum",   
-        )
+        # save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
+        # best_col_idx, best_col_type = save_strongest_column_attention_1d(
+        #     last_attn.to(torch.float32),
+        #     NUM_PATCHES=NUM_PATCHES,
+        #     NUM_PROMPT_TOKENS=NUM_PROMPT_TOKENS,
+        #     ACTION_DIM=ACTION_DIM,
+        #     NUM_ACTIONS_CHUNK=NUM_ACTIONS_CHUNK,
+        #     save_path=f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_STRONGCOL_t_{self.timestep_track}.png",
+        #     head=None,          
+        #     batch=0,
+        #     query_subset=None,  
+        #     col_reduce="sum",   
+        # )
 
         self.timestep_track += 8
         
