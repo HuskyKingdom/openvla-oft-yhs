@@ -469,6 +469,7 @@ def get_proprio_projector(cfg: Any, llm_dim: int, proprio_dim: int) -> ProprioPr
             "moojink/openvla-7b-oft-finetuned-libero-goal": "proprio_projector--50000_checkpoint.pt",
             "moojink/openvla-7b-oft-finetuned-libero-10": "proprio_projector--150000_checkpoint.pt",
             "moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10": "proprio_projector--300000_checkpoint.pt",
+            "Sylvest/openvla-7b-oft-finetuned-libero-plus-mixdata": "proprio_projector--150000_checkpoint.pt",
         }
         if cfg.pretrained_checkpoint not in model_path_to_proprio_projector_name.keys():
             raise ValueError("Unsupported HF Hub pretrained checkpoint found!")
