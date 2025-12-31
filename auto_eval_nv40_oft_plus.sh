@@ -40,15 +40,15 @@ sed -i 's/use_environment: true/use_environment: false/' experiments/robot/liber
 sed -i 's/use_swap: false/use_swap: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
 
-python experiments/robot/libero/run_libero_pro_eval.py \
-  --pretrained_checkpoint Sylvest/openvla-7b-oft-finetuned-libero-plus-mixdata  \
-  --task_suite_name libero_spatial --e_decoding False --save_video False \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label plus_spatial_swap
+# python experiments/robot/libero/run_libero_pro_eval.py \
+#   --pretrained_checkpoint Sylvest/openvla-7b-oft-finetuned-libero-plus-mixdata  \
+#   --task_suite_name libero_spatial --e_decoding False --save_video False \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label plus_spatial_swap
 
-python experiments/robot/libero/run_libero_pro_eval.py \
-  --pretrained_checkpoint Sylvest/openvla-7b-oft-finetuned-libero-plus-mixdata  \
-  --task_suite_name libero_10 --e_decoding False --save_video False \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label plus_10_swap
+# python experiments/robot/libero/run_libero_pro_eval.py \
+#   --pretrained_checkpoint Sylvest/openvla-7b-oft-finetuned-libero-plus-mixdata  \
+#   --task_suite_name libero_10 --e_decoding False --save_video False \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label plus_10_swap
 
 
 # object
