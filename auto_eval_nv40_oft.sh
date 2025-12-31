@@ -35,7 +35,7 @@ python experiments/robot/libero/run_libero_pro_eval.py \
   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label oft_10_env
 
 # swap
-sed -i 's/use_environment: true/use_environment: flase/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
+sed -i 's/use_environment: true/use_environment: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 sed -i 's/use_swap: false/use_swap: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
 
@@ -68,7 +68,7 @@ python experiments/robot/libero/run_libero_pro_eval.py \
 
 # lan
 sed -i 's/use_object: true/use_object: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
-sed -i 's/use_lan: false/use_lan: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
+sed -i 's/use_language: false/use_language: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
 python experiments/robot/libero/run_libero_pro_eval.py \
   --pretrained_checkpoint moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10  \
@@ -82,7 +82,7 @@ python experiments/robot/libero/run_libero_pro_eval.py \
 
 
 # task
-sed -i 's/use_lan: true/use_lan: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
+sed -i 's/use_language: true/use_language: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 sed -i 's/use_task: false/use_task: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
 python experiments/robot/libero/run_libero_pro_eval.py \
