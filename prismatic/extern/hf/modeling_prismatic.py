@@ -1250,7 +1250,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
 
         # visulization last layer attention
-        last_attn = language_model_output.attentions[-1]
+        # last_attn = language_model_output.attentions[-1]
         # save_attention_heatmap(last_attn.to(torch.float32),NUM_PATCHES,NUM_PROMPT_TOKENS,ACTION_DIM,NUM_ACTIONS_CHUNK,f"/home/aup/YuhangWorkspace/openvla-oft-yhs/vis/attention_last_t_{self.timestep_track}.png")
         # best_col_idx, best_col_type = save_strongest_column_attention_1d(
         #     last_attn.to(torch.float32),
