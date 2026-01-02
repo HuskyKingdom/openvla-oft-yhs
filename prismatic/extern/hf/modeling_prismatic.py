@@ -1280,17 +1280,20 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Extract outputs of all layers
         all_out = language_model_output.hidden_states
         layer_actions = []
-        for layer_index in range(1,len(all_out)):
-            current_hidden = all_out[layer_index][
-            :,
-            NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
-            :,
-            ]
-            c_normalized_actions = action_head.predict_action(current_hidden)
-            c_normalized_actions = c_normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
-            c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
-            layer_actions.append(c_normalized_actions)
-            all_hiddens_processed.append(all_out)
+
+        # Only perform layer-wise analysis if action_head is provided (L1 regression or diffusion mode)
+        if action_head is not None:
+            for layer_index in range(1,len(all_out)):
+                current_hidden = all_out[layer_index][
+                :,
+                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+                :,
+                ]
+                c_normalized_actions = action_head.predict_action(current_hidden)
+                c_normalized_actions = c_normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
+                c_normalized_actions = c_normalized_actions.float().cpu().detach().numpy()
+                layer_actions.append(c_normalized_actions)
+                all_hiddens_processed.append(all_out)
 
         # print(layer_actions)
 
@@ -1442,8 +1445,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)
 
-        for layer_index in range(len(layer_actions)):
-            layer_actions[layer_index] = self._unnormalize_actions(layer_actions[layer_index], unnorm_key)
+        # Only unnormalize layer actions if they were computed (when action_head is provided)
+        if action_head is not None:
+            for layer_index in range(len(layer_actions)):
+                layer_actions[layer_index] = self._unnormalize_actions(layer_actions[layer_index], unnorm_key)
         
         
 
