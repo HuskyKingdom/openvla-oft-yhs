@@ -41,120 +41,120 @@ from prismatic.vla.constants import (
 from .configuration_prismatic import OpenVLAConfig, PrismaticConfig
 
 
-def save_strongest_column_attention_1d(
-    attentions: Union[np.ndarray, "torch.Tensor"],
-    NUM_PATCHES: int,
-    NUM_PROMPT_TOKENS: int,
-    ACTION_DIM: int,
-    NUM_ACTIONS_CHUNK: int,
-    save_path: str,
-    head: Optional[int] = None,
-    batch: int = 0,
-    query_subset: Optional[Union[str, Sequence[str]]] = None,
-    col_reduce: str = "mean",
-) -> Tuple[int, str]:
-    # --- to numpy & squeeze to (Q,K)
-    try:
-        import torch  # noqa
-        is_torch = True
-    except Exception:
-        is_torch = False
+# def save_strongest_column_attention_1d(
+#     attentions: Union[np.ndarray, "torch.Tensor"],
+#     NUM_PATCHES: int,
+#     NUM_PROMPT_TOKENS: int,
+#     ACTION_DIM: int,
+#     NUM_ACTIONS_CHUNK: int,
+#     save_path: str,
+#     head: Optional[int] = None,
+#     batch: int = 0,
+#     query_subset: Optional[Union[str, Sequence[str]]] = None,
+#     col_reduce: str = "mean",
+# ) -> Tuple[int, str]:
+#     # --- to numpy & squeeze to (Q,K)
+#     try:
+#         import torch  # noqa
+#         is_torch = True
+#     except Exception:
+#         is_torch = False
 
-    attn = attentions
-    if is_torch and "torch" in str(type(attentions)):
-        attn = attentions.detach().cpu().numpy()
+#     attn = attentions
+#     if is_torch and "torch" in str(type(attentions)):
+#         attn = attentions.detach().cpu().numpy()
 
-    if attn.ndim == 4:      # (B,H,Q,K)
-        attn = attn[batch]  # -> (H,Q,K)
-    elif attn.ndim == 3:    # (H,Q,K)
-        pass
-    elif attn.ndim == 2:    # (Q,K)
-        pass
-    else:
-        raise ValueError(f"Unexpected attention ndim={attn.ndim}")
+#     if attn.ndim == 4:      # (B,H,Q,K)
+#         attn = attn[batch]  # -> (H,Q,K)
+#     elif attn.ndim == 3:    # (H,Q,K)
+#         pass
+#     elif attn.ndim == 2:    # (Q,K)
+#         pass
+#     else:
+#         raise ValueError(f"Unexpected attention ndim={attn.ndim}")
 
-    # 选/聚合头 -> (Q,K)
-    if attn.ndim == 3:
-        attn2d = attn.mean(axis=0) if head is None else attn[head]
-    else:
-        attn2d = attn
+#     # 选/聚合头 -> (Q,K)
+#     if attn.ndim == 3:
+#         attn2d = attn.mean(axis=0) if head is None else attn[head]
+#     else:
+#         attn2d = attn
 
-    Q, K = attn2d.shape
+#     Q, K = attn2d.shape
 
-    num_other_token = 1
-    num_patches = int(NUM_PATCHES) # includes props.
-    num_prompt  = int(NUM_PROMPT_TOKENS)
-    num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
-    remaining   = max(0, K - (num_other_token + num_other_token + num_patches  + num_prompt + num_actions))
-    token_types = (["patch"]* (num_patches + 2) + ["prot."]*num_prompt +
-                   ["action"]*num_actions + (["other"]*remaining)) # +2 plus patch label and <bos>
+#     num_other_token = 1
+#     num_patches = int(NUM_PATCHES) # includes props.
+#     num_prompt  = int(NUM_PROMPT_TOKENS)
+#     num_actions = int(ACTION_DIM * NUM_ACTIONS_CHUNK)
+#     remaining   = max(0, K - (num_other_token + num_other_token + num_patches  + num_prompt + num_actions))
+#     token_types = (["patch"]* (num_patches + 2) + ["prot."]*num_prompt +
+#                    ["action"]*num_actions + (["other"]*remaining)) # +2 plus patch label and <bos>
     
-    print(f"path len {num_patches}, prompt len {num_prompt}, action len {num_actions}")
-    # <BOS> + <PatchLabel> + <Patch> + <Prot> + <Actions>
-    assert len(token_types) == K
+#     print(f"path len {num_patches}, prompt len {num_prompt}, action len {num_actions}")
+#     # <BOS> + <PatchLabel> + <Patch> + <Prot> + <Actions>
+#     assert len(token_types) == K
 
-    # --- 选择 query 子集（可选）
-    def _indices_for(types: Sequence[str], wanted: Union[str, Sequence[str]]):
-        if isinstance(wanted, str):
-            wanted = [wanted]
-        wanted = set(wanted)
-        return np.array([i for i, t in enumerate(types) if t in wanted], dtype=int)
+#     # --- 选择 query 子集（可选）
+#     def _indices_for(types: Sequence[str], wanted: Union[str, Sequence[str]]):
+#         if isinstance(wanted, str):
+#             wanted = [wanted]
+#         wanted = set(wanted)
+#         return np.array([i for i, t in enumerate(types) if t in wanted], dtype=int)
 
-    q_idx = np.arange(Q)
-    if query_subset is not None:
-        q_types_for_q_axis = token_types[:Q]
-        q_idx = _indices_for(q_types_for_q_axis, query_subset)
+#     q_idx = np.arange(Q)
+#     if query_subset is not None:
+#         q_types_for_q_axis = token_types[:Q]
+#         q_idx = _indices_for(q_types_for_q_axis, query_subset)
 
-    # --- 计算“最深列”
-    col_vecs = attn2d[q_idx, :]  # (len(q_idx), K)
-    if col_reduce == "mean":
-        col_scores = col_vecs.mean(axis=0)
-    elif col_reduce == "sum":
-        col_scores = col_vecs.sum(axis=0)
-    elif col_reduce == "max":
-        col_scores = col_vecs.max(axis=0)
-    else:
-        raise ValueError(f"Unsupported col_reduce={col_reduce}")
-    best_col = int(col_scores.argmax())
+#     # --- 计算“最深列”
+#     col_vecs = attn2d[q_idx, :]  # (len(q_idx), K)
+#     if col_reduce == "mean":
+#         col_scores = col_vecs.mean(axis=0)
+#     elif col_reduce == "sum":
+#         col_scores = col_vecs.sum(axis=0)
+#     elif col_reduce == "max":
+#         col_scores = col_vecs.max(axis=0)
+#     else:
+#         raise ValueError(f"Unsupported col_reduce={col_reduce}")
+#     best_col = int(col_scores.argmax())
 
-    # --- 取该列的一维注意力（针对选定 queries）
-    one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
+#     # --- 取该列的一维注意力（针对选定 queries）
+#     one_d = attn2d[:, best_col][q_idx]   # shape: (len(q_idx),)
 
-    fig = plt.figure(figsize=(10, 2.4), dpi=160)
-    ax  = plt.gca()
+#     fig = plt.figure(figsize=(10, 2.4), dpi=160)
+#     ax  = plt.gca()
 
-    band = one_d[None, :]  # (1, L)
-    im = ax.imshow(band, aspect="auto", cmap="coolwarm")
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+#     band = one_d[None, :]  # (1, L)
+#     im = ax.imshow(band, aspect="auto", cmap="coolwarm")
+#     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
 
-    q_types_view = [token_types[i] for i in q_idx]
-    q_segments = _segments_from_types(q_types_view)      # [(s,e,label), ...]
-    x_start, x_labs = _starts_labels(q_segments)
+#     q_types_view = [token_types[i] for i in q_idx]
+#     q_segments = _segments_from_types(q_types_view)      # [(s,e,label), ...]
+#     x_start, x_labs = _starts_labels(q_segments)
 
  
-    for s, _, _ in q_segments:
-        ax.axvline(s - 0.5, linewidth=0.6)
+#     for s, _, _ in q_segments:
+#         ax.axvline(s - 0.5, linewidth=0.6)
 
-    ax.set_xticks([])
-    ax.set_xlabel("") 
-    ax.tick_params(bottom=False)
+#     ax.set_xticks([])
+#     ax.set_xlabel("") 
+#     ax.tick_params(bottom=False)
 
-    ax2 = ax.twiny()
-    ax2.set_xlim(ax.get_xlim())
-    ax2.set_xticks(x_start)
-    ax2.set_xticklabels(x_labs, fontsize=8)
-    ax2.tick_params(axis='x', pad=2)
-    ax.set_yticks([])
+#     ax2 = ax.twiny()
+#     ax2.set_xlim(ax.get_xlim())
+#     ax2.set_xticks(x_start)
+#     ax2.set_xticklabels(x_labs, fontsize=8)
+#     ax2.tick_params(axis='x', pad=2)
+#     ax.set_yticks([])
 
-    ax.set_title(f"1D attention toward strongest key column = {best_col} "
-                 f"[type={token_types[best_col]}]")
+#     ax.set_title(f"1D attention toward strongest key column = {best_col} "
+#                  f"[type={token_types[best_col]}]")
 
-    plt.tight_layout()
-    plt.savefig(save_path, bbox_inches="tight")
-    plt.close(fig)
+#     plt.tight_layout()
+#     plt.savefig(save_path, bbox_inches="tight")
+#     plt.close(fig)
 
-    return best_col, token_types[best_col]
+#     return best_col, token_types[best_col]
 
 # def _segments_from_types(token_types: Sequence[str]) -> List[Tuple[int, int, str]]:
 #     """Collapse consecutive equal labels into segments: (start, end_exclusive, label)."""
