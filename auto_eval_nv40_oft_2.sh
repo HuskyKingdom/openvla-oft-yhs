@@ -10,7 +10,7 @@ FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
 
 echo "Evaluating OFT ------------------------------"
 
-raw
+# raw
 python experiments/robot/libero/run_libero_pro_eval.py \
   --pretrained_checkpoint moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10  \
   --task_suite_name libero_object --e_decoding False --save_video False \
