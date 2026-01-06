@@ -83,20 +83,32 @@ CRITICAL REQUIREMENTS:
 4. Each JSON object must have exactly these three fields:
    - "step": integer (1, 2, 3, ...)
    - "subgoal": brief action description (what to do)
-   - "expected_effect": observable result (what changes visually)
+   - "expected_effect": SPECIFIC VISUAL OBSERVATION that can be seen in the camera (NOT abstract outcomes)
 
-EXAMPLE OUTPUT FORMAT:
+IMPORTANT FOR "expected_effect":
+- Describe CONCRETE VISUAL features: object positions, gripper state, spatial relationships
+- Use phrases like: "gripper near [object]", "[object] in gripper", "[object] above [target]", "gripper closed around [object]"
+- AVOID abstract outcomes like "successfully done", "securely held", "task completed"
+- Focus on OBSERVABLE visual changes that a camera can detect
+
+GOOD EXAMPLES:
 [
-  {{"step": 1, "subgoal": "Move gripper above the black bowl", "expected_effect": "gripper positioned above the black bowl"}},
-  {{"step": 2, "subgoal": "Lower gripper to grasp the bowl", "expected_effect": "gripper touching the black bowl"}},
-  {{"step": 3, "subgoal": "Close gripper to pick up the bowl", "expected_effect": "robot holds the black bowl securely"}},
-  {{"step": 4, "subgoal": "Move gripper above the plate", "expected_effect": "gripper positioned above the plate"}},
-  {{"step": 5, "subgoal": "Lower and release the bowl on the plate", "expected_effect": "black bowl stably placed on the plate"}},
+  {{"step": 1, "subgoal": "Move gripper above the black bowl", "expected_effect": "robot gripper visible above black bowl center"}},
+  {{"step": 2, "subgoal": "Lower gripper to grasp the bowl", "expected_effect": "gripper fingers surrounding black bowl edges"}},
+  {{"step": 3, "subgoal": "Close gripper to pick up the bowl", "expected_effect": "gripper closed with black bowl between fingers"}},
+  {{"step": 4, "subgoal": "Lift the black bowl upward", "expected_effect": "black bowl lifted above table surface in gripper"}},
+  {{"step": 5, "subgoal": "Move gripper above the plate", "expected_effect": "gripper holding bowl positioned above plate center"}},
+  {{"step": 6, "subgoal": "Lower and release the bowl on the plate", "expected_effect": "black bowl resting on white plate surface"}}
 ]
+
+BAD EXAMPLES (TOO ABSTRACT):
+- "bowl successfully picked up" → Use "black bowl lifted in closed gripper" instead
+- "task completed" → Use specific object positions instead
+- "robot ready" → Use "gripper at neutral position" instead
 
 TASK INSTRUCTION: {self.task_description}
 
-Generate the step-by-step plan as a JSON array:"""
+Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations:"""
         return prompt
     
     def _decompose_instruction(self) -> None:

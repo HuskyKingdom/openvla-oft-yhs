@@ -195,7 +195,7 @@ class GenerateConfig:
     use_substep_decomposition: bool = False          # Enable substep-based instruction decomposition
     llm_model_path: str = "Qwen/Qwen2.5-7B-Instruct" # Path to LLM for instruction decomposition
     sigclip_model_path: str = "google/siglip-so400m-patch14-224"  # Path to SigCLIP for substep completion (correct model ID)
-    substep_completion_threshold: float = 0.25       # SigCLIP similarity threshold for substep completion (lower=more sensitive)
+    substep_completion_threshold: float = 0.15       # SigCLIP similarity threshold for substep completion (lower=more sensitive)
     substep_log_dir: str = "./experiments/logs/substeps"  # Directory for substep-specific logs
 
     # fmt: on
