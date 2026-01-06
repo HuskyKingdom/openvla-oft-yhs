@@ -74,38 +74,31 @@ class SubstepManager:
         Returns:
             Formatted prompt string
         """
-        prompt = f"""You are an expert robotic task planner. Given a single image and a natural-language instruction, produce a detailed step-by-step action plan for the robot.
+        prompt = f"""You are an expert robotic task planner. Your job is to break down a robot task into simple, sequential steps.
 
-STRICT RULES YOU MUST FOLLOW:
-1. Output must be a JSON list only.
-2. The final step must always return the robot to its initial position (e.g., reset base/arm to neutral home pose).
-3. Before ANY action you output, must be an simple low-level action that can be done in one motion.
-4. Each item must have:
-   - "step": integer starting from 1
-   - "subgoal": concise actionable description
-   - "expected_effect": observable change in the environment
-5. DO NOT output any explanation. Output the JSON list only.
-6. Always describe spatial relation (e.g. top, left, right,...)
+CRITICAL REQUIREMENTS:
+1. You MUST output a valid JSON array with at least 3 steps
+2. Each step must be a simple, low-level action that can be done in one motion
+3. The final step must ALWAYS be: "Return to initial position"
+4. Output ONLY the JSON array - no explanations, no extra text
+5. Each JSON object must have exactly these three fields:
+   - "step": integer (1, 2, 3, ...)
+   - "subgoal": brief action description (what to do)
+   - "expected_effect": observable result (what changes visually)
 
-Here is an example format:
-
+EXAMPLE OUTPUT FORMAT:
 [
-  {{"step": 1, "subgoal": "Move gripper on top of the cabinet", "expected_effect": "robot base positioned on top of the cabinet"}},
-  {{"step": 2, "subgoal": "Reach the handle with the right arm", "expected_effect": "gripper aligned with the cabinet handle"}},
-  {{"step": 3, "subgoal": "Pull the cabinet door open", "expected_effect": "cabinet door fully opened"}},
-  {{"step": 4, "subgoal": "Move hand into the drawer", "expected_effect": "gripper inside the drawer"}},
-  {{"step": 5, "subgoal": "Pick up the black bowl", "expected_effect": "robot holds the black bowl securely"}},
-  {{"step": 6, "subgoal": "Place bowl on the plate", "expected_effect": "bowl stably placed on the plate surface"}},
-  {{"step": 7, "subgoal": "Return to initial position", "expected_effect": "robot back at neutral home pose"}}
+  {{"step": 1, "subgoal": "Move gripper above the black bowl", "expected_effect": "gripper positioned above the black bowl"}},
+  {{"step": 2, "subgoal": "Lower gripper to grasp the bowl", "expected_effect": "gripper touching the black bowl"}},
+  {{"step": 3, "subgoal": "Close gripper to pick up the bowl", "expected_effect": "robot holds the black bowl securely"}},
+  {{"step": 4, "subgoal": "Move gripper above the plate", "expected_effect": "gripper positioned above the plate"}},
+  {{"step": 5, "subgoal": "Lower and release the bowl on the plate", "expected_effect": "black bowl stably placed on the plate"}},
+  {{"step": 6, "subgoal": "Return to initial position", "expected_effect": "robot back at neutral home pose"}}
 ]
 
-Now, based on the provided image and natural-language instruction, generate the action plan.
-Output only the JSON list following the specified format.
+TASK INSTRUCTION: {self.task_description}
 
-The instruction is "{self.task_description}"
-
-Output util the instruction is all done.
-"""
+Generate the step-by-step plan as a JSON array:"""
         return prompt
     
     def _decompose_instruction(self) -> None:
@@ -132,14 +125,14 @@ Output util the instruction is all done.
             
             model_inputs = self.llm_tokenizer([text], return_tensors="pt").to(self.device)
             
-            # Generate substep plan
+            # Generate substep plan with deterministic settings for stability
             with torch.no_grad():
                 generated_ids = self.llm_model.generate(
                     **model_inputs,
                     max_new_tokens=1024,
-                    temperature=0.7,
-                    top_p=0.9,
-                    do_sample=True,
+                    temperature=0.1,  # Low temperature for more deterministic output
+                    top_p=0.95,
+                    do_sample=False,  # Use greedy decoding for consistency
                 )
             
             # Decode output
@@ -152,7 +145,15 @@ Output util the instruction is all done.
             # Parse JSON output
             self.substeps = self._parse_llm_output(output_text)
             
-            logger.info(f"[SubstepManager] Successfully decomposed into {len(self.substeps)} substeps")
+            # Validate minimum substep count
+            if len(self.substeps) < 2:
+                logger.warning(
+                    f"[SubstepManager] Only {len(self.substeps)} substeps generated (expected ≥2). "
+                    "This may indicate LLM output quality issue. Will use original instruction."
+                )
+                self.substeps = []  # Clear to trigger fallback to original instruction
+            else:
+                logger.info(f"[SubstepManager] Successfully decomposed into {len(self.substeps)} substeps")
             
         except Exception as e:
             logger.error(f"[SubstepManager] Failed to decompose instruction: {e}")
@@ -180,21 +181,35 @@ Output util the instruction is all done.
                 raise ValueError("No JSON array found in output")
             
             json_str = output_text[start_idx:end_idx+1]
+            
+            # Fix common JSON formatting issues
+            # Remove trailing commas before closing brackets/braces
+            import re
+            json_str = re.sub(r',\s*}', '}', json_str)  # Remove trailing comma before }
+            json_str = re.sub(r',\s*]', ']', json_str)  # Remove trailing comma before ]
+            
             substeps = json.loads(json_str)
             
             # Validate structure
             if not isinstance(substeps, list):
                 raise ValueError("Output is not a list")
             
+            # Filter and validate substeps
+            valid_substeps = []
             for substep in substeps:
-                if not all(key in substep for key in ['step', 'subgoal', 'expected_effect']):
-                    raise ValueError(f"Missing required keys in substep: {substep}")
+                if all(key in substep for key in ['step', 'subgoal', 'expected_effect']):
+                    valid_substeps.append(substep)
+                else:
+                    logger.warning(f"[SubstepManager] Skipping invalid substep: {substep}")
             
-            return substeps
+            if len(valid_substeps) == 0:
+                logger.warning("[SubstepManager] No valid substeps found in LLM output")
+            
+            return valid_substeps
             
         except Exception as e:
             logger.error(f"[SubstepManager] Failed to parse LLM output: {e}")
-            logger.error(f"[SubstepManager] Raw output: {output_text}")
+            logger.error(f"[SubstepManager] Raw output: {output_text[:500]}...")  # Truncate for readability
             return []
     
     def _precompute_text_embeddings(self) -> None:
@@ -236,11 +251,16 @@ Output util the instruction is all done.
         """
         try:
             if self.text_embeddings is None:
-                logger.warning("[SubstepManager] Text embeddings not precomputed")
+                logger.warning("[SubstepManager] Text embeddings not precomputed, returning 0.0")
                 return 0.0
             
             if self.current_substep_idx >= len(self.substeps):
                 return 1.0  # All substeps completed
+            
+            # Validate image format
+            if not isinstance(image, np.ndarray) or image.dtype != np.uint8:
+                logger.error(f"[SubstepManager] Invalid image format: type={type(image)}, dtype={getattr(image, 'dtype', 'N/A')}")
+                return 0.0
             
             # Convert numpy array to PIL Image
             pil_image = Image.fromarray(image)
@@ -263,10 +283,17 @@ Output util the instruction is all done.
             current_text_embed = self.text_embeddings[self.current_substep_idx].unsqueeze(0)
             similarity = torch.cosine_similarity(image_embeds, current_text_embed, dim=-1)
             
-            return similarity.item()
+            sim_score = float(similarity.item())
+            
+            # Sanity check the similarity score
+            if not (0.0 <= sim_score <= 1.0):
+                logger.warning(f"[SubstepManager] Unusual similarity score: {sim_score}, clamping to [0,1]")
+                sim_score = max(0.0, min(1.0, sim_score))
+            
+            return sim_score
             
         except Exception as e:
-            logger.error(f"[SubstepManager] Failed to compute similarity: {e}")
+            logger.error(f"[SubstepManager] Failed to compute similarity: {e}", exc_info=True)
             return 0.0
     
     def should_switch_substep(self, observation_image: np.ndarray) -> bool:
@@ -286,15 +313,20 @@ Output util the instruction is all done.
         # Compute similarity between observation and expected_effect
         similarity = self._compute_similarity(observation_image)
         
-        # Log similarity for debugging
+        # Log similarity for monitoring and debugging
         current_substep = self.substeps[self.current_substep_idx]
-        logger.debug(
-            f"[SubstepManager] Substep {self.current_substep_idx+1}/{len(self.substeps)}: "
+        logger.info(
+            f"[SubstepManager] Substep {self.current_substep_idx+1}/{len(self.substeps)} "
+            f"'{current_substep['subgoal'][:40]}...': "
             f"similarity={similarity:.3f}, threshold={self.completion_threshold:.3f}"
         )
         
         # Switch if similarity exceeds threshold
-        return similarity >= self.completion_threshold
+        should_switch = similarity >= self.completion_threshold
+        if should_switch:
+            logger.info(f"[SubstepManager] ✓ Substep completion detected! (similarity={similarity:.3f})")
+        
+        return should_switch
     
     def advance_substep(self) -> None:
         """
