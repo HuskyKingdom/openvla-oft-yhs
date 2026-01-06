@@ -19,6 +19,7 @@ import torch.nn as nn
 import draccus
 import numpy as np
 import tqdm
+import imageio
 from libero.libero import benchmark
 
 from experiments.robot.libero import perturbation
@@ -43,6 +44,7 @@ from experiments.robot.openvla_utils import (
     resize_image_for_policy,
 )
 from experiments.robot.robot_utils import (
+    DATE,
     DATE_TIME,
     get_action,
     get_image_resize_size,
@@ -54,7 +56,7 @@ from experiments.robot.robot_utils import (
 
 from energy_model.model import EnergyModel
 
-
+import cv2
 from prismatic.vla.constants import NUM_ACTIONS_CHUNK
 
 
@@ -349,6 +351,118 @@ def process_action(action, model_family):
     return action
 
 
+def save_rollout_video_with_substep_info(
+    rollout_images,
+    substep_info_list,
+    episode_idx,
+    success,
+    task_description,
+    log_file=None
+):
+    """
+    Save rollout video with substep information overlayed on each frame.
+    
+    Args:
+        rollout_images: List of RGB images (H, W, 3) as numpy arrays
+        substep_info_list: List of dicts with substep info for each frame
+        episode_idx: Episode index number
+        success: Whether episode succeeded
+        task_description: Original task instruction
+        log_file: Optional log file handle
+    """
+    rollout_dir = f"./rollouts/{DATE}"
+    os.makedirs(rollout_dir, exist_ok=True)
+    
+    processed_task_description = task_description.lower().replace(" ", "_").replace("\n", "_").replace(".", "_")[:50]
+    mp4_path = f"{rollout_dir}/{DATE_TIME}--substep_eval--episode={episode_idx}--success={success}--task={processed_task_description}.mp4"
+    
+    # Process each frame and add text overlay
+    annotated_frames = []
+    for frame_idx, img in enumerate(rollout_images):
+        # Get substep info for this frame
+        if frame_idx < len(substep_info_list):
+            info = substep_info_list[frame_idx]
+        else:
+            info = substep_info_list[-1] if substep_info_list else {}
+        
+        # Convert to BGR for OpenCV
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        
+        # Create overlay with semi-transparent background
+        overlay = img_bgr.copy()
+        height, width = img_bgr.shape[:2]
+        
+        # Draw semi-transparent background for text
+        cv2.rectangle(overlay, (5, 5), (width - 5, 120), (0, 0, 0), -1)
+        img_bgr = cv2.addWeighted(overlay, 0.6, img_bgr, 0.4, 0)
+        
+        # Prepare text information
+        y_offset = 20
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.4
+        font_thickness = 1
+        text_color = (255, 255, 255)  # White
+        
+        # Line 1: Original instruction
+        task_text = f"Task: {task_description[:60]}"
+        cv2.putText(img_bgr, task_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        y_offset += 20
+        
+        # Line 2: Current substep with counter
+        if 'current_substep' in info and info['current_substep']:
+            substep_text = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}: {info['current_substep'][:50]}"
+            cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (0, 255, 255), font_thickness, cv2.LINE_AA)
+        else:
+            substep_text = "Substep: N/A"
+            cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (128, 128, 128), font_thickness, cv2.LINE_AA)
+        y_offset += 20
+        
+        # Line 3: Expected effect
+        if 'expected_effect' in info and info['expected_effect']:
+            effect_text = f"Expected: {info['expected_effect'][:50]}"
+            cv2.putText(img_bgr, effect_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+        y_offset += 20
+        
+        # Line 4: Similarity score with color coding
+        if 'similarity' in info:
+            sim_score = info['similarity']
+            threshold = info.get('threshold', 0.0)
+            
+            # Color code: Green if above threshold, Red if below
+            if sim_score >= threshold:
+                sim_color = (0, 255, 0)  # Green
+                status = "COMPLETE"
+            else:
+                sim_color = (0, 0, 255)  # Red
+                status = "IN PROGRESS"
+            
+            sim_text = f"Similarity: {sim_score:.4f} / {threshold:.4f} [{status}]"
+            cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness, cv2.LINE_AA)
+        y_offset += 20
+        
+        # Line 5: Frame info
+        frame_text = f"Frame: {frame_idx+1}/{len(rollout_images)}"
+        cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (200, 200, 200), font_thickness, cv2.LINE_AA)
+        
+        # Convert back to RGB for imageio
+        img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        annotated_frames.append(img_rgb)
+    
+    # Write video
+    video_writer = imageio.get_writer(mp4_path, fps=30)
+    for frame in annotated_frames:
+        video_writer.append_data(frame)
+    video_writer.close()
+    
+    log_msg = f"Saved annotated rollout video at: {mp4_path}"
+    print(log_msg)
+    if log_file is not None:
+        log_file.write(log_msg + "\n")
+        log_file.flush()
+    
+    return mp4_path
+
+
 def run_episode(
     cfg: GenerateConfig,
     env,
@@ -411,6 +525,7 @@ def run_episode(
     # Setup
     t = 0
     replay_images = []
+    substep_info_list = []  # Track substep info for each frame
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
 
     # Drawing Utils
@@ -433,6 +548,32 @@ def run_episode(
         # Prepare observation
         observation, img = prepare_observation(obs, resize_size)
         replay_images.append(img)
+        
+        # Collect substep info for this frame (for video annotation)
+        frame_substep_info = {
+            'task_description': task_description,
+            'current_substep': None,
+            'expected_effect': None,
+            'similarity': None,
+            'threshold': cfg.substep_completion_threshold if cfg.use_substep_decomposition else None,
+            'substep_idx': 0,
+            'total_substeps': 0,
+        }
+        
+        if substep_manager is not None and len(substep_manager.substeps) > 0:
+            progress = substep_manager.get_progress_info()
+            frame_substep_info.update({
+                'current_substep': progress['current_subgoal'],
+                'substep_idx': progress['current_idx'] + 1,  # 1-indexed for display
+                'total_substeps': progress['total'],
+            })
+            
+            # Get expected effect for current substep
+            if substep_manager.current_substep_idx < len(substep_manager.substeps):
+                current_substep_data = substep_manager.substeps[substep_manager.current_substep_idx]
+                frame_substep_info['expected_effect'] = current_substep_data['expected_effect']
+        
+        substep_info_list.append(frame_substep_info)
 
         # If action queue is empty, requery model
         if len(action_queue) == 0:
@@ -442,6 +583,14 @@ def run_episode(
             if substep_manager is not None:
                 # Check if current substep is completed using SigCLIP
                 img_for_check = get_libero_image(obs)
+                
+                # Compute similarity and store for video annotation
+                if substep_manager.current_substep_idx < len(substep_manager.substeps):
+                    similarity_score = substep_manager._compute_similarity(img_for_check)
+                    # Update the last frame's info with similarity score
+                    if len(substep_info_list) > 0:
+                        substep_info_list[-1]['similarity'] = similarity_score
+                
                 if substep_manager.should_switch_substep(img_for_check):
                     substep_manager.advance_substep()
                     progress_info = substep_manager.get_progress_info()
@@ -450,6 +599,14 @@ def run_episode(
                         f"{progress_info['current_subgoal']}", 
                         log_file
                     )
+                    
+                    # Update frame info after switch
+                    if len(substep_info_list) > 0:
+                        substep_info_list[-1]['current_substep'] = progress_info['current_subgoal']
+                        substep_info_list[-1]['substep_idx'] = progress_info['current_idx'] + 1
+                        if substep_manager.current_substep_idx < len(substep_manager.substeps):
+                            current_substep_data = substep_manager.substeps[substep_manager.current_substep_idx]
+                            substep_info_list[-1]['expected_effect'] = current_substep_data['expected_effect']
                 
                 # Get current instruction from substep manager
                 current_instruction = substep_manager.get_current_instruction()
@@ -496,7 +653,7 @@ def run_episode(
             log_file
         )
 
-    return success, replay_images
+    return success, replay_images, substep_info_list
 
 
 def run_task(
@@ -602,7 +759,7 @@ def run_task(
 
 
         # Run episode
-        success, replay_images = run_episode(
+        success, replay_images, substep_info_list = run_episode(
             cfg,
             env,
             task_description,
@@ -628,11 +785,24 @@ def run_task(
             task_successes += 1
             total_successes += 1
 
-        # Save replay video
+        # Save replay video with substep annotations
         if cfg.save_video:
-            save_rollout_video(
-                replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
-            )
+            if cfg.use_substep_decomposition and substep_info_list:
+                # Use enhanced video with substep info
+                save_rollout_video_with_substep_info(
+                    replay_images,
+                    substep_info_list,
+                    total_episodes,
+                    success=success,
+                    task_description=task_description,
+                    log_file=log_file
+                )
+            else:
+                # Use original video saving (fallback)
+                from experiments.robot.libero.libero_utils import save_rollout_video
+                save_rollout_video(
+                    replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
+                )
 
         # Log results
         log_message(f"Success: {success}", log_file)
