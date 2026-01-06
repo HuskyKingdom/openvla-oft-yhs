@@ -370,6 +370,11 @@ def save_rollout_video_with_substep_info(
         task_description: Original task instruction
         log_file: Optional log file handle
     """
+    # Debug: Check data
+    print(f"[VIDEO DEBUG] Processing {len(rollout_images)} frames with {len(substep_info_list)} info entries")
+    if len(substep_info_list) > 0:
+        print(f"[VIDEO DEBUG] First frame info: {substep_info_list[0]}")
+    
     rollout_dir = f"./rollouts/{DATE}"
     os.makedirs(rollout_dir, exist_ok=True)
     
@@ -392,61 +397,74 @@ def save_rollout_video_with_substep_info(
         overlay = img_bgr.copy()
         height, width = img_bgr.shape[:2]
         
+        # Calculate background box size based on expected lines
+        num_text_lines = 5
+        box_height = int(num_text_lines * max(20, height / 12.0) + 10)
+        
         # Draw semi-transparent background for text
-        cv2.rectangle(overlay, (5, 5), (width - 5, 120), (0, 0, 0), -1)
-        img_bgr = cv2.addWeighted(overlay, 0.6, img_bgr, 0.4, 0)
+        cv2.rectangle(overlay, (5, 5), (width - 5, box_height), (0, 0, 0), -1)
+        img_bgr = cv2.addWeighted(overlay, 0.7, img_bgr, 0.3, 0)
         
         # Prepare text information
-        y_offset = 20
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.4
-        font_thickness = 1
+        # Scale font based on image width (for 256px width, this gives ~0.37)
+        font_scale = max(0.5, width / 700.0)
+        font_thickness = max(1, int(width / 200.0))
+        line_spacing = max(20, int(height / 12.0))
+        y_offset = line_spacing
         text_color = (255, 255, 255)  # White
         
         # Line 1: Original instruction
-        task_text = f"Task: {task_description[:60]}"
+        task_text = f"Task: {task_description[:55]}"
         cv2.putText(img_bgr, task_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        y_offset += 20
+        y_offset += line_spacing
         
         # Line 2: Current substep with counter
         if 'current_substep' in info and info['current_substep']:
-            substep_text = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}: {info['current_substep'][:50]}"
-            cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (0, 255, 255), font_thickness, cv2.LINE_AA)
+            substep_text = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}: {info['current_substep'][:45]}"
+            cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (0, 255, 255), font_thickness + 1, cv2.LINE_AA)
         else:
             substep_text = "Substep: N/A"
             cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (128, 128, 128), font_thickness, cv2.LINE_AA)
-        y_offset += 20
+        y_offset += line_spacing
         
         # Line 3: Expected effect
         if 'expected_effect' in info and info['expected_effect']:
-            effect_text = f"Expected: {info['expected_effect'][:50]}"
+            effect_text = f"Expected: {info['expected_effect'][:45]}"
             cv2.putText(img_bgr, effect_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        y_offset += 20
+        y_offset += line_spacing
         
         # Line 4: Similarity score with color coding
-        if 'similarity' in info:
+        if 'similarity' in info and info['similarity'] is not None:
             sim_score = info['similarity']
             threshold = info.get('threshold', 0.0)
             
             # Color code: Green if above threshold, Red if below
             if sim_score >= threshold:
-                sim_color = (0, 255, 0)  # Green
+                sim_color = (0, 255, 0)  # Green (BGR)
                 status = "COMPLETE"
             else:
-                sim_color = (0, 0, 255)  # Red
-                status = "IN PROGRESS"
+                sim_color = (0, 100, 255)  # Orange (BGR)
+                status = "PROGRESS"
             
-            sim_text = f"Similarity: {sim_score:.4f} / {threshold:.4f} [{status}]"
-            cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness, cv2.LINE_AA)
-        y_offset += 20
+            sim_text = f"Sim: {sim_score:.4f} / {threshold:.4f} [{status}]"
+            cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness + 1, cv2.LINE_AA)
+        y_offset += line_spacing
         
         # Line 5: Frame info
         frame_text = f"Frame: {frame_idx+1}/{len(rollout_images)}"
-        cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (200, 200, 200), font_thickness, cv2.LINE_AA)
+        cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (180, 180, 180), font_thickness, cv2.LINE_AA)
         
         # Convert back to RGB for imageio
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         annotated_frames.append(img_rgb)
+    
+    # Save a sample annotated frame for debugging
+    if len(annotated_frames) > 0:
+        sample_frame_path = mp4_path.replace('.mp4', '_sample_frame.png')
+        sample_idx = len(annotated_frames) // 2  # Middle frame
+        imageio.imwrite(sample_frame_path, annotated_frames[sample_idx])
+        print(f"[VIDEO DEBUG] Saved sample annotated frame: {sample_frame_path}")
     
     # Write video
     video_writer = imageio.get_writer(mp4_path, fps=30)
