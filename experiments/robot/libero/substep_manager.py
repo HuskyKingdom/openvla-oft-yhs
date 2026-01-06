@@ -54,29 +54,15 @@ class SubstepManager:
         self.completion_threshold = completion_threshold
         self.device = device
         
-        # Check if using timm model
-        self.is_timm_model = getattr(sigclip_model, '_is_timm_model', False)
+        # Check if using open_clip model
+        self.is_openclip_model = getattr(sigclip_model, '_is_openclip_model', False)
+        self.is_openclip_processor = getattr(sigclip_processor, '_is_openclip', False)
         
         # State variables
         self.substeps: List[Dict] = []
         self.current_substep_idx: int = 0
         self.substep_switch_count: int = 0
         self.text_embeddings: Optional[torch.Tensor] = None
-        self.text_strings: Optional[List[str]] = None
-        
-        # For timm models, load a separate CLIP text encoder
-        self.clip_text_model = None
-        self.clip_tokenizer = None
-        if self.is_timm_model:
-            try:
-                from transformers import CLIPTextModel, CLIPTokenizer
-                self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
-                self.clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
-                self.clip_text_model = self.clip_text_model.to(device)
-                self.clip_text_model.eval()
-                logger.info("[SubstepManager] Loaded CLIP text encoder for timm vision model")
-            except Exception as e:
-                logger.error(f"[SubstepManager] Failed to load CLIP text encoder: {e}")
         
         # Decompose instruction into substeps
         self._decompose_instruction()
@@ -249,29 +235,29 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
         try:
             expected_effects = [substep['expected_effect'] for substep in self.substeps]
             
-            if self.is_timm_model:
-                # Timm models don't have text encoder - use separate CLIP text model
-                if self.clip_text_model is None or self.clip_tokenizer is None:
-                    logger.error("[SubstepManager] Timm model requires CLIP text encoder but it's not loaded")
+            if self.is_openclip_model:
+                # Use open_clip API for SigLIP-2 from timm
+                logger.info("[SubstepManager] Using open_clip text encoder (SigLIP-2)")
+                
+                # Get tokenizer from processor
+                tokenizer = getattr(self.sigclip_processor, '_tokenizer', None)
+                if tokenizer is None:
+                    logger.error("[SubstepManager] Open-clip tokenizer not found in processor")
                     self.text_embeddings = None
                     return
                 
-                logger.info("[SubstepManager] Using CLIP text encoder with timm vision model")
                 with torch.no_grad():
-                    inputs = self.clip_tokenizer(
-                        expected_effects,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                    ).to(self.device)
+                    # Tokenize texts using open_clip tokenizer
+                    text_tokens = tokenizer(expected_effects, context_length=self.sigclip_model.context_length)
+                    text_tokens = text_tokens.to(self.device)
                     
-                    text_outputs = self.clip_text_model(**inputs)
-                    text_embeds = text_outputs.pooler_output
+                    # Encode text using open_clip model
+                    text_embeds = self.sigclip_model.encode_text(text_tokens, normalize=True)
                     
-                    # Normalize embeddings
-                    self.text_embeddings = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+                    # Embeddings already normalized by encode_text(normalize=True)
+                    self.text_embeddings = text_embeds
                 
-                logger.info(f"[SubstepManager] Precomputed text embeddings (CLIP): {self.text_embeddings.shape}")
+                logger.info(f"[SubstepManager] Precomputed text embeddings (open_clip): {self.text_embeddings.shape}")
                 return
             
             # Process texts with transformers CLIP/SigCLIP
@@ -340,17 +326,16 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
             
             # Process image based on model type
             with torch.no_grad():
-                if self.is_timm_model:
-                    # Timm model: use transform and direct forward pass
+                if self.is_openclip_model:
+                    # Open-clip model: use preprocess transform and encode_image
                     img_tensor = self.sigclip_processor(pil_image)
                     if img_tensor.dim() == 3:
                         img_tensor = img_tensor.unsqueeze(0)  # Add batch dimension
                     img_tensor = img_tensor.to(self.device)
                     
-                    # Forward pass through timm model
-                    image_embeds = self.sigclip_model(img_tensor)
-                    # Normalize
-                    image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+                    # Encode image using open_clip (with normalization)
+                    image_embeds = self.sigclip_model.encode_image(img_tensor, normalize=True)
+                    # Already normalized by encode_image(normalize=True)
                 else:
                     # Transformers model: use processor
                     inputs = self.sigclip_processor(

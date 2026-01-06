@@ -757,44 +757,37 @@ def run_task(
             
             log_message("[SUBSTEP] Loading vision-language model for substep completion detection...", log_file)
             
-            # Check if using timm model or transformers model
+            # Check if using open_clip (timm hub) model or transformers model
             if cfg.sigclip_model_path.startswith("timm/"):
-                # Load timm model
-                import timm
-                from timm.data import resolve_data_config
-                from timm.data.transforms_factory import create_transform
+                # Load open_clip model from timm hub
+                from open_clip import create_model_from_pretrained, get_tokenizer
                 
-                # Extract model name from path (e.g., "timm/ViT-B-16-SigLIP2" -> "vit_base_patch16_siglip_256")
-                timm_model_name = cfg.sigclip_model_path.replace("timm/", "")
-                # Convert to timm naming convention
-                timm_model_map = {
-                    "ViT-B-16-SigLIP2": "vit_base_patch16_siglip_256",
-                    "ViT-SO400M-14-SigLIP-2-384": "vit_so400m_patch14_siglip_384",
-                    "ViT-L-16-SigLIP-2-256": "vit_large_patch16_siglip_256",
-                }
+                # Model name format: 'hf-hub:timm/ViT-B-16-SigLIP2'
+                openclip_model_name = f"hf-hub:{cfg.sigclip_model_path}"
                 
-                timm_name = timm_model_map.get(timm_model_name, timm_model_name.lower().replace("-", "_"))
+                log_message(f"[SUBSTEP] Loading open_clip model: {openclip_model_name}", log_file)
+                sigclip_model, sigclip_processor = create_model_from_pretrained(openclip_model_name)
+                sigclip_tokenizer = get_tokenizer(openclip_model_name)
                 
-                log_message(f"[SUBSTEP] Loading timm model: {timm_name}", log_file)
-                sigclip_model = timm.create_model(timm_name, pretrained=True, num_classes=0)  # num_classes=0 for feature extraction
                 sigclip_model = sigclip_model.to(model.device)
                 sigclip_model.eval()
                 
-                # Create transform for image preprocessing
-                config = resolve_data_config({}, model=sigclip_model)
-                sigclip_processor = create_transform(**config)
+                # Store tokenizer in processor for unified interface
+                sigclip_processor._tokenizer = sigclip_tokenizer
+                sigclip_processor._is_openclip = True
                 
-                # Mark as timm model
-                sigclip_model._is_timm_model = True
+                # Mark as open_clip model
+                sigclip_model._is_openclip_model = True
                 
-                log_message(f"[SUBSTEP] Timm model loaded: {timm_name}", log_file)
+                log_message(f"[SUBSTEP] Open-CLIP model loaded: {cfg.sigclip_model_path}", log_file)
             else:
                 # Load transformers model (CLIP/SigLIP)
                 sigclip_model = AutoModel.from_pretrained(cfg.sigclip_model_path)
                 sigclip_processor = AutoProcessor.from_pretrained(cfg.sigclip_model_path)
                 sigclip_model = sigclip_model.to(model.device)
                 sigclip_model.eval()
-                sigclip_model._is_timm_model = False
+                sigclip_model._is_openclip_model = False
+                sigclip_processor._is_openclip = False
                 log_message(f"[SUBSTEP] Transformers model loaded: {cfg.sigclip_model_path}", log_file)
             
         except Exception as e:
