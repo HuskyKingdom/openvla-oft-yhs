@@ -196,7 +196,7 @@ class GenerateConfig:
     # Substep decomposition parameters
     use_substep_decomposition: bool = False          # Enable substep-based instruction decomposition
     llm_model_path: str = "Qwen/Qwen2.5-7B-Instruct" # Path to LLM for instruction decomposition
-    sigclip_model_path: str = "timm/ViT-B-16-SigLIP-2-256"  # Path to SigLIP-2 model for substep completion
+    sigclip_model_path: str = "timm/ViT-B-16-SigLIP2"  # Path to SigLIP-2 model for substep completion
     substep_completion_threshold: float = 0.25       # Vision-language similarity threshold for substep completion
     substep_log_dir: str = "./experiments/logs/substeps"  # Directory for substep-specific logs
 
@@ -755,12 +755,47 @@ def run_task(
             llm_model.eval()
             log_message(f"[SUBSTEP] LLM loaded: {cfg.llm_model_path}", log_file)
             
-            log_message("[SUBSTEP] Loading SigCLIP for substep completion detection...", log_file)
-            sigclip_model = AutoModel.from_pretrained(cfg.sigclip_model_path)
-            sigclip_processor = AutoProcessor.from_pretrained(cfg.sigclip_model_path)
-            sigclip_model = sigclip_model.to(model.device)
-            sigclip_model.eval()
-            log_message(f"[SUBSTEP] SigCLIP loaded: {cfg.sigclip_model_path}", log_file)
+            log_message("[SUBSTEP] Loading vision-language model for substep completion detection...", log_file)
+            
+            # Check if using timm model or transformers model
+            if cfg.sigclip_model_path.startswith("timm/"):
+                # Load timm model
+                import timm
+                from timm.data import resolve_data_config
+                from timm.data.transforms_factory import create_transform
+                
+                # Extract model name from path (e.g., "timm/ViT-B-16-SigLIP2" -> "vit_base_patch16_siglip_256")
+                timm_model_name = cfg.sigclip_model_path.replace("timm/", "")
+                # Convert to timm naming convention
+                timm_model_map = {
+                    "ViT-B-16-SigLIP2": "vit_base_patch16_siglip_256",
+                    "ViT-SO400M-14-SigLIP-2-384": "vit_so400m_patch14_siglip_384",
+                    "ViT-L-16-SigLIP-2-256": "vit_large_patch16_siglip_256",
+                }
+                
+                timm_name = timm_model_map.get(timm_model_name, timm_model_name.lower().replace("-", "_"))
+                
+                log_message(f"[SUBSTEP] Loading timm model: {timm_name}", log_file)
+                sigclip_model = timm.create_model(timm_name, pretrained=True, num_classes=0)  # num_classes=0 for feature extraction
+                sigclip_model = sigclip_model.to(model.device)
+                sigclip_model.eval()
+                
+                # Create transform for image preprocessing
+                config = resolve_data_config({}, model=sigclip_model)
+                sigclip_processor = create_transform(**config)
+                
+                # Mark as timm model
+                sigclip_model._is_timm_model = True
+                
+                log_message(f"[SUBSTEP] Timm model loaded: {timm_name}", log_file)
+            else:
+                # Load transformers model (CLIP/SigLIP)
+                sigclip_model = AutoModel.from_pretrained(cfg.sigclip_model_path)
+                sigclip_processor = AutoProcessor.from_pretrained(cfg.sigclip_model_path)
+                sigclip_model = sigclip_model.to(model.device)
+                sigclip_model.eval()
+                sigclip_model._is_timm_model = False
+                log_message(f"[SUBSTEP] Transformers model loaded: {cfg.sigclip_model_path}", log_file)
             
         except Exception as e:
             log_message(f"[SUBSTEP] Failed to load models: {e}. Disabling substep decomposition.", log_file)

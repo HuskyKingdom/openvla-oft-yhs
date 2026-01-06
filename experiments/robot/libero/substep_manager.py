@@ -41,8 +41,8 @@ class SubstepManager:
             task_description: High-level task instruction
             llm_model: Qwen3-8B model for instruction decomposition
             llm_tokenizer: Tokenizer for LLM
-            sigclip_model: SigCLIP model for vision-language matching
-            sigclip_processor: Processor for SigCLIP
+            sigclip_model: SigCLIP/CLIP model for vision-language matching
+            sigclip_processor: Processor for SigCLIP/CLIP (or timm transform)
             completion_threshold: Similarity threshold for substep completion (0-1)
             device: Torch device for model inference
         """
@@ -54,11 +54,29 @@ class SubstepManager:
         self.completion_threshold = completion_threshold
         self.device = device
         
+        # Check if using timm model
+        self.is_timm_model = getattr(sigclip_model, '_is_timm_model', False)
+        
         # State variables
         self.substeps: List[Dict] = []
         self.current_substep_idx: int = 0
         self.substep_switch_count: int = 0
         self.text_embeddings: Optional[torch.Tensor] = None
+        self.text_strings: Optional[List[str]] = None
+        
+        # For timm models, load a separate CLIP text encoder
+        self.clip_text_model = None
+        self.clip_tokenizer = None
+        if self.is_timm_model:
+            try:
+                from transformers import CLIPTextModel, CLIPTokenizer
+                self.clip_text_model = CLIPTextModel.from_pretrained("openai/clip-vit-base-patch32")
+                self.clip_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
+                self.clip_text_model = self.clip_text_model.to(device)
+                self.clip_text_model.eval()
+                logger.info("[SubstepManager] Loaded CLIP text encoder for timm vision model")
+            except Exception as e:
+                logger.error(f"[SubstepManager] Failed to load CLIP text encoder: {e}")
         
         # Decompose instruction into substeps
         self._decompose_instruction()
@@ -224,14 +242,39 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
     
     def _precompute_text_embeddings(self) -> None:
         """
-        Precompute SigCLIP text embeddings for all expected_effects.
+        Precompute text embeddings for all expected_effects.
         
         This avoids redundant text encoding during substep switching checks.
         """
         try:
             expected_effects = [substep['expected_effect'] for substep in self.substeps]
             
-            # Process texts with SigCLIP
+            if self.is_timm_model:
+                # Timm models don't have text encoder - use separate CLIP text model
+                if self.clip_text_model is None or self.clip_tokenizer is None:
+                    logger.error("[SubstepManager] Timm model requires CLIP text encoder but it's not loaded")
+                    self.text_embeddings = None
+                    return
+                
+                logger.info("[SubstepManager] Using CLIP text encoder with timm vision model")
+                with torch.no_grad():
+                    inputs = self.clip_tokenizer(
+                        expected_effects,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                    ).to(self.device)
+                    
+                    text_outputs = self.clip_text_model(**inputs)
+                    text_embeds = text_outputs.pooler_output
+                    
+                    # Normalize embeddings
+                    self.text_embeddings = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+                
+                logger.info(f"[SubstepManager] Precomputed text embeddings (CLIP): {self.text_embeddings.shape}")
+                return
+            
+            # Process texts with transformers CLIP/SigCLIP
             with torch.no_grad():
                 inputs = self.sigclip_processor(
                     text=expected_effects,
@@ -295,29 +338,42 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
             # Convert numpy array to PIL Image
             pil_image = Image.fromarray(image)
             
-            # Process image with SigCLIP
+            # Process image based on model type
             with torch.no_grad():
-                inputs = self.sigclip_processor(
-                    images=pil_image,
-                    return_tensors="pt"
-                ).to(self.device)
-                
-                # Try different API methods (prioritize standard CLIP API)
-                try:
-                    # Method 1: Use get_image_features (standard CLIP API - try first)
-                    image_embeds = self.sigclip_model.get_image_features(**inputs)
-                except (AttributeError, TypeError):
+                if self.is_timm_model:
+                    # Timm model: use transform and direct forward pass
+                    img_tensor = self.sigclip_processor(pil_image)
+                    if img_tensor.dim() == 3:
+                        img_tensor = img_tensor.unsqueeze(0)  # Add batch dimension
+                    img_tensor = img_tensor.to(self.device)
+                    
+                    # Forward pass through timm model
+                    image_embeds = self.sigclip_model(img_tensor)
+                    # Normalize
+                    image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+                else:
+                    # Transformers model: use processor
+                    inputs = self.sigclip_processor(
+                        images=pil_image,
+                        return_tensors="pt"
+                    ).to(self.device)
+                    
+                    # Try different API methods (prioritize standard CLIP API)
                     try:
-                        # Method 2: Use vision_model (for SigLIP architecture)
-                        image_outputs = self.sigclip_model.vision_model(**inputs)
-                        image_embeds = image_outputs[1] if isinstance(image_outputs, tuple) else image_outputs.pooler_output
-                    except Exception:
-                        # Method 3: Direct forward pass
-                        outputs = self.sigclip_model(**inputs)
-                        image_embeds = outputs.image_embeds if hasattr(outputs, 'image_embeds') else outputs[0]
-                
-                # Normalize embeddings for cosine similarity
-                image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
+                        # Method 1: Use get_image_features (standard CLIP API - try first)
+                        image_embeds = self.sigclip_model.get_image_features(**inputs)
+                    except (AttributeError, TypeError):
+                        try:
+                            # Method 2: Use vision_model (for SigLIP architecture)
+                            image_outputs = self.sigclip_model.vision_model(**inputs)
+                            image_embeds = image_outputs[1] if isinstance(image_outputs, tuple) else image_outputs.pooler_output
+                        except Exception:
+                            # Method 3: Direct forward pass
+                            outputs = self.sigclip_model(**inputs)
+                            image_embeds = outputs.image_embeds if hasattr(outputs, 'image_embeds') else outputs[0]
+                    
+                    # Normalize embeddings for cosine similarity
+                    image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
             
             # Compute cosine similarity with current expected_effect
             current_text_embed = self.text_embeddings[self.current_substep_idx]
