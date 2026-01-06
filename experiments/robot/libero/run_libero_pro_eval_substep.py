@@ -370,11 +370,6 @@ def save_rollout_video_with_substep_info(
         task_description: Original task instruction
         log_file: Optional log file handle
     """
-    # Debug: Check data
-    print(f"[VIDEO DEBUG] Processing {len(rollout_images)} frames with {len(substep_info_list)} info entries")
-    if len(substep_info_list) > 0:
-        print(f"[VIDEO DEBUG] First frame info: {substep_info_list[0]}")
-    
     rollout_dir = f"./rollouts/{DATE}"
     os.makedirs(rollout_dir, exist_ok=True)
     
@@ -407,10 +402,10 @@ def save_rollout_video_with_substep_info(
         
         # Prepare text information
         font = cv2.FONT_HERSHEY_SIMPLEX
-        # Scale font based on image width (for 256px width, this gives ~0.37)
-        font_scale = max(0.5, width / 700.0)
-        font_thickness = max(1, int(width / 200.0))
-        line_spacing = max(20, int(height / 12.0))
+        # Smaller font scale for better fit (for 256px width, this gives ~0.26)
+        font_scale = max(0.3, width / 1000.0)
+        font_thickness = 1
+        line_spacing = max(15, int(height / 16.0))
         y_offset = line_spacing
         text_color = (255, 255, 255)  # White
         
@@ -458,13 +453,6 @@ def save_rollout_video_with_substep_info(
         # Convert back to RGB for imageio
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         annotated_frames.append(img_rgb)
-    
-    # Save a sample annotated frame for debugging
-    if len(annotated_frames) > 0:
-        sample_frame_path = mp4_path.replace('.mp4', '_sample_frame.png')
-        sample_idx = len(annotated_frames) // 2  # Middle frame
-        imageio.imwrite(sample_frame_path, annotated_frames[sample_idx])
-        print(f"[VIDEO DEBUG] Saved sample annotated frame: {sample_frame_path}")
     
     # Write video
     video_writer = imageio.get_writer(mp4_path, fps=30)
