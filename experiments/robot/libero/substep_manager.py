@@ -83,7 +83,7 @@ CRITICAL REQUIREMENTS:
 4. Each JSON object must have exactly these three fields:
    - "step": integer (1, 2, 3, ...)
    - "subgoal": brief action description (what to do)
-   - "expected_effect": SPECIFIC VISUAL OBSERVATION that can be seen in the camera (NOT abstract outcomes)
+   - "expected_effect": SPECIFIC VISUAL OBSERVATION that can be seen in the camera for on frame, no motion description (NOT abstract outcomes)
 
 IMPORTANT FOR "expected_effect":
 - Describe CONCRETE VISUAL features: object positions, gripper state, spatial relationships
