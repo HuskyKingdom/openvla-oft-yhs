@@ -392,63 +392,94 @@ def save_rollout_video_with_substep_info(
         overlay = img_bgr.copy()
         height, width = img_bgr.shape[:2]
         
-        # Calculate background box size based on expected lines
-        num_text_lines = 5
-        box_height = int(num_text_lines * max(20, height / 12.0) + 10)
+        # Calculate background box size (allow up to 10 lines with wrapping)
+        line_spacing_bg = 14
+        num_text_lines = 10  # Increased for wrapped lines
+        box_height = int(num_text_lines * line_spacing_bg + 8)
         
         # Draw semi-transparent background for text
         cv2.rectangle(overlay, (5, 5), (width - 5, box_height), (0, 0, 0), -1)
-        img_bgr = cv2.addWeighted(overlay, 0.7, img_bgr, 0.3, 0)
+        img_bgr = cv2.addWeighted(overlay, 0.75, img_bgr, 0.25, 0)
         
         # Prepare text information
         font = cv2.FONT_HERSHEY_SIMPLEX
-        # Smaller font scale for better fit (for 256px width, this gives ~0.26)
-        font_scale = max(0.3, width / 1000.0)
+        # Much smaller font for 256px images
+        font_scale = 0.3
         font_thickness = 1
-        line_spacing = max(15, int(height / 16.0))
-        y_offset = line_spacing
+        line_spacing = 14
+        y_offset = 12
         text_color = (255, 255, 255)  # White
+        max_chars = 50  # Maximum characters per line
         
-        # Line 1: Original instruction
-        task_text = f"Task: {task_description[:55]}"
-        cv2.putText(img_bgr, task_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        y_offset += line_spacing
+        # Helper function to wrap text
+        def wrap_text(text, max_width):
+            words = text.split()
+            lines = []
+            current_line = ""
+            for word in words:
+                test_line = current_line + word + " "
+                if len(test_line) <= max_width:
+                    current_line = test_line
+                else:
+                    if current_line:
+                        lines.append(current_line.strip())
+                    current_line = word + " "
+            if current_line:
+                lines.append(current_line.strip())
+            return lines if lines else [text[:max_width]]
+        
+        # Line 1: Original instruction (with wrapping)
+        task_lines = wrap_text(f"Task: {task_description}", max_chars)
+        for line in task_lines[:2]:  # Max 2 lines for task
+            cv2.putText(img_bgr, line, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
+            y_offset += line_spacing
         
         # Line 2: Current substep with counter
         if 'current_substep' in info and info['current_substep']:
-            substep_text = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}: {info['current_substep'][:45]}"
-            cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (0, 255, 255), font_thickness + 1, cv2.LINE_AA)
+            substep_header = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}:"
+            cv2.putText(img_bgr, substep_header, (10, y_offset), font, font_scale, (100, 200, 255), font_thickness, cv2.LINE_AA)
+            y_offset += line_spacing
+            
+            # Substep content (wrapped)
+            substep_lines = wrap_text(info['current_substep'], max_chars)
+            for line in substep_lines[:2]:  # Max 2 lines
+                cv2.putText(img_bgr, f"  {line}", (10, y_offset), font, font_scale, (150, 220, 255), font_thickness, cv2.LINE_AA)
+                y_offset += line_spacing
         else:
             substep_text = "Substep: N/A"
             cv2.putText(img_bgr, substep_text, (10, y_offset), font, font_scale, (128, 128, 128), font_thickness, cv2.LINE_AA)
-        y_offset += line_spacing
+            y_offset += line_spacing
         
-        # Line 3: Expected effect
+        # Line 3: Expected effect (wrapped)
         if 'expected_effect' in info and info['expected_effect']:
-            effect_text = f"Expected: {info['expected_effect'][:45]}"
-            cv2.putText(img_bgr, effect_text, (10, y_offset), font, font_scale, text_color, font_thickness, cv2.LINE_AA)
-        y_offset += line_spacing
+            cv2.putText(img_bgr, "Expected:", (10, y_offset), font, font_scale, (200, 200, 200), font_thickness, cv2.LINE_AA)
+            y_offset += line_spacing
+            
+            effect_lines = wrap_text(info['expected_effect'], max_chars)
+            for line in effect_lines[:2]:  # Max 2 lines
+                cv2.putText(img_bgr, f"  {line}", (10, y_offset), font, font_scale, (220, 220, 220), font_thickness, cv2.LINE_AA)
+                y_offset += line_spacing
         
         # Line 4: Similarity score with color coding
         if 'similarity' in info and info['similarity'] is not None:
             sim_score = info['similarity']
             threshold = info.get('threshold', 0.0)
             
-            # Color code: Green if above threshold, Red if below
+            # Color code with darker, more readable colors
             if sim_score >= threshold:
-                sim_color = (0, 255, 0)  # Green (BGR)
-                status = "COMPLETE"
+                sim_color = (0, 200, 0)  # Dark green (BGR)
+                status = "OK"
             else:
-                sim_color = (0, 100, 255)  # Orange (BGR)
-                status = "PROGRESS"
+                sim_color = (50, 150, 255)  # Light orange (BGR)
+                status = "..."
             
-            sim_text = f"Sim: {sim_score:.4f} / {threshold:.4f} [{status}]"
-            cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness + 1, cv2.LINE_AA)
+            sim_text = f"Sim: {sim_score:.3f}/{threshold:.2f} [{status}]"
+            cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness, cv2.LINE_AA)
         y_offset += line_spacing
         
         # Line 5: Frame info
         frame_text = f"Frame: {frame_idx+1}/{len(rollout_images)}"
-        cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (180, 180, 180), font_thickness, cv2.LINE_AA)
+        cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (150, 150, 150), font_thickness, cv2.LINE_AA)
         
         # Convert back to RGB for imageio
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
@@ -548,6 +579,23 @@ def run_episode(
         # Do nothing for the first few timesteps to let objects stabilize
         if t < cfg.num_steps_wait:
             obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+            
+            # Still collect images for video during wait period
+            _, img = prepare_observation(obs, resize_size)
+            replay_images.append(img)
+            
+            # Add substep info for wait frames
+            frame_info = {
+                'task_description': task_description,
+                'current_substep': 'Waiting for environment to stabilize...',
+                'expected_effect': None,
+                'similarity': None,
+                'threshold': cfg.substep_completion_threshold if cfg.use_substep_decomposition else None,
+                'substep_idx': 0,
+                'total_substeps': len(substep_manager.substeps) if substep_manager else 0,
+            }
+            substep_info_list.append(frame_info)
+            
             t += 1
             continue
 
