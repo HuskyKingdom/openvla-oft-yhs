@@ -79,9 +79,8 @@ class SubstepManager:
 CRITICAL REQUIREMENTS:
 1. You MUST output a valid JSON array with at least 3 steps
 2. Each step must be a simple, low-level action that can be done in one motion
-3. The final step must ALWAYS be: "Return to initial position"
-4. Output ONLY the JSON array - no explanations, no extra text
-5. Each JSON object must have exactly these three fields:
+3. Output ONLY the JSON array - no explanations, no extra text
+4. Each JSON object must have exactly these three fields:
    - "step": integer (1, 2, 3, ...)
    - "subgoal": brief action description (what to do)
    - "expected_effect": observable result (what changes visually)
@@ -93,7 +92,6 @@ EXAMPLE OUTPUT FORMAT:
   {{"step": 3, "subgoal": "Close gripper to pick up the bowl", "expected_effect": "robot holds the black bowl securely"}},
   {{"step": 4, "subgoal": "Move gripper above the plate", "expected_effect": "gripper positioned above the plate"}},
   {{"step": 5, "subgoal": "Lower and release the bowl on the plate", "expected_effect": "black bowl stably placed on the plate"}},
-  {{"step": 6, "subgoal": "Return to initial position", "expected_effect": "robot back at neutral home pose"}}
 ]
 
 TASK INSTRUCTION: {self.task_description}
@@ -226,17 +224,37 @@ Generate the step-by-step plan as a JSON array:"""
                 inputs = self.sigclip_processor(
                     text=expected_effects,
                     return_tensors="pt",
-                    padding=True
+                    padding=True,
+                    truncation=True,
                 ).to(self.device)
                 
-                text_outputs = self.sigclip_model.get_text_features(**inputs)
-                # Normalize embeddings
-                self.text_embeddings = text_outputs / text_outputs.norm(dim=-1, keepdim=True)
+                # Try different API methods for SigCLIP
+                method_used = None
+                try:
+                    # Method 1: Use text_model (for SigLIP/CLIP architecture)
+                    text_outputs = self.sigclip_model.text_model(**inputs)
+                    text_embeds = text_outputs[1] if isinstance(text_outputs, tuple) else text_outputs.pooler_output
+                    method_used = "text_model"
+                except (AttributeError, TypeError) as e1:
+                    try:
+                        # Method 2: Use get_text_features (standard CLIP API)
+                        text_embeds = self.sigclip_model.get_text_features(**inputs)
+                        method_used = "get_text_features"
+                    except Exception as e2:
+                        # Method 3: Direct forward pass
+                        outputs = self.sigclip_model(**inputs)
+                        text_embeds = outputs.text_embeds if hasattr(outputs, 'text_embeds') else outputs[0]
+                        method_used = "forward_pass"
+                
+                # Normalize embeddings for cosine similarity
+                self.text_embeddings = text_embeds / text_embeds.norm(dim=-1, keepdim=True)
+                
+                logger.info(f"[SubstepManager] Text encoding method: {method_used}")
             
             logger.info(f"[SubstepManager] Precomputed text embeddings: {self.text_embeddings.shape}")
             
         except Exception as e:
-            logger.error(f"[SubstepManager] Failed to precompute text embeddings: {e}")
+            logger.error(f"[SubstepManager] Failed to precompute text embeddings: {e}", exc_info=True)
             self.text_embeddings = None
     
     def _compute_similarity(self, image: np.ndarray) -> float:
@@ -265,9 +283,6 @@ Generate the step-by-step plan as a JSON array:"""
             # Convert numpy array to PIL Image
             pil_image = Image.fromarray(image)
             
-            # Resize to 224x224 (SigCLIP expected size)
-            pil_image = pil_image.resize((224, 224), Image.Resampling.LANCZOS)
-            
             # Process image with SigCLIP
             with torch.no_grad():
                 inputs = self.sigclip_processor(
@@ -275,12 +290,33 @@ Generate the step-by-step plan as a JSON array:"""
                     return_tensors="pt"
                 ).to(self.device)
                 
-                image_outputs = self.sigclip_model.get_image_features(**inputs)
-                # Normalize embeddings
-                image_embeds = image_outputs / image_outputs.norm(dim=-1, keepdim=True)
+                # Try different API methods for SigCLIP
+                try:
+                    # Method 1: Use vision_model (for SigLIP/CLIP architecture)
+                    image_outputs = self.sigclip_model.vision_model(**inputs)
+                    image_embeds = image_outputs[1] if isinstance(image_outputs, tuple) else image_outputs.pooler_output
+                except AttributeError:
+                    try:
+                        # Method 2: Use get_image_features (standard CLIP API)
+                        image_embeds = self.sigclip_model.get_image_features(**inputs)
+                    except Exception:
+                        # Method 3: Direct forward pass
+                        outputs = self.sigclip_model(**inputs)
+                        image_embeds = outputs.image_embeds if hasattr(outputs, 'image_embeds') else outputs[0]
+                
+                # Normalize embeddings for cosine similarity
+                image_embeds = image_embeds / image_embeds.norm(dim=-1, keepdim=True)
             
             # Compute cosine similarity with current expected_effect
-            current_text_embed = self.text_embeddings[self.current_substep_idx].unsqueeze(0)
+            current_text_embed = self.text_embeddings[self.current_substep_idx]
+            
+            # Ensure both tensors have compatible shapes [batch_size, embed_dim]
+            if image_embeds.dim() == 1:
+                image_embeds = image_embeds.unsqueeze(0)
+            if current_text_embed.dim() == 1:
+                current_text_embed = current_text_embed.unsqueeze(0)
+            
+            # Compute cosine similarity
             similarity = torch.cosine_similarity(image_embeds, current_text_embed, dim=-1)
             
             sim_score = float(similarity.item())
@@ -315,16 +351,25 @@ Generate the step-by-step plan as a JSON array:"""
         
         # Log similarity for monitoring and debugging
         current_substep = self.substeps[self.current_substep_idx]
-        logger.info(
-            f"[SubstepManager] Substep {self.current_substep_idx+1}/{len(self.substeps)} "
-            f"'{current_substep['subgoal'][:40]}...': "
-            f"similarity={similarity:.3f}, threshold={self.completion_threshold:.3f}"
-        )
+        
+        # Log every 5th check to reduce verbosity, but always log high scores
+        should_log = (hasattr(self, '_check_counter') and self._check_counter % 5 == 0) or similarity >= self.completion_threshold
+        if not hasattr(self, '_check_counter'):
+            self._check_counter = 0
+            should_log = True
+        self._check_counter += 1
+        
+        if should_log:
+            logger.info(
+                f"[SubstepManager] Substep {self.current_substep_idx+1}/{len(self.substeps)} "
+                f"'{current_substep['subgoal'][:40]}...': "
+                f"similarity={similarity:.4f}, threshold={self.completion_threshold:.4f}"
+            )
         
         # Switch if similarity exceeds threshold
         should_switch = similarity >= self.completion_threshold
         if should_switch:
-            logger.info(f"[SubstepManager] ✓ Substep completion detected! (similarity={similarity:.3f})")
+            logger.info(f"[SubstepManager] ✓ Substep completion detected! (similarity={similarity:.4f} >= {self.completion_threshold:.4f})")
         
         return should_switch
     
