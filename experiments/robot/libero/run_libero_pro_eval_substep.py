@@ -392,10 +392,10 @@ def save_rollout_video_with_substep_info(
         overlay = img_bgr.copy()
         height, width = img_bgr.shape[:2]
         
-        # Calculate background box size (allow up to 10 lines with wrapping)
+        # Calculate background box size (tighter fit)
         line_spacing_bg = 14
-        num_text_lines = 10  # Increased for wrapped lines
-        box_height = int(num_text_lines * line_spacing_bg + 8)
+        num_text_lines = 9  # Enough for all lines with some wrapping
+        box_height = min(int(num_text_lines * line_spacing_bg + 8), height - 10)  # Don't exceed image height
         
         # Draw semi-transparent background for text
         cv2.rectangle(overlay, (5, 5), (width - 5, box_height), (0, 0, 0), -1)
@@ -437,13 +437,13 @@ def save_rollout_video_with_substep_info(
         # Line 2: Current substep with counter
         if 'current_substep' in info and info['current_substep']:
             substep_header = f"Substep {info.get('substep_idx', 0)}/{info.get('total_substeps', 0)}:"
-            cv2.putText(img_bgr, substep_header, (10, y_offset), font, font_scale, (100, 200, 255), font_thickness, cv2.LINE_AA)
+            cv2.putText(img_bgr, substep_header, (10, y_offset), font, font_scale, (180, 180, 255), font_thickness, cv2.LINE_AA)
             y_offset += line_spacing
             
             # Substep content (wrapped)
             substep_lines = wrap_text(info['current_substep'], max_chars)
             for line in substep_lines[:2]:  # Max 2 lines
-                cv2.putText(img_bgr, f"  {line}", (10, y_offset), font, font_scale, (150, 220, 255), font_thickness, cv2.LINE_AA)
+                cv2.putText(img_bgr, f"  {line}", (10, y_offset), font, font_scale, (200, 200, 255), font_thickness, cv2.LINE_AA)
                 y_offset += line_spacing
         else:
             substep_text = "Substep: N/A"
@@ -465,12 +465,12 @@ def save_rollout_video_with_substep_info(
             sim_score = info['similarity']
             threshold = info.get('threshold', 0.0)
             
-            # Color code with darker, more readable colors
+            # Color code with softer, more readable colors
             if sim_score >= threshold:
-                sim_color = (0, 200, 0)  # Dark green (BGR)
+                sim_color = (80, 200, 80)  # Soft green (BGR)
                 status = "OK"
             else:
-                sim_color = (50, 150, 255)  # Light orange (BGR)
+                sim_color = (120, 180, 220)  # Soft peach/tan (BGR)
                 status = "..."
             
             sim_text = f"Sim: {sim_score:.3f}/{threshold:.2f} [{status}]"
@@ -603,7 +603,7 @@ def run_episode(
         observation, img = prepare_observation(obs, resize_size)
         replay_images.append(img)
         
-        # Collect substep info for this frame (for video annotation)
+        # Collect current substep info BEFORE any switching (for video annotation)
         frame_substep_info = {
             'task_description': task_description,
             'current_substep': None,
@@ -615,6 +615,13 @@ def run_episode(
         }
         
         if substep_manager is not None and len(substep_manager.substeps) > 0:
+            # Always compute similarity for every frame (for video annotation)
+            img_for_check = get_libero_image(obs)
+            if substep_manager.current_substep_idx < len(substep_manager.substeps):
+                similarity_score = substep_manager._compute_similarity(img_for_check)
+                frame_substep_info['similarity'] = similarity_score
+            
+            # Get current substep info (before potential switching)
             progress = substep_manager.get_progress_info()
             frame_substep_info.update({
                 'current_substep': progress['current_subgoal'],
@@ -635,15 +642,8 @@ def run_episode(
             current_instruction = task_description  # Default to original task description
             
             if substep_manager is not None:
-                # Check if current substep is completed using SigCLIP
+                # Check if current substep should switch (use already computed similarity)
                 img_for_check = get_libero_image(obs)
-                
-                # Compute similarity and store for video annotation
-                if substep_manager.current_substep_idx < len(substep_manager.substeps):
-                    similarity_score = substep_manager._compute_similarity(img_for_check)
-                    # Update the last frame's info with similarity score
-                    if len(substep_info_list) > 0:
-                        substep_info_list[-1]['similarity'] = similarity_score
                 
                 if substep_manager.should_switch_substep(img_for_check):
                     substep_manager.advance_substep()
@@ -653,18 +653,9 @@ def run_episode(
                         f"{progress_info['current_subgoal']}", 
                         log_file
                     )
-                    
-                    # Update frame info after switch
-                    if len(substep_info_list) > 0:
-                        substep_info_list[-1]['current_substep'] = progress_info['current_subgoal']
-                        substep_info_list[-1]['substep_idx'] = progress_info['current_idx'] + 1
-                        if substep_manager.current_substep_idx < len(substep_manager.substeps):
-                            current_substep_data = substep_manager.substeps[substep_manager.current_substep_idx]
-                            substep_info_list[-1]['expected_effect'] = current_substep_data['expected_effect']
                 
                 # Get current instruction from substep manager
                 current_instruction = substep_manager.get_current_instruction()
-            
             # Query model to get action using current instruction
             actions = get_action(
                 cfg,
