@@ -395,8 +395,12 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
         Returns:
             True if should switch to next substep, False otherwise
         """
-        # If no substeps or already at the end, don't switch
-        if len(self.substeps) == 0 or self.current_substep_idx >= len(self.substeps):
+        # If no substeps, don't switch
+        if len(self.substeps) == 0:
+            return False
+        
+        # If already at or past the last substep, don't switch (nowhere to switch to)
+        if self.current_substep_idx >= len(self.substeps) - 1:
             return False
         
         # Compute similarity between observation and expected_effect
