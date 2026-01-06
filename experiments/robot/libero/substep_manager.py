@@ -240,18 +240,18 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
                     truncation=True,
                 ).to(self.device)
                 
-                # Try different API methods for SigCLIP
+                # Try different API methods (prioritize standard CLIP API)
                 method_used = None
                 try:
-                    # Method 1: Use text_model (for SigLIP/CLIP architecture)
-                    text_outputs = self.sigclip_model.text_model(**inputs)
-                    text_embeds = text_outputs[1] if isinstance(text_outputs, tuple) else text_outputs.pooler_output
-                    method_used = "text_model"
+                    # Method 1: Use get_text_features (standard CLIP API - try first)
+                    text_embeds = self.sigclip_model.get_text_features(**inputs)
+                    method_used = "get_text_features"
                 except (AttributeError, TypeError) as e1:
                     try:
-                        # Method 2: Use get_text_features (standard CLIP API)
-                        text_embeds = self.sigclip_model.get_text_features(**inputs)
-                        method_used = "get_text_features"
+                        # Method 2: Use text_model (for SigLIP architecture)
+                        text_outputs = self.sigclip_model.text_model(**inputs)
+                        text_embeds = text_outputs[1] if isinstance(text_outputs, tuple) else text_outputs.pooler_output
+                        method_used = "text_model"
                     except Exception as e2:
                         # Method 3: Direct forward pass
                         outputs = self.sigclip_model(**inputs)
@@ -302,15 +302,15 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
                     return_tensors="pt"
                 ).to(self.device)
                 
-                # Try different API methods for SigCLIP
+                # Try different API methods (prioritize standard CLIP API)
                 try:
-                    # Method 1: Use vision_model (for SigLIP/CLIP architecture)
-                    image_outputs = self.sigclip_model.vision_model(**inputs)
-                    image_embeds = image_outputs[1] if isinstance(image_outputs, tuple) else image_outputs.pooler_output
-                except AttributeError:
+                    # Method 1: Use get_image_features (standard CLIP API - try first)
+                    image_embeds = self.sigclip_model.get_image_features(**inputs)
+                except (AttributeError, TypeError):
                     try:
-                        # Method 2: Use get_image_features (standard CLIP API)
-                        image_embeds = self.sigclip_model.get_image_features(**inputs)
+                        # Method 2: Use vision_model (for SigLIP architecture)
+                        image_outputs = self.sigclip_model.vision_model(**inputs)
+                        image_embeds = image_outputs[1] if isinstance(image_outputs, tuple) else image_outputs.pooler_output
                     except Exception:
                         # Method 3: Direct forward pass
                         outputs = self.sigclip_model(**inputs)
