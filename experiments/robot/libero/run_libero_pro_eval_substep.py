@@ -635,27 +635,44 @@ def run_episode(
                 frame_substep_info['expected_effect'] = current_substep_data['expected_effect']
         
         substep_info_list.append(frame_substep_info)
-
-        # If action queue is empty, requery model
-        if len(action_queue) == 0:
+        
+        # Check substep completion EVERY timestep (fine-grained switching)
+        should_requery = len(action_queue) == 0  # Default: requery when queue is empty
+        
+        if substep_manager is not None:
+            img_for_check = get_libero_image(obs)
+            
+            # Check if substep completed (even if action queue is not empty)
+            if substep_manager.should_switch_substep(img_for_check):
+                substep_manager.advance_substep()
+                progress_info = substep_manager.get_progress_info()
+                log_message(
+                    f"[SUBSTEP] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
+                    f"{progress_info['current_subgoal']}", 
+                    log_file
+                )
+                
+                # Discard remaining actions in queue (they're based on old substep)
+                if len(action_queue) > 0:
+                    discarded_count = len(action_queue)
+                    action_queue.clear()
+                    log_message(
+                        f"[SUBSTEP] Discarded {discarded_count} remaining actions from old substep",
+                        log_file
+                    )
+                
+                # Force requery with new substep instruction
+                should_requery = True
+        
+        # Query model if needed (queue empty OR substep just switched)
+        if should_requery:
             # Determine which instruction to use
             current_instruction = task_description  # Default to original task description
             
             if substep_manager is not None:
-                # Check if current substep should switch (use already computed similarity)
-                img_for_check = get_libero_image(obs)
-                
-                if substep_manager.should_switch_substep(img_for_check):
-                    substep_manager.advance_substep()
-                    progress_info = substep_manager.get_progress_info()
-                    log_message(
-                        f"[SUBSTEP] Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
-                        f"{progress_info['current_subgoal']}", 
-                        log_file
-                    )
-                
                 # Get current instruction from substep manager
                 current_instruction = substep_manager.get_current_instruction()
+            
             # Query model to get action using current instruction
             actions = get_action(
                 cfg,
