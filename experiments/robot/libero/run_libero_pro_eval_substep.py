@@ -196,7 +196,7 @@ class GenerateConfig:
     # Substep decomposition parameters
     use_substep_decomposition: bool = False          # Enable substep-based instruction decomposition
     llm_model_path: str = "Qwen/Qwen2.5-7B-Instruct" # Path to LLM for instruction decomposition
-    sigclip_model_path: str = "openai/clip-vit-base-patch32"  # Path to CLIP/SigCLIP model for substep completion
+    sigclip_model_path: str = "timm/ViT-B-16-SigLIP-2-256"  # Path to SigLIP-2 model for substep completion
     substep_completion_threshold: float = 0.25       # Vision-language similarity threshold for substep completion
     substep_log_dir: str = "./experiments/logs/substeps"  # Directory for substep-specific logs
 
