@@ -1418,6 +1418,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         if use_diffusion:
             NUM_PATCHES += 1
 
+        action_logits = None
+        has_eos = False
+        eos_position = None
+        
         if use_diffusion:
             # Sample random noise with shape equal to output action, used as the starting state for reverse diffusion
             noise = torch.randn(
@@ -1437,9 +1441,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 NUM_PROMPT_TOKENS,
                 noisy_action_projector,
             )
+            # Diffusion mode doesn't use discrete tokens, so EOS detection not applicable
+            layer_actions = []
         else:
             # Run regression or discrete token-based prediction
-            normalized_actions, actions_hidden_states, layer_actions = self._regression_or_discrete_prediction(
+            result = self._regression_or_discrete_prediction(
                 input_embeddings,
                 all_actions_mask,
                 projected_patch_embeddings,
@@ -1449,6 +1455,40 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 NUM_PROMPT_TOKENS,
                 action_head,
             )
+            normalized_actions, actions_hidden_states, layer_actions, action_logits = result
+
+        # EOS detection: search for EOS token in action logits
+        if return_eos_info and action_logits is not None:
+            # Get EOS token ID from tokenizer
+            eos_token_id = self.language_model.config.eos_token_id
+            if eos_token_id is None:
+                # Try to get from tokenizer if available
+                if hasattr(self.language_model, 'tokenizer') and hasattr(self.language_model.tokenizer, 'eos_token_id'):
+                    eos_token_id = self.language_model.tokenizer.eos_token_id
+            
+            if eos_token_id is not None:
+                # action_logits shape: (B, seq_len, vocab_size)
+                # We need to check if EOS token is predicted at any action position
+                # action_logits covers ACTION_DIM * NUM_ACTIONS_CHUNK positions
+                # But we need to check if any action token position predicts EOS
+                
+                # Find positions where EOS is the most likely token (argmax)
+                predicted_token_ids = action_logits.argmax(dim=-1)  # (B, seq_len)
+                
+                # Check if EOS appears at any position
+                eos_mask = (predicted_token_ids == eos_token_id)  # (B, seq_len)
+                
+                if eos_mask.any():
+                    # Find first EOS position
+                    # action_logits covers ACTION_DIM tokens per action timestep
+                    # So we need to map token position to action timestep
+                    first_eos_pos = eos_mask[0].nonzero(as_tuple=True)[0]
+                    if len(first_eos_pos) > 0:
+                        first_eos_token_pos = first_eos_pos[0].item()
+                        # Map token position to action timestep
+                        # Each action has ACTION_DIM tokens
+                        eos_position = first_eos_token_pos // ACTION_DIM
+                        has_eos = True
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)
@@ -1458,9 +1498,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             for layer_index in range(len(layer_actions)):
                 layer_actions[layer_index] = self._unnormalize_actions(layer_actions[layer_index], unnorm_key)
         
-        
-
-        return actions, actions_hidden_states, layer_actions, mm_mask_to_ignore
+        if return_eos_info:
+            return actions, actions_hidden_states, layer_actions, mm_mask_to_ignore, has_eos, eos_position
+        else:
+            return actions, actions_hidden_states, layer_actions, mm_mask_to_ignore
 
     @staticmethod
     def _check_unnorm_key(norm_stats: Dict[str, Dict[str, Any]], unnorm_key: Optional[str]) -> str:

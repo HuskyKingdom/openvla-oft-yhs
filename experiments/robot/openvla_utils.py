@@ -1049,46 +1049,117 @@ def get_vla_action(
             torch.cuda.synchronize()
         vla_start_time = time.time()
 
+        # Initialize EOS detection variables
+        has_eos = False
+        eos_position = None
+
         # Generate action
         if action_head is None:
             # Standard VLA output (single-image inputs, discrete actions)
-            action, _, _,_ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
+            if return_eos_info:
+                result = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False, return_eos_info=True)
+                if len(result) == 6:
+                    action, _, _, _, has_eos, eos_position = result
+                else:
+                    # Fallback for old return format
+                    action, _, _, _ = result[:4]
+                    has_eos, eos_position = False, None
+            else:
+                action, _, _, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
+                has_eos, eos_position = False, None
         else:
             # Custom action head for continuous actions
             if cfg.h_decoding:
-                action, hiddens, layer_actions = vla.predict_action(
-                    **inputs,
-                    unnorm_key=cfg.unnorm_key,
-                    do_sample=False,
-                    proprio=proprio,
-                    proprio_projector=proprio_projector,
-                    noisy_action_projector=noisy_action_projector,
-                    action_head=action_head,
-                    use_film=use_film,
-                )
+                if return_eos_info:
+                    result = vla.predict_action(
+                        **inputs,
+                        unnorm_key=cfg.unnorm_key,
+                        do_sample=False,
+                        proprio=proprio,
+                        proprio_projector=proprio_projector,
+                        noisy_action_projector=noisy_action_projector,
+                        action_head=action_head,
+                        use_film=use_film,
+                        return_eos_info=True,
+                    )
+                    if len(result) == 6:
+                        action, hiddens, layer_actions, _, has_eos, eos_position = result
+                    else:
+                        action, hiddens, layer_actions = result[:3]
+                        has_eos, eos_position = False, None
+                else:
+                    action, hiddens, layer_actions = vla.predict_action(
+                        **inputs,
+                        unnorm_key=cfg.unnorm_key,
+                        do_sample=False,
+                        proprio=proprio,
+                        proprio_projector=proprio_projector,
+                        noisy_action_projector=noisy_action_projector,
+                        action_head=action_head,
+                        use_film=use_film,
+                    )
+                    has_eos, eos_position = False, None
             else:
                 try:
-                    action, hiddens, layer_actions, energy_pad_mask = vla.predict_action(  # in case of our implementation
-                        **inputs,
-                        unnorm_key=cfg.unnorm_key,
-                        do_sample=False,
-                        proprio=proprio,
-                        proprio_projector=proprio_projector,
-                        noisy_action_projector=noisy_action_projector,
-                        action_head=action_head,
-                        use_film=use_film,
-                    )
+                    if return_eos_info:
+                        result = vla.predict_action(  # in case of our implementation
+                            **inputs,
+                            unnorm_key=cfg.unnorm_key,
+                            do_sample=False,
+                            proprio=proprio,
+                            proprio_projector=proprio_projector,
+                            noisy_action_projector=noisy_action_projector,
+                            action_head=action_head,
+                            use_film=use_film,
+                            return_eos_info=True,
+                        )
+                        if len(result) == 6:
+                            action, hiddens, layer_actions, energy_pad_mask, has_eos, eos_position = result
+                        else:
+                            action, hiddens, layer_actions, energy_pad_mask = result[:4]
+                            has_eos, eos_position = False, None
+                    else:
+                        action, hiddens, layer_actions, energy_pad_mask = vla.predict_action(  # in case of our implementation
+                            **inputs,
+                            unnorm_key=cfg.unnorm_key,
+                            do_sample=False,
+                            proprio=proprio,
+                            proprio_projector=proprio_projector,
+                            noisy_action_projector=noisy_action_projector,
+                            action_head=action_head,
+                            use_film=use_film,
+                        )
+                        has_eos, eos_position = False, None
                 except ValueError as e:
-                    action, hiddens = vla.predict_action(  # in case of baseline
-                        **inputs,
-                        unnorm_key=cfg.unnorm_key,
-                        do_sample=False,
-                        proprio=proprio,
-                        proprio_projector=proprio_projector,
-                        noisy_action_projector=noisy_action_projector,
-                        action_head=action_head,
-                        use_film=use_film,
-                    )
+                    if return_eos_info:
+                        result = vla.predict_action(  # in case of baseline
+                            **inputs,
+                            unnorm_key=cfg.unnorm_key,
+                            do_sample=False,
+                            proprio=proprio,
+                            proprio_projector=proprio_projector,
+                            noisy_action_projector=noisy_action_projector,
+                            action_head=action_head,
+                            use_film=use_film,
+                            return_eos_info=True,
+                        )
+                        if len(result) == 6:
+                            action, hiddens, _, _, has_eos, eos_position = result
+                        else:
+                            action, hiddens = result[:2]
+                            has_eos, eos_position = False, None
+                    else:
+                        action, hiddens = vla.predict_action(  # in case of baseline
+                            **inputs,
+                            unnorm_key=cfg.unnorm_key,
+                            do_sample=False,
+                            proprio=proprio,
+                            proprio_projector=proprio_projector,
+                            noisy_action_projector=noisy_action_projector,
+                            action_head=action_head,
+                            use_film=use_film,
+                        )
+                        has_eos, eos_position = False, None
 
         # End timing for VLA forward pass
         if torch.cuda.is_available():
@@ -1216,11 +1287,8 @@ def get_vla_action(
     actions_list = [action[i] for i in range(len(action))]
     
     if return_eos_info:
-        # TODO: EOS detection logic
-        # For now, return False (no EOS detected) and None (no position)
-        # Proper EOS detection requires access to generated tokens before action decoding
-        has_eos = False
-        eos_position = None
+        # Return actions with EOS detection info
+        # has_eos and eos_position are set during predict_action call above
         return actions_list, has_eos, eos_position
     else:
         return actions_list
