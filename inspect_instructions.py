@@ -75,7 +75,7 @@ def load_rlds_dataset(data_dir: str, suite_name: str) -> Optional[tf.data.Datase
         return None
 
 
-def extract_instruction_from_episode(episode: Dict) -> str:
+def extract_instruction_from_episode(episode: Dict, episode_idx: int, print_all_fields: bool = False) -> str:
     """
     Extract instruction from episode.
     
@@ -83,15 +83,68 @@ def extract_instruction_from_episode(episode: Dict) -> str:
     
     Args:
         episode: RLDS episode dictionary
+        episode_idx: Episode index for logging
+        print_all_fields: If True, print all available fields
     
     Returns:
         Instruction string (lowercase, stripped), or empty string if not found
     """
     try:
+        # Print all episode-level keys
+        if print_all_fields:
+            logger.info(f"\n  Episode {episode_idx} - All Fields:")
+            logger.info(f"    Episode keys: {list(episode.keys())}")
+        
         steps = episode['steps']
         
         # Get first step (all steps in same episode should have same instruction)
         first_step = next(iter(steps))
+        
+        # Print all step-level keys
+        if print_all_fields:
+            logger.info(f"    Step keys: {list(first_step.keys())}")
+            
+            if 'observation' in first_step:
+                observation = first_step['observation']
+                logger.info(f"    Step observation keys: {list(observation.keys())}")
+                
+                # Print observation values
+                for key in observation.keys():
+                    try:
+                        value = observation[key].numpy()
+                        if isinstance(value, bytes):
+                            value = value.decode('utf-8')
+                        # Truncate long arrays
+                        if hasattr(value, 'shape'):
+                            logger.info(f"      {key}: shape={value.shape}, dtype={value.dtype}")
+                        else:
+                            logger.info(f"      {key}: {value}")
+                    except Exception as e:
+                        logger.info(f"      {key}: <error reading: {e}>")
+            
+            if 'action' in first_step:
+                try:
+                    action = first_step['action'].numpy()
+                    logger.info(f"    Step action: shape={action.shape}, dtype={action.dtype}")
+                except:
+                    pass
+        
+        # Print episode metadata if exists
+        if print_all_fields and 'episode_metadata' in episode:
+            metadata = episode['episode_metadata']
+            logger.info(f"    Episode metadata keys: {list(metadata.keys())}")
+            
+            for key in metadata.keys():
+                try:
+                    value = metadata[key].numpy()
+                    if isinstance(value, bytes):
+                        value = value.decode('utf-8')
+                    if hasattr(value, 'shape'):
+                        logger.info(f"      {key}: shape={value.shape}, dtype={value.dtype}")
+                    else:
+                        logger.info(f"      {key}: {value}")
+                except Exception as e:
+                    logger.info(f"      {key}: <error reading: {e}>")
         
         instruction = ""
         
@@ -156,13 +209,16 @@ def extract_instruction_from_episode(episode: Dict) -> str:
         return ""
 
 
-def process_suite(data_dir: str, suite_name: str) -> Dict[str, int]:
+def process_suite(data_dir: str, suite_name: str, print_all_fields: bool = False, 
+                 max_episodes: Optional[int] = None) -> Dict[str, int]:
     """
     Process entire task suite and count instructions.
     
     Args:
         data_dir: RLDS dataset root directory
         suite_name: Task suite name
+        print_all_fields: If True, print all available fields
+        max_episodes: Maximum number of episodes to process (for debugging)
     
     Returns:
         Dictionary mapping instruction to count
@@ -182,15 +238,23 @@ def process_suite(data_dir: str, suite_name: str) -> Dict[str, int]:
     episodes_without_instruction = 0
     
     for episode_idx, episode in enumerate(dataset):
+        # Stop if max_episodes limit reached
+        if max_episodes and episode_idx >= max_episodes:
+            logger.info(f"Reached max_episodes limit: {max_episodes}")
+            break
+        
         total_episodes += 1
         
         # Extract instruction
-        instruction = extract_instruction_from_episode(episode)
+        instruction = extract_instruction_from_episode(episode, episode_idx, print_all_fields)
         
         if instruction:
             instruction_counter[instruction] += 1
             # Print immediately when found
-            logger.info(f"  Episode {episode_idx}: '{instruction}'")
+            if not print_all_fields:  # Avoid duplicate output when printing all fields
+                logger.info(f"  Episode {episode_idx}: '{instruction}'")
+            else:
+                logger.info(f"    -> Instruction: '{instruction}'\n")
         else:
             episodes_without_instruction += 1
             logger.warning(f"  Episode {episode_idx}: No instruction found")
@@ -248,7 +312,9 @@ def print_statistics(all_results: Dict[str, Dict[str, int]]) -> None:
 
 def main(rlds_data_dir: str,
          suites: Optional[List[str]] = None,
-         output_json: Optional[str] = None) -> None:
+         output_json: Optional[str] = None,
+         print_all_fields: bool = False,
+         max_episodes: Optional[int] = None) -> None:
     """
     Main function: Process all suites and display statistics.
     
@@ -256,6 +322,8 @@ def main(rlds_data_dir: str,
         rlds_data_dir: RLDS dataset root directory
         suites: List of suites to process (None = all)
         output_json: Optional path to save results as JSON
+        print_all_fields: If True, print all available fields in episodes
+        max_episodes: Maximum number of episodes to process per suite (for debugging)
     """
     logger.info("="*60)
     logger.info("RLDS Instruction Inspection Tool")
@@ -269,11 +337,17 @@ def main(rlds_data_dir: str,
     for suite in suites:
         logger.info(f"  - {suite}")
     
+    if print_all_fields:
+        logger.info("\n*** PRINTING ALL FIELDS MODE ***\n")
+    
+    if max_episodes:
+        logger.info(f"\n*** Processing maximum {max_episodes} episodes per suite ***\n")
+    
     # Process each suite
     all_results = {}
     
     for suite_name in suites:
-        instruction_counts = process_suite(rlds_data_dir, suite_name)
+        instruction_counts = process_suite(rlds_data_dir, suite_name, print_all_fields, max_episodes)
         
         if instruction_counts:
             # Remove _no_noops suffix for cleaner output
@@ -335,6 +409,19 @@ if __name__ == "__main__":
     )
     
     parser.add_argument(
+        "--print_all_fields",
+        action='store_true',
+        help="Print all available fields in episodes and steps"
+    )
+    
+    parser.add_argument(
+        "--max_episodes",
+        type=int,
+        default=None,
+        help="Maximum number of episodes to process per suite (useful for debugging)"
+    )
+    
+    parser.add_argument(
         "--debug",
         action='store_true',
         help="Enable debug logging"
@@ -350,6 +437,8 @@ if __name__ == "__main__":
     main(
         rlds_data_dir=args.rlds_data_dir,
         suites=args.suites,
-        output_json=args.output_json
+        output_json=args.output_json,
+        print_all_fields=args.print_all_fields,
+        max_episodes=args.max_episodes
     )
 
