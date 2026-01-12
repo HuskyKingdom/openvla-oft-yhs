@@ -214,7 +214,7 @@ def extract_episode_data(episode: Dict) -> Dict[str, Any]:
             logger.debug(f"episode_metadata keys: {list(metadata.keys())}")
             
             # Try to extract from file_path
-            if 'file_path' in metadata:
+            if 'file_path' in metadata: 
                 try:
                     file_path = metadata['file_path'].numpy().decode('utf-8')
                     logger.debug(f"file_path: {file_path}")
@@ -692,7 +692,8 @@ def map_timesteps_to_apd_steps(action_labels: List[str],
                 "timestep": t,
                 "action": block['type'],
                 "APD_step": block['apd_step'],
-                "cycle": block['cycle']
+                "cycle": block['cycle'],
+                "is_substep_end": (t == block['end'] - 1)  # Mark last timestep of substep
             })
     
     # Sort by timestep
@@ -771,6 +772,10 @@ def create_output_structure(suite_name: str,
     labeled_pick_count = sum(1 for label in timestep_labels if label['action'] == 'pick')
     labeled_place_count = sum(1 for label in timestep_labels if label['action'] == 'place')
     
+    # Extract substep boundaries (timesteps where is_substep_end=True)
+    substep_boundaries = [label['timestep'] for label in timestep_labels if label.get('is_substep_end', False)]
+    num_substeps = len(substep_boundaries)
+    
     summary_updated = summary.copy()
     summary_updated['action_counts'] = {
         "pick": labeled_pick_count,
@@ -779,6 +784,8 @@ def create_output_structure(suite_name: str,
     }
     summary_updated['labeled_timesteps'] = len(timestep_labels)
     summary_updated['unlabeled_timesteps'] = len(action_labels) - len(timestep_labels)
+    summary_updated['substep_boundaries'] = substep_boundaries
+    summary_updated['num_substeps'] = num_substeps
     
     return {
         "instruction": instruction,
@@ -866,6 +873,8 @@ def process_single_episode(episode: Dict,
         logger.info(f"    Labeled timesteps: {result['labeled_timesteps']}")
         logger.info(f"    Labeled action counts: {result['summary']['action_counts']}")
         logger.info(f"    Pick-Place cycles: {summary['num_pick_place_cycles']}")
+        logger.info(f"    Substeps: {result['summary']['num_substeps']}")
+        logger.info(f"    Substep boundaries: {result['summary']['substep_boundaries']}")
         
         return result
     
