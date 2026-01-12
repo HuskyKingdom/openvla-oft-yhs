@@ -189,7 +189,8 @@ def process_suite(data_dir: str, suite_name: str) -> Dict[str, int]:
         
         if instruction:
             instruction_counter[instruction] += 1
-            logger.debug(f"  Episode {episode_idx}: '{instruction}'")
+            # Print immediately when found
+            logger.info(f"  Episode {episode_idx}: '{instruction}'")
         else:
             episodes_without_instruction += 1
             logger.warning(f"  Episode {episode_idx}: No instruction found")
