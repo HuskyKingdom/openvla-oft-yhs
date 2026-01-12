@@ -1301,18 +1301,25 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
 
         # Handle different prediction methods
+        action_logits = None  # Store logits for EOS detection
         if action_head is not None:
             # L1 regression prediction
             normalized_actions = action_head.predict_action(actions_hidden_states)
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
             normalized_actions = normalized_actions.float().cpu().detach().numpy()
+            # For regression mode, we don't have token logits, so EOS detection is not possible
+            action_logits = None
         else:
             # Discrete token-based prediction
+            # Extract logits for action positions (before STOP token if present)
+            action_positions_logits = language_model_output.logits[
+                :,
+                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+            ]
+            action_logits = action_positions_logits  # Store for EOS detection
+            
             predicted_action_token_ids = (
-                language_model_output.logits[
-                    :,
-                    NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
-                ]
+                action_positions_logits
                 .argmax(dim=2)
                 .cpu()
                 .numpy()
@@ -1322,7 +1329,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = self.bin_centers[discretized_actions]
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
 
-        return normalized_actions, all_out, layer_actions
+        return normalized_actions, all_out, layer_actions, action_logits
 
     def predict_action(
         self,
@@ -1333,6 +1340,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         action_head=None,
         noisy_action_projector=None,
         use_film: bool = False,
+        return_eos_info: bool = False,
         **kwargs: str,
     ) -> np.ndarray:
         """Predict actions from input sequence, with options for different prediction methods.
