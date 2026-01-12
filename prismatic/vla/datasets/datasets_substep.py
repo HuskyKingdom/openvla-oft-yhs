@@ -78,9 +78,9 @@ def get_substep_instruction(
     episode_id: int,
     timestep: int,
     default_instruction: str,
-) -> str:
+) -> Tuple[str, bool]:
     """
-    Query substep instruction from loaded labels.
+    Query substep instruction and EOS flag from loaded labels.
     
     Args:
         substep_labels: Loaded substep labels dictionary
@@ -91,7 +91,8 @@ def get_substep_instruction(
         default_instruction: Default instruction if substep not found
         
     Returns:
-        APD_step instruction string, or default_instruction if not found
+        Tuple of (APD_step instruction string, is_substep_end flag)
+        - Returns (default_instruction, False) if not found
         
     Note:
         - Strips "_no_noops" suffix from dataset_name to match JSON keys
@@ -111,11 +112,11 @@ def get_substep_instruction(
         
         # Navigate to episode data
         if suite_name not in substep_labels:
-            return default_instruction
+            return default_instruction, False
         if task_name not in substep_labels[suite_name]:
-            return default_instruction
+            return default_instruction, False
         if episode_key not in substep_labels[suite_name][task_name]:
-            return default_instruction
+            return default_instruction, False
         
         episode_data = substep_labels[suite_name][task_name][episode_key]
         timestep_labels = episode_data.get("timestep_labels", [])
@@ -131,9 +132,11 @@ def get_substep_instruction(
                 break  # Assuming timestep_labels is sorted
         
         if best_match and "APD_step" in best_match:
-            return best_match["APD_step"]
+            apd_step = best_match["APD_step"]
+            is_substep_end = best_match.get("is_substep_end", False)
+            return apd_step, is_substep_end
         
-        return default_instruction
+        return default_instruction, False
         
     except (KeyError, TypeError, IndexError) as e:
         # If anything goes wrong, return default instruction
@@ -141,7 +144,7 @@ def get_substep_instruction(
             f"Could not find substep for suite={dataset_name}, task={task_instruction}, "
             f"episode={episode_id}, timestep={timestep}: {e}"
         )
-        return default_instruction
+        return default_instruction, False
 
 
 @dataclass
@@ -153,6 +156,7 @@ class SubstepRLDSBatchTransform:
     1. Loading substep labels from JSON file
     2. Querying appropriate substep instruction for each (dataset, task, episode, timestep)
     3. Replacing the original task instruction with the substep instruction
+    4. Inserting EOS token at substep boundaries for substep-aware training
     
     Attributes:
         action_tokenizer: Tokenizer for discretizing actions
@@ -163,6 +167,7 @@ class SubstepRLDSBatchTransform:
         predict_stop_token: Whether to predict stop token
         use_wrist_image: Whether to use wrist camera images
         use_proprio: Whether to use proprioceptive state
+        use_substep_eos: Whether to insert EOS token at substep boundaries
     """
     action_tokenizer: ActionTokenizer
     base_tokenizer: PreTrainedTokenizerBase
@@ -172,6 +177,7 @@ class SubstepRLDSBatchTransform:
     predict_stop_token: bool = True
     use_wrist_image: bool = False
     use_proprio: bool = False
+    use_substep_eos: bool = False
 
     def __call__(self, rlds_batch: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -202,8 +208,8 @@ class SubstepRLDSBatchTransform:
         episode_id = int(rlds_batch["observation"].get("episode_id", [0])[0])
         timestep = int(rlds_batch["observation"]["timestep"][0])
         
-        # Query substep instruction
-        substep_instruction = get_substep_instruction(
+        # Query substep instruction and EOS flag
+        substep_instruction, is_substep_end = get_substep_instruction(
             self.substep_labels,
             dataset_name,
             original_instruction,
@@ -216,7 +222,7 @@ class SubstepRLDSBatchTransform:
         if substep_instruction != original_instruction:
             overwatch.debug(
                 f"Replaced instruction at episode={episode_id}, timestep={timestep}: "
-                f"'{original_instruction}' -> '{substep_instruction}'"
+                f"'{original_instruction}' -> '{substep_instruction}' (is_end={is_substep_end})"
             )
         
         # Use substep instruction instead of original
@@ -232,6 +238,17 @@ class SubstepRLDSBatchTransform:
         # Get action chunk string
         current_action_string = self.action_tokenizer(current_action)
         action_chunk_string = current_action_string + future_actions_string
+        
+        # Insert EOS token at substep boundary if enabled
+        eos_token = ""
+        if self.use_substep_eos and is_substep_end:
+            # Use the tokenizer's EOS token
+            eos_token = self.base_tokenizer.eos_token
+            action_chunk_string = action_chunk_string + eos_token
+            overwatch.debug(
+                f"Added EOS token at substep boundary: episode={episode_id}, timestep={timestep}"
+            )
+        
         action_chunk_len = len(action_chunk_string)
         
         # Build conversation with substep instruction
@@ -254,7 +271,11 @@ class SubstepRLDSBatchTransform:
         # [CRITICAL] We do not want to take the loss for anything but the predicted action tokens!
         from prismatic.vla.constants import IGNORE_INDEX
         labels[: -(action_chunk_len + 1)] = IGNORE_INDEX
-        if not self.predict_stop_token:
+        
+        # Handle EOS token in labels
+        # If we added EOS token, we want to predict it (keep its loss)
+        # If not using substep EOS or not at boundary, follow original logic
+        if not self.predict_stop_token and not (self.use_substep_eos and is_substep_end):
             labels[-1] = IGNORE_INDEX
         
         return_dict = dict(

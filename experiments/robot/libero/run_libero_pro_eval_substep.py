@@ -200,6 +200,9 @@ class GenerateConfig:
     substep_completion_threshold: float = 0.25       # Vision-language similarity threshold for substep completion
     substep_log_dir: str = "./experiments/logs/substeps"  # Directory for substep-specific logs
 
+    # Substep EOS detection
+    use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
+
     # fmt: on
 
 
@@ -569,7 +572,8 @@ def run_episode(
     actions_accum = []
     flag = 0
 
-  
+    # EOS detection state
+    force_requery_after_queue = False  # Flag to force requery after EOS detected and queue emptied
 
 
     # Run episode
@@ -636,10 +640,29 @@ def run_episode(
         
         substep_info_list.append(frame_substep_info)
         
-        # Check substep completion EVERY timestep (fine-grained switching)
-        should_requery = len(action_queue) == 0  # Default: requery when queue is empty
+        # Check substep completion using two methods:
+        # Method 1: EOS token detection (if enabled and queue just emptied after EOS)
+        # Method 2: Vision-language similarity (existing logic)
         
-        if substep_manager is not None:
+        should_requery = len(action_queue) == 0  # Default: requery when queue is empty
+        substep_switched = False
+        
+        # Method 1: EOS-based substep switching (higher priority)
+        if cfg.use_eos_detection and force_requery_after_queue and len(action_queue) == 0:
+            if substep_manager is not None:
+                substep_manager.advance_substep()
+                progress_info = substep_manager.get_progress_info()
+                log_message(
+                    f"[EOS SWITCH] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
+                    f"{progress_info['current_subgoal']}", 
+                    log_file
+                )
+                substep_switched = True
+                force_requery_after_queue = False  # Reset flag
+                should_requery = True
+        
+        # Method 2: Vision-based substep switching (existing logic, only if not already switched)
+        if not substep_switched and substep_manager is not None:
             img_for_check = get_libero_image(obs)
             
             # Check if substep completed (even if action queue is not empty)
@@ -647,7 +670,7 @@ def run_episode(
                 substep_manager.advance_substep()
                 progress_info = substep_manager.get_progress_info()
                 log_message(
-                    f"[SUBSTEP] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
+                    f"[VISION SWITCH] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
                     f"{progress_info['current_subgoal']}", 
                     log_file
                 )
@@ -657,7 +680,7 @@ def run_episode(
                     discarded_count = len(action_queue)
                     action_queue.clear()
                     log_message(
-                        f"[SUBSTEP] Discarded {discarded_count} remaining actions from old substep",
+                        f"[VISION SWITCH] Discarded {discarded_count} remaining actions from old substep",
                         log_file
                     )
                 
@@ -674,18 +697,53 @@ def run_episode(
                 current_instruction = substep_manager.get_current_instruction()
             
             # Query model to get action using current instruction
-            actions = get_action(
-                cfg,
-                model,
-                observation,
-                current_instruction,  # Use dynamic instruction (substep or original)
-                processor=processor,
-                action_head=action_head,
-                proprio_projector=proprio_projector,
-                noisy_action_projector=noisy_action_projector,
-                use_film=cfg.use_film,
-                h_head=head,
-            )
+            # Enable EOS detection if configured
+            if cfg.use_eos_detection:
+                result = get_action(
+                    cfg,
+                    model,
+                    observation,
+                    current_instruction,  # Use dynamic instruction (substep or original)
+                    processor=processor,
+                    action_head=action_head,
+                    proprio_projector=proprio_projector,
+                    noisy_action_projector=noisy_action_projector,
+                    use_film=cfg.use_film,
+                    h_head=head,
+                    return_eos_info=True,  # Request EOS detection info
+                )
+                
+                # Unpack result
+                if isinstance(result, tuple) and len(result) == 3:
+                    actions, has_eos, eos_position = result
+                    
+                    # If EOS detected, truncate actions at EOS position
+                    if has_eos and eos_position is not None:
+                        actions = actions[:eos_position+1]  # Include action at EOS position
+                        log_message(
+                            f"[EOS] Detected at position {eos_position}, truncated to {len(actions)} actions",
+                            log_file
+                        )
+                        # Set flag to force substep switch after queue is emptied
+                        force_requery_after_queue = True
+                else:
+                    # Fallback if return format unexpected
+                    actions = result if not isinstance(result, tuple) else result[0]
+            else:
+                # Standard action query without EOS detection
+                actions = get_action(
+                    cfg,
+                    model,
+                    observation,
+                    current_instruction,  # Use dynamic instruction (substep or original)
+                    processor=processor,
+                    action_head=action_head,
+                    proprio_projector=proprio_projector,
+                    noisy_action_projector=noisy_action_projector,
+                    use_film=cfg.use_film,
+                    h_head=head,
+                )
+            
             action_queue.extend(actions)
             actions_accum.append(actions)
  

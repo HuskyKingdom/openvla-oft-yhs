@@ -981,7 +981,8 @@ def get_vla_action(
     noisy_action_projector: Optional[torch.nn.Module] = None,
     use_film: bool = False,
     h_head = None,
-) -> List[np.ndarray]:
+    return_eos_info: bool = False,
+) -> Union[List[np.ndarray], Tuple[List[np.ndarray], bool, Optional[int]]]:
     """
     Generate action predictions with the VLA policy.
 
@@ -1212,7 +1213,17 @@ def get_vla_action(
 
 
     # Return action chunk as list of actions
-    return [action[i] for i in range(len(action))]
+    actions_list = [action[i] for i in range(len(action))]
+    
+    if return_eos_info:
+        # TODO: EOS detection logic
+        # For now, return False (no EOS detected) and None (no position)
+        # Proper EOS detection requires access to generated tokens before action decoding
+        has_eos = False
+        eos_position = None
+        return actions_list, has_eos, eos_position
+    else:
+        return actions_list
 
 
 def quat2axisangle_torch(quat: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:

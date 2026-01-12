@@ -157,6 +157,9 @@ class FinetuneSubstepConfig:
     run_id_override: Optional[str] = None            # Optional string to override the run ID with
     wandb_log_freq: int = 10                         # WandB logging frequency in steps
 
+    # Substep EOS training
+    use_substep_eos: bool = True                     # If True, inserts EOS token at substep boundaries for training
+
     # fmt: on
 
 
@@ -408,6 +411,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         substep_labels={},  # Will be loaded by SubstepRLDSDataset
         use_wrist_image=use_wrist_image,
         use_proprio=cfg.use_proprio,
+        use_substep_eos=cfg.use_substep_eos,  # Enable EOS token insertion at substep boundaries
     )
     
     train_dataset = SubstepRLDSDataset(

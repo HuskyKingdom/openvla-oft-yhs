@@ -107,7 +107,8 @@ def get_action(
     noisy_action_projector: Optional[torch.nn.Module] = None,
     use_film: bool = False,
     h_head = None,
-) -> Union[List[np.ndarray], np.ndarray]:
+    return_eos_info: bool = False,
+) -> Union[List[np.ndarray], np.ndarray, Tuple]:
     """
     Query the model to get action predictions.
 
@@ -135,7 +136,7 @@ def get_action(
     
     with torch.no_grad():
         if cfg.model_family == "openvla":
-            action = get_vla_action(
+            result = get_vla_action(
                 cfg=cfg,
                 vla=model,
                 processor=processor,
@@ -146,6 +147,7 @@ def get_action(
                 noisy_action_projector=noisy_action_projector,
                 use_film=use_film,
                 h_head=h_head,
+                return_eos_info=return_eos_info,
             )
         else:
             raise ValueError(f"Unsupported model family: {cfg.model_family}")
@@ -160,7 +162,7 @@ def get_action(
     # print(f"[TIMING] get_action: {elapsed_time:.2f} ms ({elapsed_time/1000:.4f} s)")
     # print(f"{'='*80}")
 
-    return action
+    return result
 
 
 def normalize_gripper_action(action: np.ndarray, binarize: bool = True) -> np.ndarray:
