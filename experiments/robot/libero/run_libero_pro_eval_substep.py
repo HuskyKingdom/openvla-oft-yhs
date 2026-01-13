@@ -671,8 +671,9 @@ def run_episode(
                 force_requery_after_queue = False  # Reset flag
                 should_requery = True
         
-        # Method 2: Vision-based substep switching (existing logic, only if not already switched)
-        if not substep_switched and substep_manager is not None:
+        # Method 2: Vision-based substep switching (only if EOS detection is disabled)
+        # If EOS detection is enabled, only use EOS-based switching
+        if not substep_switched and substep_manager is not None and not cfg.use_eos_detection:
             img_for_check = get_libero_image(obs)
             
             # Check if substep completed (even if action queue is not empty)

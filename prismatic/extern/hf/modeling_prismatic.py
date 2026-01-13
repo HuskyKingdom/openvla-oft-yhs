@@ -1505,7 +1505,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                     if return_eos_info:  # Only log when EOS detection is requested
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.debug(
+                        logger.info(
                             f"[EOS DEBUG] EOS not detected via argmax, but max EOS prob={max_eos_prob:.4f} "
                             f"at token position {max_eos_pos}"
                         )
