@@ -86,8 +86,11 @@ class L1RegressionActionHead(nn.Module):
     Simple MLP-based action head that generates continuous actions via L1 regression.
     
     Note: ACTION_DIM now includes EOS flag as the last dimension.
-    Output shape: (batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM)
-    where ACTION_DIM = BASE_ACTION_DIM + 1 (EOS flag)
+    Input: hidden states from BASE_ACTION_DIM tokens (7, excluding EOS token)
+    Output: predictions for ACTION_DIM values (8, including EOS flag)
+    
+    This is because during training, action tokens (7 dims) are selected by mask,
+    but EOS token is not included in the mask (EOS token ID < ACTION_TOKEN_BEGIN_IDX).
     """
     def __init__(
         self,
@@ -100,18 +103,30 @@ class L1RegressionActionHead(nn.Module):
         if action_dim is None:
             action_dim = ACTION_DIM
         self.action_dim = action_dim
+        
+        # CRITICAL: input_dim is based on BASE_ACTION_DIM (7), not ACTION_DIM (8)
+        # because EOS token is not included in action_mask during training
+        from prismatic.vla.constants import BASE_ACTION_DIM
         self.model = MLPResNet(
-            num_blocks=2, input_dim=input_dim*ACTION_DIM, hidden_dim=hidden_dim, output_dim=action_dim
+            num_blocks=2, 
+            input_dim=input_dim*BASE_ACTION_DIM,  # Use BASE_ACTION_DIM (7) for input
+            hidden_dim=hidden_dim, 
+            output_dim=action_dim  # Output ACTION_DIM (8) including EOS
         )
 
     def predict_action(self, actions_hidden_states):
         # actions_hidden_states: last hidden states of Transformer corresponding to action tokens in sequence
-        # - shape: (batch_size, chunk_len * action_dim, hidden_dim)
-        # ground_truth_actions: ground-truth actions
-        # - shape: (batch_size, chunk_len, action_dim)
+        # - shape: (batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, hidden_dim)
+        #   Note: Only BASE_ACTION_DIM (7) tokens per action, EOS not included in mask
+        # Output:
+        # - shape: (batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM)
+        #   Note: Predicts ACTION_DIM (8) values including EOS flag
         batch_size = actions_hidden_states.shape[0]
         device = actions_hidden_states.device
+        # Reshape: (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, hidden_dim) 
+        #       -> (B, NUM_ACTIONS_CHUNK, BASE_ACTION_DIM * hidden_dim)
         rearranged_actions_hidden_states = actions_hidden_states.reshape(batch_size, NUM_ACTIONS_CHUNK, -1)
+        # Model predicts ACTION_DIM (8) values from BASE_ACTION_DIM (7) tokens
         action = self.model(rearranged_actions_hidden_states)
         return action
 
