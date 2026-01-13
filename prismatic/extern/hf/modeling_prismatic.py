@@ -1477,6 +1477,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 # action_logits covers ACTION_DIM * NUM_ACTIONS_CHUNK positions
                 # But we need to check if any action token position predicts EOS
                 
+                # Get EOS token probabilities (for debugging)
+                eos_probs = torch.softmax(action_logits, dim=-1)[:, :, eos_token_id]  # (B, seq_len)
+                max_eos_prob = eos_probs.max().item()
+                max_eos_pos = eos_probs.argmax().item()
+                
                 # Find positions where EOS is the most likely token (argmax)
                 predicted_token_ids = action_logits.argmax(dim=-1)  # (B, seq_len)
                 
@@ -1494,6 +1499,16 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                         # Each action has ACTION_DIM tokens
                         eos_position = first_eos_token_pos // ACTION_DIM
                         has_eos = True
+                else:
+                    # Debug: Log EOS probability even if not detected
+                    # This helps diagnose if model is learning to predict EOS
+                    if return_eos_info:  # Only log when EOS detection is requested
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.debug(
+                            f"[EOS DEBUG] EOS not detected via argmax, but max EOS prob={max_eos_prob:.4f} "
+                            f"at token position {max_eos_pos}"
+                        )
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)

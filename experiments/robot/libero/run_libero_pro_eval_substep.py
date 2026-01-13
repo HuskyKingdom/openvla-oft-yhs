@@ -545,14 +545,8 @@ def run_episode(
                "both speed and success rate), we recommend executing the full action chunk.")
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
-    # Check EOS detection compatibility
-    if cfg.use_eos_detection and action_head is not None:
-        log_message(
-            f"[EOS WARNING] ⚠️  Cannot use EOS detection with action_head (L1 regression/diffusion mode). "
-            f"EOS detection requires discrete token mode (action_head=None). "
-            f"Will use vision-based substep switching instead.",
-            log_file
-        )
+    # EOS detection now works in both discrete token mode and L1 regression mode
+    # No compatibility check needed
     
     # Initialize SubstepManager if enabled
     substep_manager = None
@@ -748,14 +742,6 @@ def run_episode(
                         log_file
                     )
                     
-                    # Check if using action_head (L1 regression mode)
-                    if action_head is not None:
-                        log_message(
-                            f"[EOS WARNING] Using action_head (L1 regression mode), "
-                            f"EOS detection is not supported in this mode!",
-                            log_file
-                        )
-                    
                     # If EOS detected, truncate actions at EOS position
                     if has_eos and eos_position is not None:
                         original_length = len(actions)
@@ -768,8 +754,11 @@ def run_episode(
                         # Set flag to force substep switch after queue is emptied
                         force_requery_after_queue = True
                     else:
+                        # Note: If model was not trained with use_substep_eos=True, 
+                        # it won't learn to predict EOS tokens, so has_eos will always be False
                         log_message(
-                            f"[EOS] ✗ No EOS detected (has_eos={has_eos}, eos_position={eos_position})",
+                            f"[EOS] ✗ No EOS detected (has_eos={has_eos}, eos_position={eos_position}). "
+                            f"Note: Model needs to be trained with use_substep_eos=True to learn EOS prediction.",
                             log_file
                         )
                 else:
