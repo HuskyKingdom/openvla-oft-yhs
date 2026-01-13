@@ -237,13 +237,12 @@ def initialize_model(cfg: GenerateConfig):
     action_head = None
     if cfg.use_l1_regression or cfg.use_diffusion:
         action_head = get_action_head(cfg, model.llm_dim)
-        # Warn if EOS detection is enabled but action_head is used
+        # Note: EOS detection now works in L1 regression mode too!
+        # We can extract token logits from language_model even when using action_head
         if cfg.use_eos_detection:
-            logger.warning(
-                f"[EOS WARNING] ⚠️  EOS detection is enabled but action_head is loaded "
-                f"(use_l1_regression={cfg.use_l1_regression}, use_diffusion={cfg.use_diffusion}). "
-                f"EOS detection only works in discrete token mode (action_head=None). "
-                f"Falling back to vision-based substep switching."
+            logger.info(
+                f"[EOS INFO] ✓ EOS detection enabled. "
+                f"Works in both discrete token mode and L1 regression mode (action_head loaded)."
             )
 
     # Load noisy action projector if using diffusion

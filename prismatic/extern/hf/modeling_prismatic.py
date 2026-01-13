@@ -1307,8 +1307,13 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = action_head.predict_action(actions_hidden_states)
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
             normalized_actions = normalized_actions.float().cpu().detach().numpy()
-            # For regression mode, we don't have token logits, so EOS detection is not possible
-            action_logits = None
+            # Even in L1 regression mode, we can still extract token logits for EOS detection
+            # The language model always generates logits, we just don't use them for action prediction
+            action_positions_logits = language_model_output.logits[
+                :,
+                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+            ]
+            action_logits = action_positions_logits  # Store for EOS detection
         else:
             # Discrete token-based prediction
             # Extract logits for action positions (before STOP token if present)
