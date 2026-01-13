@@ -237,6 +237,15 @@ def initialize_model(cfg: GenerateConfig):
     action_head = None
     if cfg.use_l1_regression or cfg.use_diffusion:
         action_head = get_action_head(cfg, model.llm_dim)
+        # Warn if EOS detection is enabled but action_head is used
+        if cfg.use_eos_detection:
+            log_message(
+                f"[EOS WARNING] ⚠️  EOS detection is enabled but action_head is loaded "
+                f"(use_l1_regression={cfg.use_l1_regression}, use_diffusion={cfg.use_diffusion}). "
+                f"EOS detection only works in discrete token mode (action_head=None). "
+                f"Falling back to vision-based substep switching.",
+                log_file
+            )
 
     # Load noisy action projector if using diffusion
     noisy_action_projector = None
@@ -538,6 +547,15 @@ def run_episode(
                "both speed and success rate), we recommend executing the full action chunk.")
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
+    # Check EOS detection compatibility
+    if cfg.use_eos_detection and action_head is not None:
+        log_message(
+            f"[EOS WARNING] ⚠️  Cannot use EOS detection with action_head (L1 regression/diffusion mode). "
+            f"EOS detection requires discrete token mode (action_head=None). "
+            f"Will use vision-based substep switching instead.",
+            log_file
+        )
+    
     # Initialize SubstepManager if enabled
     substep_manager = None
     if cfg.use_substep_decomposition and llm_model is not None:
@@ -713,21 +731,55 @@ def run_episode(
                     return_eos_info=True,  # Request EOS detection info
                 )
                 
+                # Debug: Log result type and structure
+                log_message(
+                    f"[EOS DEBUG] Result type: {type(result)}, "
+                    f"is_tuple: {isinstance(result, tuple)}, "
+                    f"length: {len(result) if isinstance(result, (tuple, list)) else 'N/A'}",
+                    log_file
+                )
+                
                 # Unpack result
                 if isinstance(result, tuple) and len(result) == 3:
                     actions, has_eos, eos_position = result
                     
+                    # Debug: Log EOS detection result
+                    log_message(
+                        f"[EOS DEBUG] has_eos={has_eos}, eos_position={eos_position}, "
+                        f"actions_length={len(actions) if actions else 'N/A'}",
+                        log_file
+                    )
+                    
+                    # Check if using action_head (L1 regression mode)
+                    if action_head is not None:
+                        log_message(
+                            f"[EOS WARNING] Using action_head (L1 regression mode), "
+                            f"EOS detection is not supported in this mode!",
+                            log_file
+                        )
+                    
                     # If EOS detected, truncate actions at EOS position
                     if has_eos and eos_position is not None:
+                        original_length = len(actions)
                         actions = actions[:eos_position+1]  # Include action at EOS position
                         log_message(
-                            f"[EOS] Detected at position {eos_position}, truncated to {len(actions)} actions",
+                            f"[EOS] ✓ Detected at position {eos_position}, "
+                            f"truncated from {original_length} to {len(actions)} actions",
                             log_file
                         )
                         # Set flag to force substep switch after queue is emptied
                         force_requery_after_queue = True
+                    else:
+                        log_message(
+                            f"[EOS] ✗ No EOS detected (has_eos={has_eos}, eos_position={eos_position})",
+                            log_file
+                        )
                 else:
                     # Fallback if return format unexpected
+                    log_message(
+                        f"[EOS WARNING] Unexpected return format, falling back to standard handling",
+                        log_file
+                    )
                     actions = result if not isinstance(result, tuple) else result[0]
             else:
                 # Standard action query without EOS detection
