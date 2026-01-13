@@ -176,13 +176,22 @@ class DiffusionActionHead(nn.Module):
         self,
         input_dim=4096,
         hidden_dim=4096,
-        action_dim=7,
+        action_dim=None,  # Will use ACTION_DIM from constants if not specified
         num_diffusion_steps_train=50,
     ):
         super().__init__()
+        # Use ACTION_DIM from constants if action_dim not specified
+        if action_dim is None:
+            from prismatic.vla.constants import ACTION_DIM
+            action_dim = ACTION_DIM
         self.action_dim = action_dim
+        
+        # CRITICAL: Use BASE_ACTION_DIM (7) for transformer hidden dim
+        from prismatic.vla.constants import BASE_ACTION_DIM
         self.noise_predictor = NoisePredictionModel(
-            transformer_hidden_dim=hidden_dim*ACTION_DIM, hidden_dim=hidden_dim, action_dim=action_dim
+            transformer_hidden_dim=hidden_dim*BASE_ACTION_DIM,  # Use BASE_ACTION_DIM
+            hidden_dim=hidden_dim, 
+            action_dim=action_dim  # Output ACTION_DIM including EOS
         )
         self.num_diffusion_steps_train = num_diffusion_steps_train
         self.noise_scheduler = DDIMScheduler(num_train_timesteps=num_diffusion_steps_train, beta_schedule="squaredcos_cap_v2")
