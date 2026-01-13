@@ -239,12 +239,11 @@ def initialize_model(cfg: GenerateConfig):
         action_head = get_action_head(cfg, model.llm_dim)
         # Warn if EOS detection is enabled but action_head is used
         if cfg.use_eos_detection:
-            log_message(
+            logger.warning(
                 f"[EOS WARNING] ⚠️  EOS detection is enabled but action_head is loaded "
                 f"(use_l1_regression={cfg.use_l1_regression}, use_diffusion={cfg.use_diffusion}). "
                 f"EOS detection only works in discrete token mode (action_head=None). "
-                f"Falling back to vision-based substep switching.",
-                log_file
+                f"Falling back to vision-based substep switching."
             )
 
     # Load noisy action projector if using diffusion
