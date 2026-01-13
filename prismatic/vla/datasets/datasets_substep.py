@@ -249,11 +249,14 @@ class SubstepRLDSBatchTransform:
         prompt_builder = self.prompt_builder_fn("openvla")
         
         # Get future action chunk
-        future_actions = rlds_batch["action"][1:]
+        # CRITICAL: action_tokenizer only handles BASE_ACTION_DIM (7), not ACTION_DIM (8)
+        # We only tokenize the first 7 dimensions, EOS flag (dim 8) is for ground truth only
+        from prismatic.vla.constants import BASE_ACTION_DIM
+        future_actions = actions[1:, :BASE_ACTION_DIM]  # Only first 7 dims
         future_actions_string = ''.join(self.action_tokenizer(future_actions))
         
-        # Get action chunk string
-        current_action_string = self.action_tokenizer(current_action)
+        # Get action chunk string (only first 7 dims)
+        current_action_string = self.action_tokenizer(current_action[:BASE_ACTION_DIM])
         action_chunk_string = current_action_string + future_actions_string
         
         # Insert EOS token at substep boundary if enabled
@@ -295,12 +298,13 @@ class SubstepRLDSBatchTransform:
         if not self.predict_stop_token and not (self.use_substep_eos and is_substep_end):
             labels[-1] = IGNORE_INDEX
         
+        # Return dict with 8D actions (including EOS flag) for ground truth
         return_dict = dict(
             pixel_values=pixel_values,
             input_ids=input_ids,
             labels=labels,
             dataset_name=dataset_name,
-            actions=actions,
+            actions=actions,  # Shape: (num_actions, 8) - includes EOS flag
         )
         
         # Add additional inputs
