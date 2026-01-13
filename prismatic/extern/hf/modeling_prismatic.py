@@ -1462,53 +1462,43 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             )
             normalized_actions, actions_hidden_states, layer_actions, action_logits = result
 
-        # EOS detection: search for EOS token in action logits
-        if return_eos_info and action_logits is not None:
-            # Get EOS token ID from tokenizer
-            eos_token_id = self.language_model.config.eos_token_id
-            if eos_token_id is None:
-                # Try to get from tokenizer if available
-                if hasattr(self.language_model, 'tokenizer') and hasattr(self.language_model.tokenizer, 'eos_token_id'):
-                    eos_token_id = self.language_model.tokenizer.eos_token_id
+        # EOS detection from 8th dimension (action-based, not token-based)
+        # normalized_actions shape: (NUM_ACTIONS_CHUNK, ACTION_DIM)
+        # ACTION_DIM = 8, where dimension 8 is the EOS flag
+        # EOS flag > threshold (0.5) indicates end of substep
+        if return_eos_info:
+            from prismatic.vla.constants import BASE_ACTION_DIM
+            EOS_THRESHOLD = 0.5
             
-            if eos_token_id is not None:
-                # action_logits shape: (B, seq_len, vocab_size)
-                # We need to check if EOS token is predicted at any action position
-                # action_logits covers ACTION_DIM * NUM_ACTIONS_CHUNK positions
-                # But we need to check if any action token position predicts EOS
+            # Extract EOS flags from last dimension (dimension 8, index 7)
+            # normalized_actions shape: (NUM_ACTIONS_CHUNK, ACTION_DIM)
+            eos_flags = normalized_actions[:, BASE_ACTION_DIM]  # Shape: (NUM_ACTIONS_CHUNK,)
+            
+            # Find first position where EOS flag > threshold
+            eos_detected_mask = eos_flags > EOS_THRESHOLD
+            
+            if eos_detected_mask.any():
+                # Get first EOS position
+                first_eos_idx = eos_detected_mask.nonzero()[0].item()
+                has_eos = True
+                eos_position = first_eos_idx
                 
-                # Get EOS token probabilities (for debugging)
-                eos_probs = torch.softmax(action_logits, dim=-1)[:, :, eos_token_id]  # (B, seq_len)
-                max_eos_prob = eos_probs.max().item()
-                max_eos_pos = eos_probs.argmax().item()
-                
-                # Find positions where EOS is the most likely token (argmax)
-                predicted_token_ids = action_logits.argmax(dim=-1)  # (B, seq_len)
-                
-                # Check if EOS appears at any position
-                eos_mask = (predicted_token_ids == eos_token_id)  # (B, seq_len)
-                
-                if eos_mask.any():
-                    # Find first EOS position
-                    # action_logits covers ACTION_DIM tokens per action timestep
-                    # So we need to map token position to action timestep
-                    first_eos_pos = eos_mask[0].nonzero(as_tuple=True)[0]
-                    if len(first_eos_pos) > 0:
-                        first_eos_token_pos = first_eos_pos[0].item()
-                        # Map token position to action timestep
-                        # Each action has ACTION_DIM tokens
-                        eos_position = first_eos_token_pos // ACTION_DIM
-                        has_eos = True
-                else:
-                    # Debug: Log EOS probability even if not detected
-                    # This helps diagnose if model is learning to predict EOS
-                    if return_eos_info:  # Only log when EOS detection is requested
-                        import logging
-                        logger = logging.getLogger(__name__)
-                        logger.info(
-                            f"[EOS DEBUG] EOS not detected via argmax, but max EOS prob={max_eos_prob:.4f} "
-                            f"at token position {max_eos_pos}"
-                        )
+                # Log EOS detection
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"[EOS DETECT] ✓ EOS detected at action {eos_position} "
+                    f"(flag value={eos_flags[eos_position]:.3f} > {EOS_THRESHOLD})"
+                )
+            else:
+                # Log max EOS value for debugging
+                max_eos_value = eos_flags.max()
+                max_eos_idx = eos_flags.argmax()
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"[EOS DETECT] ✗ No EOS detected. Max EOS flag={max_eos_value:.3f} at action {max_eos_idx}"
+                )
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)

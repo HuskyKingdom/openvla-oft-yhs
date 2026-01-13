@@ -196,9 +196,7 @@ class SubstepRLDSBatchTransform:
         """
         # Extract basic info
         dataset_name = rlds_batch["dataset_name"]
-        current_action = rlds_batch["action"][0]
         img = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
-        actions = rlds_batch["action"]
         
         # Get original task instruction
         original_instruction = rlds_batch["task"]["language_instruction"].decode().lower()
@@ -217,6 +215,25 @@ class SubstepRLDSBatchTransform:
             timestep,
             default_instruction=original_instruction,  # Fallback to original if not found
         )
+        
+        # [CRITICAL] Extend actions with EOS flag (8th dimension)
+        # Original actions shape: (num_actions, 7) - [xyz, rotation, gripper]
+        # Extended actions shape: (num_actions, 8) - [xyz, rotation, gripper, eos_flag]
+        # EOS flag = 1.0 at substep end, 0.0 otherwise
+        import numpy as np
+        from prismatic.vla.constants import BASE_ACTION_DIM
+        
+        base_actions = rlds_batch["action"]  # Shape: (num_actions, 7)
+        num_actions = base_actions.shape[0]
+        
+        # Create EOS flags: all zeros except last action if substep ends
+        eos_flags = np.zeros((num_actions, 1), dtype=base_actions.dtype)
+        if self.use_substep_eos and is_substep_end:
+            eos_flags[-1, 0] = 1.0  # Mark last action as substep end
+        
+        # Concatenate base actions with EOS flag
+        actions = np.concatenate([base_actions, eos_flags], axis=1)  # Shape: (num_actions, 8)
+        current_action = actions[0]  # First action with EOS flag
         
         # Log if substep instruction was successfully retrieved
         if substep_instruction != original_instruction:

@@ -82,14 +82,23 @@ class MLPResNet(nn.Module):
 
 
 class L1RegressionActionHead(nn.Module):
-    """Simple MLP-based action head that generates continuous actions via L1 regression."""
+    """
+    Simple MLP-based action head that generates continuous actions via L1 regression.
+    
+    Note: ACTION_DIM now includes EOS flag as the last dimension.
+    Output shape: (batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM)
+    where ACTION_DIM = BASE_ACTION_DIM + 1 (EOS flag)
+    """
     def __init__(
         self,
         input_dim=4096,
         hidden_dim=4096,
-        action_dim=7,
+        action_dim=None,  # Will use ACTION_DIM from constants if not specified
     ):
         super().__init__()
+        # Use ACTION_DIM from constants if action_dim not specified
+        if action_dim is None:
+            action_dim = ACTION_DIM
         self.action_dim = action_dim
         self.model = MLPResNet(
             num_blocks=2, input_dim=input_dim*ACTION_DIM, hidden_dim=hidden_dim, output_dim=action_dim
