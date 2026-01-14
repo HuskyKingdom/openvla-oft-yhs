@@ -1065,7 +1065,14 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         return labels
 
     def _unnormalize_actions(self, normalized_actions, unnorm_key=None):
-        """Unnormalize actions using dataset statistics"""
+        """Unnormalize actions using dataset statistics
+        
+        Note: Dataset statistics only contain BASE_ACTION_DIM (7) dimensions.
+        If normalized_actions has 8 dimensions (including EOS flag), we only
+        unnormalize the first 7 dimensions and keep the 8th dimension as-is.
+        """
+        from prismatic.vla.constants import BASE_ACTION_DIM, ACTION_DIM
+        
         action_norm_stats = self.get_action_stats(unnorm_key)
 
         if ACTION_PROPRIO_NORMALIZATION_TYPE == NormalizationType.BOUNDS:
@@ -1077,11 +1084,28 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         else:
             raise ValueError("Unsupported action/proprio normalization type detected!")
 
-        actions = np.where(
-            mask,
-            0.5 * (normalized_actions + 1) * (action_high - action_low + 1e-8) + action_low,
-            normalized_actions,
-        )
+        # Check if we have 8D actions (with EOS flag)
+        if normalized_actions.shape[-1] == ACTION_DIM:
+            # Split into base actions (7D) and EOS flag (1D)
+            base_actions = normalized_actions[..., :BASE_ACTION_DIM]
+            eos_flag = normalized_actions[..., BASE_ACTION_DIM:]
+            
+            # Unnormalize only the base actions
+            unnormalized_base = np.where(
+                mask,
+                0.5 * (base_actions + 1) * (action_high - action_low + 1e-8) + action_low,
+                base_actions,
+            )
+            
+            # Concatenate with unchanged EOS flag
+            actions = np.concatenate([unnormalized_base, eos_flag], axis=-1)
+        else:
+            # Original 7D actions - unnormalize all dimensions
+            actions = np.where(
+                mask,
+                0.5 * (normalized_actions + 1) * (action_high - action_low + 1e-8) + action_low,
+                normalized_actions,
+            )
 
         return actions
 
@@ -1165,6 +1189,14 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             curr_noisy_actions = action_head.noise_scheduler.step(noise_pred, t, curr_noisy_actions).prev_sample
 
         curr_noisy_actions = curr_noisy_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
+        
+        # [CRITICAL] Apply sigmoid to EOS flag (8th dimension) to constrain to [0, 1]
+        from prismatic.vla.constants import BASE_ACTION_DIM
+        if ACTION_DIM > BASE_ACTION_DIM:
+            # Split: first 7 dims (base actions) + 8th dim (EOS flag)
+            base_actions = curr_noisy_actions[..., :BASE_ACTION_DIM]
+            eos_flag = torch.sigmoid(curr_noisy_actions[..., BASE_ACTION_DIM:])  # Constrain to [0, 1]
+            curr_noisy_actions = torch.cat([base_actions, eos_flag], dim=-1)
 
         # Return final actions
         return curr_noisy_actions.float().cpu().detach().numpy(), actions_hidden_states

@@ -128,6 +128,16 @@ class L1RegressionActionHead(nn.Module):
         rearranged_actions_hidden_states = actions_hidden_states.reshape(batch_size, NUM_ACTIONS_CHUNK, -1)
         # Model predicts ACTION_DIM (8) values from BASE_ACTION_DIM (7) tokens
         action = self.model(rearranged_actions_hidden_states)
+        
+        # [CRITICAL] Apply sigmoid to EOS flag (8th dimension) to constrain to [0, 1]
+        # This prevents numerical instability from unbounded EOS predictions
+        from prismatic.vla.constants import BASE_ACTION_DIM
+        if self.action_dim > BASE_ACTION_DIM:
+            # Split: first 7 dims (base actions) + 8th dim (EOS flag)
+            base_actions = action[..., :BASE_ACTION_DIM]
+            eos_flag = torch.sigmoid(action[..., BASE_ACTION_DIM:])  # Constrain to [0, 1]
+            action = torch.cat([base_actions, eos_flag], dim=-1)
+        
         return action
 
 
