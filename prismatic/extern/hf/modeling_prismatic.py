@@ -1177,12 +1177,14 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             )
 
             # Extract hidden states for action portion of response
+            # [CRITICAL] Only extract BASE_ACTION_DIM tokens per action (EOS token not in action mask)
             last_hidden_states = language_model_output.hidden_states[-1]  # (B, seq_len, D)
+            from prismatic.vla.constants import BASE_ACTION_DIM
             actions_hidden_states = last_hidden_states[
                 :,
-                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + BASE_ACTION_DIM * NUM_ACTIONS_CHUNK,
                 :,
-            ]  # (B, act_chunk_len, D)
+            ]  # (B, BASE_ACTION_DIM * NUM_ACTIONS_CHUNK, D)
 
             # Predict noise and update noisy actions: x_t -> x_{t-1}
             noise_pred = action_head.predict_noise(actions_hidden_states)
@@ -1301,13 +1303,15 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         
         
         # Extract hidden states for action tokens
+        # [CRITICAL] Only extract BASE_ACTION_DIM tokens per action (EOS token not in action mask)
         last_hidden_states = language_model_output.hidden_states[-1]  # (B, seq_len, D)
         all_hiddens_processed = []
+        from prismatic.vla.constants import BASE_ACTION_DIM
         actions_hidden_states = last_hidden_states[
             :,
-            NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+            NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + BASE_ACTION_DIM * NUM_ACTIONS_CHUNK,
             :,
-        ]  # (B, act_chunk_len, D)
+        ]  # (B, BASE_ACTION_DIM * NUM_ACTIONS_CHUNK, D)
 
         # Extract outputs of all layers
         all_out = language_model_output.hidden_states
@@ -1316,9 +1320,10 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Only perform layer-wise analysis if action_head is provided (L1 regression or diffusion mode)
         if action_head is not None:
             for layer_index in range(1,len(all_out)):
+                # [CRITICAL] Only extract BASE_ACTION_DIM tokens per action
                 current_hidden = all_out[layer_index][
                 :,
-                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
+                NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + BASE_ACTION_DIM * NUM_ACTIONS_CHUNK,
                 :,
                 ]
                 c_normalized_actions = action_head.predict_action(current_hidden)
@@ -1341,19 +1346,21 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             normalized_actions = normalized_actions.float().cpu().detach().numpy()
             # Even in L1 regression mode, we can still extract token logits for EOS detection
             # The language model always generates logits, we just don't use them for action prediction
+            # Note: Logits are still generated for all ACTION_DIM * NUM_ACTIONS_CHUNK positions
             action_positions_logits = language_model_output.logits[
                 :,
                 NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
             ]
-            action_logits = action_positions_logits  # Store for EOS detection
+            action_logits = action_positions_logits  # Store for EOS detection (not used in 8D EOS mode)
         else:
             # Discrete token-based prediction
             # Extract logits for action positions (before STOP token if present)
+            # Note: In discrete mode, logits are for all ACTION_DIM * NUM_ACTIONS_CHUNK positions
             action_positions_logits = language_model_output.logits[
                 :,
                 NUM_PATCHES + NUM_PROMPT_TOKENS : NUM_PATCHES + NUM_PROMPT_TOKENS + ACTION_DIM * NUM_ACTIONS_CHUNK,
             ]
-            action_logits = action_positions_logits  # Store for EOS detection
+            action_logits = action_positions_logits  # Store for EOS detection (not used in 8D EOS mode)
             
             predicted_action_token_ids = (
                 action_positions_logits
