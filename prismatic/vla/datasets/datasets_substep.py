@@ -226,10 +226,25 @@ class SubstepRLDSBatchTransform:
         base_actions = rlds_batch["action"]  # Shape: (num_actions, 7)
         num_actions = base_actions.shape[0]
         
-        # Create EOS flags: all zeros except last action if substep ends
+        # Create EOS flags: check EACH action in chunk to see if it's a substep end
+        # CRITICAL: Must check all future timesteps in the action chunk, not just current timestep
         eos_flags = np.zeros((num_actions, 1), dtype=base_actions.dtype)
-        if self.use_substep_eos and is_substep_end:
-            eos_flags[-1, 0] = 1.0  # Mark last action as substep end
+        
+        if self.use_substep_eos:
+            # Check each position in the action chunk
+            for i in range(num_actions):
+                future_timestep = timestep + i
+                
+                # Look up whether this future timestep is a substep end
+                if episode_id in self.substep_labels:
+                    timestep_key = str(future_timestep)
+                    if timestep_key in self.substep_labels[episode_id]:
+                        timestep_label = self.substep_labels[episode_id][timestep_key]
+                        if timestep_label.get("is_substep_end", False):
+                            eos_flags[i, 0] = 1.0  # Mark this position as substep end
+                            # Note: We mark the first substep end found in the chunk
+                            # In practice, there should be at most one per chunk
+                            break
         
         # Concatenate base actions with EOS flag
         actions = np.concatenate([base_actions, eos_flags], axis=1)  # Shape: (num_actions, 8)
