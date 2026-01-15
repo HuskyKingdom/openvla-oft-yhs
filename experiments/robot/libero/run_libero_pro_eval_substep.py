@@ -487,6 +487,20 @@ def save_rollout_video_with_substep_info(
             cv2.putText(img_bgr, sim_text, (10, y_offset), font, font_scale, sim_color, font_thickness, cv2.LINE_AA)
         y_offset += line_spacing
         
+        # Line 4.5: EOS detection info (if available)
+        if info.get('eos_detected', False):
+            eos_pos = info.get('eos_position', 'N/A')
+            eos_color = (100, 255, 255)  # Bright yellow (BGR)
+            eos_text = f"EOS: Detected at pos {eos_pos}"
+            cv2.putText(img_bgr, eos_text, (10, y_offset), font, font_scale, eos_color, font_thickness, cv2.LINE_AA)
+            y_offset += line_spacing
+        
+        if info.get('eos_triggered_switch', False):
+            switch_color = (150, 100, 255)  # Purple (BGR)
+            switch_text = ">>> EOS-triggered substep switch <<<"
+            cv2.putText(img_bgr, switch_text, (10, y_offset), font, font_scale, switch_color, font_thickness, cv2.LINE_AA)
+            y_offset += line_spacing
+        
         # Line 5: Frame info
         frame_text = f"Frame: {frame_idx+1}/{len(rollout_images)}"
         cv2.putText(img_bgr, frame_text, (10, y_offset), font, font_scale, (150, 150, 150), font_thickness, cv2.LINE_AA)
@@ -547,6 +561,15 @@ def run_episode(
 
     # EOS detection now works in both discrete token mode and L1 regression mode
     # No compatibility check needed
+    
+    # [CRITICAL] Check EOS detection dependency
+    if cfg.use_eos_detection and not cfg.use_substep_decomposition:
+        log_message(
+            "[EOS WARNING] ⚠️ EOS detection requires substep decomposition! "
+            "Please set use_substep_decomposition=True. Disabling EOS detection.",
+            log_file
+        )
+        cfg.use_eos_detection = False
     
     # Initialize SubstepManager if enabled
     substep_manager = None
@@ -626,6 +649,10 @@ def run_episode(
             'threshold': cfg.substep_completion_threshold if cfg.use_substep_decomposition else None,
             'substep_idx': 0,
             'total_substeps': 0,
+            # EOS detection info
+            'eos_detected': False,
+            'eos_position': None,
+            'eos_triggered_switch': False,
         }
         
         if substep_manager is not None and len(substep_manager.substeps) > 0:
@@ -670,6 +697,10 @@ def run_episode(
                 substep_switched = True
                 force_requery_after_queue = False  # Reset flag
                 should_requery = True
+                
+                # [VIDEO] Mark that this frame triggered an EOS-based switch
+                if len(substep_info_list) > 0:
+                    substep_info_list[-1]['eos_triggered_switch'] = True
         
         # Method 2: Vision-based substep switching (only if EOS detection is disabled)
         # If EOS detection is enabled, only use EOS-based switching
@@ -754,6 +785,11 @@ def run_episode(
                         )
                         # Set flag to force substep switch after queue is emptied
                         force_requery_after_queue = True
+                        
+                        # [VIDEO] Update substep info for video annotation
+                        if len(substep_info_list) > 0:
+                            substep_info_list[-1]['eos_detected'] = True
+                            substep_info_list[-1]['eos_position'] = eos_position
                     else:
                         # Note: If model was not trained with use_substep_eos=True, 
                         # it won't learn to predict EOS tokens, so has_eos will always be False
