@@ -1,28 +1,51 @@
- box and place it on the plate'
-2026-01-12 14:07:38,109 [INFO]   Episode 156: 'pick up the black bowl next to the ramekin and place it on the plate'
-2026-01-12 14:07:38,131 [INFO]   Episode 157: 'pick up the black bowl from table center and place it on the plate'
-2026-01-12 14:07:38,157 [INFO]   Episode 158: 'pick up the black bowl next to the plate and place it on the plate'
-2026-01-12 14:07:38,179 [INFO]   Episode 159: 'pick up the black bowl on the ramekin and place it on the plate'
-2026-01-12 14:07:38,201 [INFO]   Episode 160: 'pick up the black bowl between the plate and the ramekin and place it on the plate'
-2026-01-12 14:07:38,223 [INFO]   Episode 161: 'pick up the black bowl next to the cookie box and place it on the plate'
-2026-01-12 14:07:38,245 [INFO]   Episode 162: 'pick up the black bowl from table center and place it on the plate'
-2026-01-12 14:07:38,267 [INFO]   Episode 163: 'pick up the black bowl next to the plate and place it on the plate'
-2026-01-12 14:07:38,289 [INFO]   Episode 164: 'pick up the black bowl next to the plate and place it on the plate'
-2026-01-12 14:07:38,312 [INFO]   Episode 165: 'pick up the black bowl next to the cookie box and place it on the plate'
-2026-01-12 14:07:38,336 [INFO]   Episode 166: 'pick up the black bowl next to the cookie box and place it on the plate'
-2026-01-12 14:07:38,359 [INFO]   Episode 167: 'pick up the black bowl on the cookie box and place it on the plate'
-2026-01-12 14:07:38,381 [INFO]   Episode 168: 'pick up the black bowl on the cookie box and place it on the plate'
-2026-01-12 14:07:38,403 [INFO]   Episode 169: 'pick up the black bowl on the ramekin and place it on the plate'
-2026-01-12 14:07:38,428 [INFO]   Episode 170: 'pick up the black bowl on the ramekin and place it on the plate'
-2026-01-12 14:07:38,455 [INFO]   Episode 171: 'pick up the black bowl between the plate and the ramekin and place it on the plate'
-2026-01-12 14:07:38,477 [INFO]   Episode 172: 'pick up the black bowl next to the ramekin and place it on the plate'
-2026-01-12 14:07:38,501 [INFO]   Episode 173: 'pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate'
-2026-01-12 14:07:38,523 [INFO]   Episode 174: 'pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate'
-2026-01-12 14:07:38,545 [INFO]   Episode 175: 'pick up the black bowl next to the cookie box and place it on the plate'
-2026-01-12 14:07:38,567 [INFO]   Episode 176: 'pick up the black bowl on the cookie box and place it on the plate'
-2026-01-12 14:07:38,590 [INFO]   Episode 177: 'pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate'
-2026-01-12 14:07:38,614 [INFO]   Episode 178: 'pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate'
-2026-01-12 14:07:38,638 [INFO]   Episode 179: 'pick up the black bowl next to the ramekin and place it on the plate'
-2026-01-12 14:07:38,664 [INFO]   Episode 180: 'pick up the black bowl on the stove and place it on the plate'
-2026-01-12 14:07:38,687 [INFO]   Episode 181: 'pick up the black bowl between the plate and the ramekin and place it on the plate'
-2026-01-12 14:07:38,709 [INFO]   Episode 182: 'pick up the black bowl next to the ramekin and place it on the plat
+ INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 0                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 6                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+01/17 [11:08:55] INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 1                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 0                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 4                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 7                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+01/17 [11:08:56] INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 0                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [EOS DETECT] ✗ No EOS detected. Max EOS flag=0.000 at action 0                                                                       modeling_prismatic.py:1538
+                 INFO     | >> [EOS DEBUG] Result type: <class 'tuple'>, is_tuple: True, length: 3                                                          run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS DEBUG] has_eos=False, eos_position=None, actions_length=8                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> [EOS] ✗ No EOS detected (has_eos=False, eos_position=None). Note: Model needs to be trained with use_substep_eos=True to     run_libero_pro_eval_substep.py:307
+                          learn EOS prediction.                                                                                                                                               
+                 INFO     | >> [SUBSTEP STATS] Completed 0/3 substeps (0.0%), 0 switches                                                                    run_libero_pro_eval_substep.py:307
+                 INFO     | >> Success: True                                                                                                                run_libero_pro_eval_substep.py:307
+                 INFO     | >> # episodes completed so far: 2                                                                                               run_libero_pro_eval_substep.py:307
+                 INFO     | >> # successes: 2 (100.0%)                                                                                                      run_libero_pro_eval_substep.py:307
+                                                         
+
+still not seeing eos tokens, sued the following:
+
+python experiments/robot/libero/run_libero_pro_eval_substep.py    --pretrained_checkpoint ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla--150000_chkpt --substep_completion_threshold 0.07   --task_suite_name libero_object --e_decoding False --save_video False  --use_substep_decomposition True  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label substep_object_swap --use_eos_detection True
+
+enter model 1, dont change any code yet, answer in chinease.

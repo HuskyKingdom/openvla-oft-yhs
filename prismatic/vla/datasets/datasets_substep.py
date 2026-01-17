@@ -235,16 +235,22 @@ class SubstepRLDSBatchTransform:
             for i in range(num_actions):
                 future_timestep = timestep + i
                 
-                # Look up whether this future timestep is a substep end
-                if episode_id in self.substep_labels:
-                    timestep_key = str(future_timestep)
-                    if timestep_key in self.substep_labels[episode_id]:
-                        timestep_label = self.substep_labels[episode_id][timestep_key]
-                        if timestep_label.get("is_substep_end", False):
-                            eos_flags[i, 0] = 1.0  # Mark this position as substep end
-                            # Note: We mark the first substep end found in the chunk
-                            # In practice, there should be at most one per chunk
-                            break
+                # Query is_substep_end flag using the same function as substep instruction
+                # This ensures consistent data access logic for the 3-level nested structure:
+                # substep_labels[suite_name][task_name][episode_key]["timestep_labels"]
+                _, is_future_substep_end = get_substep_instruction(
+                    self.substep_labels,
+                    dataset_name,
+                    original_instruction,
+                    episode_id,
+                    future_timestep,
+                    default_instruction=original_instruction,
+                )
+                
+                if is_future_substep_end:
+                    eos_flags[i, 0] = 1.0  # Mark this position as substep end
+                    # Note: Continue checking remaining positions in case there are multiple
+                    # substep boundaries in the same action chunk
         
         # Concatenate base actions with EOS flag
         actions = np.concatenate([base_actions, eos_flags], axis=1)  # Shape: (num_actions, 8)
