@@ -204,22 +204,26 @@ def run_forward_pass(
             # Predict action
             predicted_actions = action_head.module.predict_action(actions_hidden_states)
             
-            # [WEIGHTED LOSS FOR EOS] Split base actions (7D) and EOS flag (8th dimension)
+            # [SAMPLE-LEVEL WEIGHTED LOSS FOR EOS] Split base actions (7D) and EOS flag (8th dimension)
             # This addresses class imbalance: EOS=1 samples are only 1-5% of training data
             base_pred = predicted_actions[..., :BASE_ACTION_DIM]  # First 7 dims
             base_gt = ground_truth_actions[..., :BASE_ACTION_DIM]
             eos_pred = predicted_actions[..., BASE_ACTION_DIM:]  # 8th dim (EOS flag)
             eos_gt = ground_truth_actions[..., BASE_ACTION_DIM:]
             
-            # Compute separate losses
+            # Compute base loss (standard L1)
             base_loss = torch.nn.L1Loss()(base_pred, base_gt)
-            eos_loss = torch.nn.L1Loss()(eos_pred, eos_gt)
             
-            # Weighted combination: give EOS dimension higher weight to combat class imbalance
-            # EOS_WEIGHT=20 is recommended for ~2% EOS=1 samples (50x imbalance)
-            # Adjust based on your data: 10 for 5% EOS=1, 50 for 1% EOS=1
-            EOS_WEIGHT = 20.0
-            loss = base_loss + EOS_WEIGHT * eos_loss
+            # Compute sample-level weighted EOS loss
+            # Key insight: Weight each sample individually, not the entire loss
+            # This ensures minority class (EOS=1) samples contribute significantly to gradients
+            eos_errors = torch.abs(eos_pred - eos_gt)  # Per-sample L1 errors
+            eos_weights = torch.ones_like(eos_gt)      # Initialize all weights to 1.0
+            eos_weights[eos_gt > 0.5] = 50.0           # EOS=1 samples get 50x weight
+            eos_loss = (eos_errors * eos_weights).mean()  # Weighted average
+            
+            # Combined loss (no additional global weight needed)
+            loss = base_loss + eos_loss
             
             # Store component losses for monitoring
             base_loss_value = base_loss.item()
@@ -258,7 +262,6 @@ def run_forward_pass(
         if use_l1_regression:
             metrics_dict["base_loss"] = base_loss_value
             metrics_dict["eos_loss"] = eos_loss_value
-            metrics_dict["eos_weight"] = EOS_WEIGHT
         
         metrics.update(metrics_dict)
 
@@ -651,9 +654,8 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "curr_action_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
-        "base_loss": deque(maxlen=cfg.grad_accumulation_steps),  # For EOS weighting monitoring
-        "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),   # For EOS weighting monitoring
-        "eos_weight": deque(maxlen=cfg.grad_accumulation_steps), # For EOS weighting monitoring
+        "base_loss": deque(maxlen=cfg.grad_accumulation_steps),  # For EOS monitoring
+        "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),   # For EOS monitoring
     }
 
     # Start training
