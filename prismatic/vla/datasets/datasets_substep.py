@@ -99,9 +99,29 @@ def get_substep_instruction(
         - Converts task_instruction spaces to underscores for matching
         - Returns default_instruction if any key is missing
     """
+    # [DEBUG] Add one-time debug flag
+    if not hasattr(get_substep_instruction, '_debug_logged'):
+        get_substep_instruction._debug_logged = False
+    
+    # [FIX] Handle bytes type dataset_name from RLDS
+    original_dataset_name = dataset_name
+    if isinstance(dataset_name, bytes):
+        dataset_name = dataset_name.decode('utf-8')
+    
     try:
         # Strip "_no_noops" suffix from dataset name to get suite name
         suite_name = dataset_name.replace("_no_noops", "")
+        
+        # [DEBUG] Log the first few lookups to verify the fix
+        if not get_substep_instruction._debug_logged:
+            print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] First lookup:")
+            print(f"  Original dataset_name: {original_dataset_name} (type: {type(original_dataset_name).__name__})")
+            print(f"  Processed dataset_name: {dataset_name}")
+            print(f"  Suite name (after removing _no_noops): {suite_name}")
+            print(f"  Available suites in JSON: {list(substep_labels.keys())}")
+            print(f"  Task instruction: {task_instruction}")
+            print(f"  Episode ID: {episode_id}, Timestep: {timestep}\n")
+            get_substep_instruction._debug_logged = True
         
         # Convert task instruction to underscore format
         # "put the cream cheese in the bowl" -> "put_the_cream_cheese_in_the_bowl"
@@ -134,11 +154,42 @@ def get_substep_instruction(
         if best_match and "APD_step" in best_match:
             apd_step = best_match["APD_step"]
             is_substep_end = best_match.get("is_substep_end", False)
+            
+            # [DEBUG] Log first few successful EOS=1 lookups
+            if is_substep_end:
+                if not hasattr(get_substep_instruction, '_eos_found_count'):
+                    get_substep_instruction._eos_found_count = 0
+                
+                if get_substep_instruction._eos_found_count < 5:
+                    print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] ✓ Found EOS=1!")
+                    print(f"  Dataset: {dataset_name} -> Suite: {suite_name}")
+                    print(f"  Task: {task_instruction}")
+                    print(f"  Episode: {episode_id}, Timestep: {timestep}")
+                    print(f"  APD_step: {apd_step}\n")
+                    get_substep_instruction._eos_found_count += 1
+            
             return apd_step, is_substep_end
         
         return default_instruction, False
         
     except (KeyError, TypeError, IndexError) as e:
+        # [DEBUG] Log first few failures to understand the issue
+        if not hasattr(get_substep_instruction, '_failure_count'):
+            get_substep_instruction._failure_count = 0
+        
+        if get_substep_instruction._failure_count < 3:
+            print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] Lookup failed:")
+            print(f"  Dataset: {dataset_name} -> Suite: {suite_name if 'suite_name' in locals() else 'N/A'}")
+            print(f"  Task: {task_instruction}")
+            print(f"  Episode: {episode_id}, Timestep: {timestep}")
+            print(f"  Error: {type(e).__name__}: {e}")
+            if 'suite_name' in locals() and substep_labels:
+                print(f"  Suite exists in JSON: {suite_name in substep_labels}")
+                if suite_name in substep_labels:
+                    tasks = list(substep_labels[suite_name].keys())
+                    print(f"  Available tasks in suite (first 5): {tasks[:5]}")
+            get_substep_instruction._failure_count += 1
+        
         # If anything goes wrong, return default instruction
         overwatch.debug(
             f"Could not find substep for suite={dataset_name}, task={task_instruction}, "
