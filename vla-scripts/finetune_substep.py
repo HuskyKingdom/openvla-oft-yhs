@@ -228,6 +228,62 @@ def run_forward_pass(
             # Store component losses for monitoring
             base_loss_value = base_loss.item()
             eos_loss_value = eos_loss.item()
+            
+            # [EOS TRAINING DEBUG] Detailed statistics for diagnosing loss collapse
+            num_eos_positive = (eos_gt > 0.5).sum().item()  # Count EOS=1 samples
+            num_eos_negative = (eos_gt <= 0.5).sum().item()  # Count EOS=0 samples
+            total_samples = eos_gt.numel()
+            
+            # Statistics for EOS predictions
+            eos_pred_min = eos_pred.min().item()
+            eos_pred_max = eos_pred.max().item()
+            eos_pred_mean = eos_pred.mean().item()
+            
+            # Statistics for EOS ground truth
+            eos_gt_min = eos_gt.min().item()
+            eos_gt_max = eos_gt.max().item()
+            eos_gt_mean = eos_gt.mean().item()
+            
+            # Separate statistics for EOS=1 samples (if any)
+            if num_eos_positive > 0:
+                eos_pred_positive = eos_pred[eos_gt > 0.5]
+                eos_pred_positive_mean = eos_pred_positive.mean().item()
+                eos_pred_positive_min = eos_pred_positive.min().item()
+                eos_pred_positive_max = eos_pred_positive.max().item()
+                
+                eos_errors_positive = eos_errors[eos_gt > 0.5]
+                eos_loss_positive_contribution = (eos_errors_positive * 50.0).sum().item() / total_samples
+            else:
+                eos_pred_positive_mean = 0.0
+                eos_pred_positive_min = 0.0
+                eos_pred_positive_max = 0.0
+                eos_loss_positive_contribution = 0.0
+            
+            # Separate statistics for EOS=0 samples
+            if num_eos_negative > 0:
+                eos_pred_negative = eos_pred[eos_gt <= 0.5]
+                eos_pred_negative_mean = eos_pred_negative.mean().item()
+                
+                eos_errors_negative = eos_errors[eos_gt <= 0.5]
+                eos_loss_negative_contribution = (eos_errors_negative * 1.0).sum().item() / total_samples
+            else:
+                eos_pred_negative_mean = 0.0
+                eos_loss_negative_contribution = 0.0
+            
+            # Print debug information (will appear in training logs)
+            print(f"\n[EOS DEBUG] Batch EOS Distribution:")
+            print(f"  Total samples: {total_samples}")
+            print(f"  EOS=1 samples: {num_eos_positive} ({100*num_eos_positive/total_samples:.2f}%)")
+            print(f"  EOS=0 samples: {num_eos_negative} ({100*num_eos_negative/total_samples:.2f}%)")
+            print(f"[EOS DEBUG] EOS Predictions:")
+            print(f"  Overall: min={eos_pred_min:.6f}, max={eos_pred_max:.6f}, mean={eos_pred_mean:.6f}")
+            print(f"  EOS=1 samples: min={eos_pred_positive_min:.6f}, max={eos_pred_positive_max:.6f}, mean={eos_pred_positive_mean:.6f}")
+            print(f"  EOS=0 samples: mean={eos_pred_negative_mean:.6f}")
+            print(f"[EOS DEBUG] Loss Breakdown:")
+            print(f"  Total eos_loss: {eos_loss_value:.8f}")
+            print(f"  EOS=1 contribution: {eos_loss_positive_contribution:.8f}")
+            print(f"  EOS=0 contribution: {eos_loss_negative_contribution:.8f}")
+            print(f"  Ratio (EOS=1/EOS=0): {eos_loss_positive_contribution/(eos_loss_negative_contribution+1e-10):.2f}")
 
         if use_diffusion:
             # Predict noise
@@ -262,6 +318,12 @@ def run_forward_pass(
         if use_l1_regression:
             metrics_dict["base_loss"] = base_loss_value
             metrics_dict["eos_loss"] = eos_loss_value
+            metrics_dict["eos_positive_samples"] = num_eos_positive
+            metrics_dict["eos_positive_ratio"] = num_eos_positive / total_samples
+            metrics_dict["eos_pred_mean"] = eos_pred_mean
+            metrics_dict["eos_pred_positive_mean"] = eos_pred_positive_mean
+            metrics_dict["eos_loss_positive_contrib"] = eos_loss_positive_contribution
+            metrics_dict["eos_loss_negative_contrib"] = eos_loss_negative_contribution
         
         metrics.update(metrics_dict)
 
@@ -656,6 +718,12 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
         "base_loss": deque(maxlen=cfg.grad_accumulation_steps),  # For EOS monitoring
         "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),   # For EOS monitoring
+        "eos_positive_samples": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_positive_ratio": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_pred_mean": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_pred_positive_mean": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_loss_positive_contrib": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_loss_negative_contrib": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
     # Start training
