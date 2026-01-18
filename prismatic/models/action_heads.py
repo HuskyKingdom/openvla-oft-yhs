@@ -135,7 +135,20 @@ class L1RegressionActionHead(nn.Module):
         if self.action_dim > BASE_ACTION_DIM:
             # Split: first 7 dims (base actions) + 8th dim (EOS flag)
             base_actions = action[..., :BASE_ACTION_DIM]
-            eos_flag = torch.sigmoid(action[..., BASE_ACTION_DIM:])  # Constrain to [0, 1]
+            eos_raw = action[..., BASE_ACTION_DIM:]  # Raw EOS before sigmoid
+            
+            # [DEBUG] Print raw EOS values before sigmoid
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"[ACTION HEAD DEBUG] Raw EOS (before sigmoid): {eos_raw.squeeze()}")
+            logger.info(f"[ACTION HEAD DEBUG] Raw EOS stats - min: {eos_raw.min().item():.6f}, max: {eos_raw.max().item():.6f}, mean: {eos_raw.mean().item():.6f}")
+            
+            eos_flag = torch.sigmoid(eos_raw)  # Constrain to [0, 1]
+            
+            # [DEBUG] Print EOS values after sigmoid
+            logger.info(f"[ACTION HEAD DEBUG] EOS after sigmoid: {eos_flag.squeeze()}")
+            logger.info(f"[ACTION HEAD DEBUG] EOS after sigmoid stats - min: {eos_flag.min().item():.6f}, max: {eos_flag.max().item():.6f}, mean: {eos_flag.mean().item():.6f}")
+            
             action = torch.cat([base_actions, eos_flag], dim=-1)
         
         return action
