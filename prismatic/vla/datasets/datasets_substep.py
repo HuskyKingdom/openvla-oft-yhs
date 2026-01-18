@@ -112,17 +112,6 @@ def get_substep_instruction(
         # Strip "_no_noops" suffix from dataset name to get suite name
         suite_name = dataset_name.replace("_no_noops", "")
         
-        # [DEBUG] Log the first few lookups to verify the fix
-        if not get_substep_instruction._debug_logged:
-            print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] First lookup:")
-            print(f"  Original dataset_name: {original_dataset_name} (type: {type(original_dataset_name).__name__})")
-            print(f"  Processed dataset_name: {dataset_name}")
-            print(f"  Suite name (after removing _no_noops): {suite_name}")
-            print(f"  Available suites in JSON: {list(substep_labels.keys())}")
-            print(f"  Task instruction: {task_instruction}")
-            print(f"  Episode ID: {episode_id}, Timestep: {timestep}\n")
-            get_substep_instruction._debug_logged = True
-        
         # Convert task instruction to underscore format
         # "put the cream cheese in the bowl" -> "put_the_cream_cheese_in_the_bowl"
         task_name = task_instruction.lower().strip().replace(" ", "_")
@@ -154,42 +143,11 @@ def get_substep_instruction(
         if best_match and "APD_step" in best_match:
             apd_step = best_match["APD_step"]
             is_substep_end = best_match.get("is_substep_end", False)
-            
-            # [DEBUG] Log first few successful EOS=1 lookups
-            if is_substep_end:
-                if not hasattr(get_substep_instruction, '_eos_found_count'):
-                    get_substep_instruction._eos_found_count = 0
-                
-                if get_substep_instruction._eos_found_count < 5:
-                    print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] ✓ Found EOS=1!")
-                    print(f"  Dataset: {dataset_name} -> Suite: {suite_name}")
-                    print(f"  Task: {task_instruction}")
-                    print(f"  Episode: {episode_id}, Timestep: {timestep}")
-                    print(f"  APD_step: {apd_step}\n")
-                    get_substep_instruction._eos_found_count += 1
-            
             return apd_step, is_substep_end
         
         return default_instruction, False
         
     except (KeyError, TypeError, IndexError) as e:
-        # [DEBUG] Log first few failures to understand the issue
-        if not hasattr(get_substep_instruction, '_failure_count'):
-            get_substep_instruction._failure_count = 0
-        
-        if get_substep_instruction._failure_count < 3:
-            print(f"\n[GET_SUBSTEP_INSTRUCTION DEBUG] Lookup failed:")
-            print(f"  Dataset: {dataset_name} -> Suite: {suite_name if 'suite_name' in locals() else 'N/A'}")
-            print(f"  Task: {task_instruction}")
-            print(f"  Episode: {episode_id}, Timestep: {timestep}")
-            print(f"  Error: {type(e).__name__}: {e}")
-            if 'suite_name' in locals() and substep_labels:
-                print(f"  Suite exists in JSON: {suite_name in substep_labels}")
-                if suite_name in substep_labels:
-                    tasks = list(substep_labels[suite_name].keys())
-                    print(f"  Available tasks in suite (first 5): {tasks[:5]}")
-            get_substep_instruction._failure_count += 1
-        
         # If anything goes wrong, return default instruction
         overwatch.debug(
             f"Could not find substep for suite={dataset_name}, task={task_instruction}, "
@@ -251,22 +209,6 @@ class SubstepRLDSBatchTransform:
             self.total_eos_positive_generated = 0
             self.debug_print_interval = 1000  # Print stats every N samples
         
-        # [DEBUG] Print substep_labels info on first call
-        if not hasattr(self, '_debug_printed_labels_info'):
-            self._debug_printed_labels_info = True
-            if self.substep_labels:
-                num_suites = len(self.substep_labels)
-                total_episodes = sum(
-                    len(episodes) for suite in self.substep_labels.values()
-                    for task_name, episodes in suite.items()
-                )
-                print(f"\n[DATA LOADING DEBUG] substep_labels loaded successfully:")
-                print(f"  Number of task suites: {num_suites}")
-                print(f"  Total episodes across all suites: {total_episodes}")
-                print(f"  Task suites: {list(self.substep_labels.keys())}")
-            else:
-                print(f"\n[DATA LOADING DEBUG WARNING] substep_labels is empty or None!")
-        
         # Extract basic info
         dataset_name = rlds_batch["dataset_name"]
         img = Image.fromarray(rlds_batch["observation"]["image_primary"][0])
@@ -325,23 +267,11 @@ class SubstepRLDSBatchTransform:
                     # Note: Continue checking remaining positions in case there are multiple
                     # substep boundaries in the same action chunk
         
-        # [DEBUG] Track EOS label statistics
+        # [DEBUG] Track EOS label statistics (for potential future monitoring)
         if self.use_substep_eos:
             num_eos_positive_in_sample = (eos_flags > 0.5).sum()
             self.total_samples_generated += 1
             self.total_eos_positive_generated += num_eos_positive_in_sample
-            
-            # Print statistics periodically
-            if self.total_samples_generated % self.debug_print_interval == 0:
-                total_actions = self.total_samples_generated * num_actions
-                eos_positive_ratio = self.total_eos_positive_generated / total_actions if total_actions > 0 else 0.0
-                print(f"\n[DATA LOADING DEBUG] SubstepRLDSBatchTransform Statistics:")
-                print(f"  Total samples processed: {self.total_samples_generated}")
-                print(f"  Total action predictions: {total_actions}")
-                print(f"  Total EOS=1 labels: {self.total_eos_positive_generated}")
-                print(f"  EOS=1 ratio: {eos_positive_ratio:.4%}")
-                print(f"  Current sample - dataset: {dataset_name}, episode: {episode_id}, timestep: {timestep}")
-                print(f"  Current sample - eos_flags: {eos_flags.squeeze().tolist()}\n")
         
         # Concatenate base actions with EOS flag
         actions = np.concatenate([base_actions, eos_flags], axis=1)  # Shape: (num_actions, 8)

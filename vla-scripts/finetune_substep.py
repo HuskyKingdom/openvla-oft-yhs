@@ -269,21 +269,6 @@ def run_forward_pass(
             else:
                 eos_pred_negative_mean = 0.0
                 eos_loss_negative_contribution = 0.0
-            
-            # Print debug information (will appear in training logs)
-            print(f"\n[EOS DEBUG] Batch EOS Distribution:")
-            print(f"  Total samples: {total_samples}")
-            print(f"  EOS=1 samples: {num_eos_positive} ({100*num_eos_positive/total_samples:.2f}%)")
-            print(f"  EOS=0 samples: {num_eos_negative} ({100*num_eos_negative/total_samples:.2f}%)")
-            print(f"[EOS DEBUG] EOS Predictions:")
-            print(f"  Overall: min={eos_pred_min:.6f}, max={eos_pred_max:.6f}, mean={eos_pred_mean:.6f}")
-            print(f"  EOS=1 samples: min={eos_pred_positive_min:.6f}, max={eos_pred_positive_max:.6f}, mean={eos_pred_positive_mean:.6f}")
-            print(f"  EOS=0 samples: mean={eos_pred_negative_mean:.6f}")
-            print(f"[EOS DEBUG] Loss Breakdown:")
-            print(f"  Total eos_loss: {eos_loss_value:.8f}")
-            print(f"  EOS=1 contribution: {eos_loss_positive_contribution:.8f}")
-            print(f"  EOS=0 contribution: {eos_loss_negative_contribution:.8f}")
-            print(f"  Ratio (EOS=1/EOS=0): {eos_loss_positive_contribution/(eos_loss_negative_contribution+1e-10):.2f}")
 
         if use_diffusion:
             # Predict noise
