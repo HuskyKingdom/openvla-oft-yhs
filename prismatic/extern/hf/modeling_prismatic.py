@@ -1340,12 +1340,6 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Handle different prediction methods
         action_logits = None  # Store logits for EOS detection
         if action_head is not None:
-            # [DEBUG] Check input hidden states shape
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"[INFERENCE DEBUG] actions_hidden_states shape: {actions_hidden_states.shape}")
-            logger.info(f"[INFERENCE DEBUG] actions_hidden_states stats - min: {actions_hidden_states.min().item():.6f}, max: {actions_hidden_states.max().item():.6f}, mean: {actions_hidden_states.mean().item():.6f}")
-            
             # L1 regression prediction
             normalized_actions = action_head.predict_action(actions_hidden_states)
             normalized_actions = normalized_actions.reshape(NUM_ACTIONS_CHUNK, ACTION_DIM)
@@ -1515,21 +1509,9 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             from prismatic.vla.constants import BASE_ACTION_DIM
             EOS_THRESHOLD = 0.5
             
-            # [DEBUG] Print all 8 dimensions of normalized_actions
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"[EOS DEBUG] Normalized actions shape: {normalized_actions.shape}")
-            logger.info(f"[EOS DEBUG] All 8 dimensions for first 3 actions:")
-            for i in range(min(3, normalized_actions.shape[0])):
-                logger.info(f"  Action {i}: {normalized_actions[i, :]}")
-            
             # Extract EOS flags from last dimension (dimension 8, index 7)
             # normalized_actions shape: (NUM_ACTIONS_CHUNK, ACTION_DIM)
             eos_flags = normalized_actions[:, BASE_ACTION_DIM]  # Shape: (NUM_ACTIONS_CHUNK,)
-            
-            # [DEBUG] Print detailed EOS statistics
-            logger.info(f"[EOS DEBUG] EOS flags (dimension 8): {eos_flags}")
-            logger.info(f"[EOS DEBUG] EOS stats - min: {eos_flags.min():.6f}, max: {eos_flags.max():.6f}, mean: {eos_flags.mean():.6f}")
             
             # Find first position where EOS flag > threshold
             eos_detected_mask = eos_flags > EOS_THRESHOLD

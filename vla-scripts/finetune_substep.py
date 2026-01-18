@@ -87,16 +87,199 @@ from finetune import (
     wrap_ddp,
     count_parameters,
     init_module,
-    run_forward_pass,
     run_diffusion_sampling,
     compute_smoothened_metrics,
     log_metrics_to_wandb,
     save_training_checkpoint,
     run_validation,
 )
+# Note: We define our own run_forward_pass with EOS weighting below
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def run_forward_pass(
+    vla,
+    action_head,
+    noisy_action_projector,
+    proprio_projector,
+    batch,
+    action_tokenizer,
+    device_id,
+    use_l1_regression,
+    use_diffusion,
+    use_proprio,
+    use_film,
+    num_patches,
+    compute_diffusion_l1=False,
+    num_diffusion_steps_train=None,
+) -> Tuple[torch.Tensor, Dict[str, float]]:
+    """
+    Compute model forward pass with EOS-weighted loss for substep training.
+    
+    This is an extended version of the original run_forward_pass that adds
+    weighted loss for EOS dimension to address class imbalance in substep training.
+    """
+    metrics = {}
+
+    # Get ground-truth action labels
+    ground_truth_actions = batch["actions"].to(device_id).to(torch.bfloat16)
+
+    # [Only for diffusion] Sample noisy actions used as input for noise predictor network
+    if use_diffusion:
+        noisy_dict = action_head.module.sample_noisy_actions(ground_truth_actions)
+        noise, noisy_actions, diffusion_timestep_embeddings = (
+            noisy_dict["noise"],
+            noisy_dict["noisy_actions"],
+            noisy_dict["diffusion_timestep_embeddings"],
+        )
+    else:
+        noise, noisy_actions, diffusion_timestep_embeddings = None, None, None
+
+    # VLA forward pass
+    with torch.autocast("cuda", dtype=torch.bfloat16):
+        output: CausalLMOutputWithPast = vla(
+            input_ids=batch["input_ids"].to(device_id),
+            attention_mask=batch["attention_mask"].to(device_id),
+            pixel_values=batch["pixel_values"].to(torch.bfloat16).to(device_id),
+            labels=batch["labels"],
+            output_hidden_states=True,
+            proprio=batch["proprio"] if use_proprio else None,
+            proprio_projector=proprio_projector if use_proprio else None,
+            noisy_actions=noisy_actions if use_diffusion else None,
+            noisy_action_projector=noisy_action_projector if use_diffusion else None,
+            diffusion_timestep_embeddings=diffusion_timestep_embeddings if use_diffusion else None,
+            use_film=use_film,
+        )
+
+    # Get action masks needed for logging
+    ground_truth_token_ids = batch["labels"][:, 1:].to(device_id)
+    current_action_mask = get_current_action_mask(ground_truth_token_ids)
+    next_actions_mask = get_next_actions_mask(ground_truth_token_ids)
+
+    # Compute metrics for discrete action representation (next-token prediction)
+    if not (use_l1_regression or use_diffusion):
+        loss = output.loss
+        predicted_token_ids = output.logits[:, num_patches:-1].argmax(dim=2)
+        curr_action_accuracy = compute_token_accuracy(
+            predicted_token_ids, ground_truth_token_ids, mask=current_action_mask
+        )
+        curr_action_l1_loss = compute_actions_l1_loss(
+            action_tokenizer, predicted_token_ids, ground_truth_token_ids, mask=current_action_mask
+        )
+        next_actions_accuracy = compute_token_accuracy(
+            predicted_token_ids, ground_truth_token_ids, mask=next_actions_mask
+        )
+        next_actions_l1_loss = compute_actions_l1_loss(
+            action_tokenizer, predicted_token_ids, ground_truth_token_ids, mask=next_actions_mask
+        )
+        metrics.update(
+            {
+                "loss_value": loss.item(),
+                "curr_action_accuracy": curr_action_accuracy.item(),
+                "curr_action_l1_loss": curr_action_l1_loss.item(),
+                "next_actions_accuracy": next_actions_accuracy.item(),
+                "next_actions_l1_loss": next_actions_l1_loss.item(),
+            }
+        )
+    # Compute metrics for continuous action representations (L1 regression | diffusion)
+    else:
+        # Get last layer hidden states
+        last_hidden_states = output.hidden_states[-1]  # (B, seq_len, D)
+        # Get hidden states for text portion of prompt+response (after the vision patches)
+        text_hidden_states = last_hidden_states[:, num_patches:-1]
+        # Get hidden states for action portion of response
+        batch_size = batch["input_ids"].shape[0]
+        # CRITICAL: Use BASE_ACTION_DIM (7) not ACTION_DIM (8)
+        # because EOS token is not included in action mask (EOS token_id < ACTION_TOKEN_BEGIN_IDX)
+        from prismatic.vla.constants import BASE_ACTION_DIM
+        actions_hidden_states = (
+            text_hidden_states[current_action_mask | next_actions_mask]
+            .reshape(batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, -1)
+            .to(torch.bfloat16)
+        )  # (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, D)
+
+        if use_l1_regression:
+            # Predict action
+            predicted_actions = action_head.module.predict_action(actions_hidden_states)
+            
+            # [WEIGHTED LOSS FOR EOS] Split base actions (7D) and EOS flag (8th dimension)
+            # This addresses class imbalance: EOS=1 samples are only 1-5% of training data
+            base_pred = predicted_actions[..., :BASE_ACTION_DIM]  # First 7 dims
+            base_gt = ground_truth_actions[..., :BASE_ACTION_DIM]
+            eos_pred = predicted_actions[..., BASE_ACTION_DIM:]  # 8th dim (EOS flag)
+            eos_gt = ground_truth_actions[..., BASE_ACTION_DIM:]
+            
+            # Compute separate losses
+            base_loss = torch.nn.L1Loss()(base_pred, base_gt)
+            eos_loss = torch.nn.L1Loss()(eos_pred, eos_gt)
+            
+            # Weighted combination: give EOS dimension higher weight to combat class imbalance
+            # EOS_WEIGHT=20 is recommended for ~2% EOS=1 samples (50x imbalance)
+            # Adjust based on your data: 10 for 5% EOS=1, 50 for 1% EOS=1
+            EOS_WEIGHT = 20.0
+            loss = base_loss + EOS_WEIGHT * eos_loss
+            
+            # Store component losses for monitoring
+            base_loss_value = base_loss.item()
+            eos_loss_value = eos_loss.item()
+
+        if use_diffusion:
+            # Predict noise
+            noise_pred = action_head.module.predict_noise(actions_hidden_states)
+            # Get diffusion noise prediction MSE loss
+            noise_pred = noise_pred.reshape(noise.shape)
+            loss = nn.functional.mse_loss(noise_pred, noise, reduction="mean")
+
+            # Only sample actions and compute L1 losses if specified
+            if compute_diffusion_l1:
+                with torch.no_grad():
+                    predicted_actions = run_diffusion_sampling(
+                        vla=vla,
+                        action_head=action_head,
+                        noisy_action_projector=noisy_action_projector,
+                        proprio_projector=proprio_projector,
+                        batch=batch,
+                        batch_size=batch_size,
+                        num_patches=num_patches,
+                        actions_shape=ground_truth_actions.shape,
+                        device_id=device_id,
+                        current_action_mask=current_action_mask,
+                        next_actions_mask=next_actions_mask,
+                        use_proprio=use_proprio,
+                        use_film=use_film,
+                    )
+
+        # Prepare metrics dict
+        metrics_dict = {"loss_value": loss.item()}
+        
+        # Add component losses if using weighted L1 regression
+        if use_l1_regression:
+            metrics_dict["base_loss"] = base_loss_value
+            metrics_dict["eos_loss"] = eos_loss_value
+            metrics_dict["eos_weight"] = EOS_WEIGHT
+        
+        metrics.update(metrics_dict)
+
+        # Get detailed L1 losses for logging
+        should_log_l1_loss = not use_diffusion or (use_diffusion and compute_diffusion_l1)
+        if should_log_l1_loss:
+            ground_truth_curr_action = ground_truth_actions[:, 0]
+            predicted_curr_action = predicted_actions[:, 0]
+            ground_truth_next_actions = ground_truth_actions[:, 1:]
+            predicted_next_actions = predicted_actions[:, 1:]
+            curr_action_l1_loss = torch.nn.L1Loss()(ground_truth_curr_action, predicted_curr_action)
+            next_actions_l1_loss = torch.nn.L1Loss()(ground_truth_next_actions, predicted_next_actions)
+            metrics.update(
+                {
+                    "curr_action_l1_loss": curr_action_l1_loss.item(),
+                    "next_actions_l1_loss": next_actions_l1_loss.item(),
+                }
+            )
+
+    # Return both the loss tensor (with gradients) and the metrics dictionary (with detached values)
+    return loss, metrics
 
 
 @dataclass
@@ -468,6 +651,9 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "curr_action_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
+        "base_loss": deque(maxlen=cfg.grad_accumulation_steps),  # For EOS weighting monitoring
+        "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),   # For EOS weighting monitoring
+        "eos_weight": deque(maxlen=cfg.grad_accumulation_steps), # For EOS weighting monitoring
     }
 
     # Start training
