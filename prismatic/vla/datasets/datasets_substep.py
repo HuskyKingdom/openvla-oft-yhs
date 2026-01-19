@@ -131,18 +131,27 @@ def get_substep_instruction(
         timestep_labels = episode_data.get("timestep_labels", [])
         
         # Find matching timestep
-        # Note: timestep_labels might not have entries for every timestep
-        # Return the APD_step for the closest previous timestep
+        # For APD_step: use closest previous timestep (for instruction continuity)
+        # For is_substep_end: use EXACT match only (for EOS detection accuracy)
         best_match = None
+        exact_match = None
+        
         for label in timestep_labels:
-            if label["timestep"] <= timestep:
+            if label["timestep"] == timestep:
+                # Exact match - use for both instruction and EOS
+                exact_match = label
+                best_match = label
+                break
+            elif label["timestep"] < timestep:
+                # Previous timestep - use for instruction only
                 best_match = label
             else:
                 break  # Assuming timestep_labels is sorted
         
         if best_match and "APD_step" in best_match:
             apd_step = best_match["APD_step"]
-            is_substep_end = best_match.get("is_substep_end", False)
+            # CRITICAL: Only use is_substep_end from exact match, not from previous timestep!
+            is_substep_end = exact_match.get("is_substep_end", False) if exact_match else False
             return apd_step, is_substep_end
         
         return default_instruction, False
