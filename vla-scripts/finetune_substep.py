@@ -271,8 +271,19 @@ def run_forward_pass(
                 eos_logits_flat = eos_logits.reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 eos_gt_flat = eos_gt.reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
                 
+                # [DEBUG] Count EOS samples in current batch
+                num_eos_positive = (eos_gt_flat > 0.5).sum().item()
+                num_eos_negative = (eos_gt_flat <= 0.5).sum().item()
+                
                 # Add samples to buffer
                 eos_buffer.add_samples(eos_logits_flat, eos_gt_flat)
+                
+                # [DEBUG] Print buffer status
+                buffer_stats_before = eos_buffer.get_stats()
+                metrics.update({
+                    'eos_batch_positive': num_eos_positive,
+                    'eos_batch_negative': num_eos_negative,
+                })
                 
                 # Check if we can compute loss
                 if eos_buffer.can_compute_loss():
@@ -751,8 +762,54 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "eos_total_updates": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_updated": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_waiting": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_batch_positive": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_batch_negative": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
+    # [EOS DEBUG] Sample batches to check EOS distribution before training
+    if cfg.use_eos_classification and distributed_state.is_main_process:
+        print(f"\n{'='*80}")
+        print(f"[EOS DEBUG] Checking EOS distribution in dataset...")
+        print(f"  Sampling first 100 batches to estimate EOS=1 ratio...")
+        
+        sample_eos_positive = 0
+        sample_eos_negative = 0
+        sample_batches = 0
+        
+        temp_dataloader = DataLoader(
+            train_dataset,
+            batch_size=cfg.batch_size,
+            sampler=None,
+            collate_fn=collator,
+            num_workers=0,
+        )
+        
+        for sample_idx, sample_batch in enumerate(temp_dataloader):
+            if sample_idx >= 100:  # Sample 100 batches
+                break
+            if "eos_labels" in sample_batch:
+                eos_gt = sample_batch["eos_labels"]
+                sample_eos_positive += (eos_gt > 0.5).sum().item()
+                sample_eos_negative += (eos_gt <= 0.5).sum().item()
+                sample_batches += 1
+        
+        total_samples = sample_eos_positive + sample_eos_negative
+        eos_ratio = sample_eos_positive / total_samples if total_samples > 0 else 0
+        
+        print(f"  Sampled {sample_batches} batches, {total_samples} total action samples")
+        print(f"  EOS=1: {sample_eos_positive} ({eos_ratio*100:.2f}%)")
+        print(f"  EOS=0: {sample_eos_negative} ({(1-eos_ratio)*100:.2f}%)")
+        print(f"  Average EOS=1 per batch: {sample_eos_positive/sample_batches:.2f}")
+        print(f"  Estimated batches to reach {cfg.eos_target_positive} EOS=1: "
+              f"{cfg.eos_target_positive / (sample_eos_positive/sample_batches):.0f}")
+        
+        if eos_ratio < 0.01:
+            print(f"  ⚠️  WARNING: EOS=1 ratio is very low ({eos_ratio*100:.2f}%)!")
+            print(f"  Consider reducing eos_target_positive or checking substep labels")
+        print(f"{'='*80}\n")
+        
+        del temp_dataloader  # Free memory
+    
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
@@ -802,6 +859,37 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
             if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
                 log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
+                
+                # [EOS DEBUG] Print EOS buffer status every 50 steps
+                if cfg.use_eos_classification and eos_buffer is not None and log_step % 50 == 0:
+                    buffer_stats = eos_buffer.get_stats()
+                    eos_pos_in_buffer = buffer_stats['buffer_positive']
+                    eos_neg_in_buffer = buffer_stats['buffer_negative']
+                    total_pos_seen = buffer_stats['total_positive_seen']
+                    total_neg_seen = buffer_stats['total_negative_seen']
+                    total_updates = buffer_stats['total_updates']
+                    
+                    # Calculate average from recent batches
+                    avg_batch_pos = smoothened_metrics.get('eos_batch_positive', 0)
+                    avg_batch_neg = smoothened_metrics.get('eos_batch_negative', 0)
+                    
+                    print(f"\n{'='*80}")
+                    print(f"[EOS DEBUG] Step {log_step}")
+                    print(f"  Per-batch average: {avg_batch_pos:.2f} EOS=1, {avg_batch_neg:.2f} EOS=0")
+                    print(f"  Buffer status: {eos_pos_in_buffer}/{cfg.eos_target_positive} positive, "
+                          f"{eos_neg_in_buffer}/{cfg.eos_target_negative} negative")
+                    print(f"  Total seen: {total_pos_seen} positive, {total_neg_seen} negative")
+                    print(f"  Total updates: {total_updates}")
+                    print(f"  Need: {cfg.eos_target_positive - eos_pos_in_buffer} more positive, "
+                          f"{cfg.eos_target_negative - eos_neg_in_buffer} more negative")
+                    
+                    # Estimate steps needed
+                    if avg_batch_pos > 0:
+                        steps_for_pos = (cfg.eos_target_positive - eos_pos_in_buffer) / avg_batch_pos
+                        print(f"  Estimated steps until update: ~{int(steps_for_pos)} steps (if positive rate holds)")
+                    else:
+                        print(f"  WARNING: No EOS=1 samples in recent batches!")
+                    print(f"{'='*80}\n")
 
             # [If applicable] Linearly warm up learning rate from 10% to 100% of original
             if cfg.lr_warmup_steps > 0:
