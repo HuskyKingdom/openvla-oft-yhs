@@ -297,7 +297,7 @@ def run_forward_pass(
                             'eos_buffer_positive': buffer_stats['buffer_positive'],
                             'eos_buffer_negative': buffer_stats['buffer_negative'],
                             'eos_total_updates': buffer_stats['total_updates'],
-                            'eos_updated': True,
+                            'eos_updated': 1.0,  # Convert to float for wandb
                         })
                         metrics.update(eos_metrics)
                 else:
@@ -306,8 +306,8 @@ def run_forward_pass(
                     metrics.update({
                         'eos_buffer_positive': buffer_stats['buffer_positive'],
                         'eos_buffer_negative': buffer_stats['buffer_negative'],
-                        'eos_waiting': True,
-                        'eos_updated': False,
+                        'eos_waiting': 1.0,      # Convert to float for wandb
+                        'eos_updated': 0.0,      # Convert to float for wandb
                     })
             else:
                 # No EOS labels in batch (shouldn't happen with SubstepRLDSDataset)
@@ -738,6 +738,19 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "curr_action_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
+        # EOS classification metrics
+        "action_loss": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),
+        "total_loss": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_precision": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_recall": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_f1": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_buffer_positive": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_buffer_negative": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_total_updates": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_updated": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_waiting": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
     # Start training
