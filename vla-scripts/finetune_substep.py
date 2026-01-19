@@ -770,45 +770,71 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
     if cfg.use_eos_classification and distributed_state.is_main_process:
         print(f"\n{'='*80}")
         print(f"[EOS DEBUG] Checking EOS distribution in dataset...")
-        print(f"  Sampling first 100 batches to estimate EOS=1 ratio...")
+        print(f"  Sampling first 50 batches to estimate EOS=1 ratio...")
         
         sample_eos_positive = 0
         sample_eos_negative = 0
         sample_batches = 0
         
-        temp_dataloader = DataLoader(
-            train_dataset,
-            batch_size=cfg.batch_size,
-            sampler=None,
-            collate_fn=collator,
-            num_workers=0,
-        )
+        try:
+            # Use the same dataloader (don't create a new one)
+            temp_iter = iter(train_dataset)
+            
+            for sample_idx in range(50):  # Sample 50 batches
+                try:
+                    sample_batch = next(temp_iter)
+                    
+                    # Check if eos_labels exist
+                    if "eos_labels" in sample_batch:
+                        eos_gt = sample_batch["eos_labels"]
+                        # Convert to numpy if it's a tensor
+                        if isinstance(eos_gt, torch.Tensor):
+                            eos_gt = eos_gt.numpy()
+                        elif not isinstance(eos_gt, np.ndarray):
+                            eos_gt = np.array(eos_gt)
+                        
+                        sample_eos_positive += (eos_gt > 0.5).sum()
+                        sample_eos_negative += (eos_gt <= 0.5).sum()
+                        sample_batches += 1
+                    else:
+                        print(f"  ⚠️  WARNING: Batch {sample_idx} has no 'eos_labels' field!")
+                        break
+                        
+                except StopIteration:
+                    print(f"  Dataset exhausted after {sample_batches} batches")
+                    break
+            
+            if sample_batches > 0:
+                total_samples = sample_eos_positive + sample_eos_negative
+                eos_ratio = sample_eos_positive / total_samples if total_samples > 0 else 0
+                avg_pos_per_batch = sample_eos_positive / sample_batches
+                
+                print(f"  Sampled {sample_batches} batches, {total_samples} total action samples")
+                print(f"  EOS=1: {sample_eos_positive} ({eos_ratio*100:.2f}%)")
+                print(f"  EOS=0: {sample_eos_negative} ({(1-eos_ratio)*100:.2f}%)")
+                print(f"  Average EOS=1 per batch: {avg_pos_per_batch:.2f}")
+                
+                if avg_pos_per_batch > 0:
+                    batches_needed = cfg.eos_target_positive / avg_pos_per_batch
+                    print(f"  Estimated batches to reach {cfg.eos_target_positive} EOS=1: {batches_needed:.0f}")
+                else:
+                    print(f"  ⚠️  WARNING: No EOS=1 samples found in sampled batches!")
+                
+                if eos_ratio < 0.01:
+                    print(f"  ⚠️  WARNING: EOS=1 ratio is very low ({eos_ratio*100:.2f}%)!")
+                    print(f"  Suggestions:")
+                    print(f"    1. Check substep_labels file has 'is_substep_end' marked")
+                    print(f"    2. Try: --eos_target_positive=5 --eos_target_negative=10")
+                    print(f"    3. Verify use_substep_eos=True")
+            else:
+                print(f"  ⚠️  ERROR: Could not sample any batches from dataset!")
+                print(f"  Check that SubstepRLDSDataset is properly configured")
+                
+        except Exception as e:
+            print(f"  ⚠️  ERROR during sampling: {e}")
+            print(f"  Skipping EOS distribution check...")
         
-        for sample_idx, sample_batch in enumerate(temp_dataloader):
-            if sample_idx >= 100:  # Sample 100 batches
-                break
-            if "eos_labels" in sample_batch:
-                eos_gt = sample_batch["eos_labels"]
-                sample_eos_positive += (eos_gt > 0.5).sum().item()
-                sample_eos_negative += (eos_gt <= 0.5).sum().item()
-                sample_batches += 1
-        
-        total_samples = sample_eos_positive + sample_eos_negative
-        eos_ratio = sample_eos_positive / total_samples if total_samples > 0 else 0
-        
-        print(f"  Sampled {sample_batches} batches, {total_samples} total action samples")
-        print(f"  EOS=1: {sample_eos_positive} ({eos_ratio*100:.2f}%)")
-        print(f"  EOS=0: {sample_eos_negative} ({(1-eos_ratio)*100:.2f}%)")
-        print(f"  Average EOS=1 per batch: {sample_eos_positive/sample_batches:.2f}")
-        print(f"  Estimated batches to reach {cfg.eos_target_positive} EOS=1: "
-              f"{cfg.eos_target_positive / (sample_eos_positive/sample_batches):.0f}")
-        
-        if eos_ratio < 0.01:
-            print(f"  ⚠️  WARNING: EOS=1 ratio is very low ({eos_ratio*100:.2f}%)!")
-            print(f"  Consider reducing eos_target_positive or checking substep labels")
         print(f"{'='*80}\n")
-        
-        del temp_dataloader  # Free memory
     
     # Start training
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:

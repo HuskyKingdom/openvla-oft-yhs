@@ -242,7 +242,19 @@ class SubstepRLDSBatchTransform:
         # Check EACH action position to see if it's a substep end
         eos_labels = np.zeros((num_actions, 1), dtype=np.float32)
         
+        # [DEBUG] Track if we found any EOS markers
+        eos_found_count = 0
+        
         if self.use_substep_eos:
+            # [DEBUG] Check if substep_labels is loaded
+            if not hasattr(self, '_eos_debug_logged'):
+                self._eos_debug_logged = True
+                if not self.substep_labels:
+                    overwatch.warning("[EOS DEBUG] substep_labels is empty!")
+                else:
+                    suite_names = list(self.substep_labels.keys())
+                    overwatch.info(f"[EOS DEBUG] substep_labels loaded with suites: {suite_names[:3]}...")
+            
             # Check each position in the action chunk
             for i in range(num_actions):
                 future_timestep = timestep + i
@@ -259,6 +271,17 @@ class SubstepRLDSBatchTransform:
                 
                 if is_future_substep_end:
                     eos_labels[i, 0] = 1.0  # Mark this position as substep end
+                    eos_found_count += 1
+                    
+                    # [DEBUG] Log first few EOS detections
+                    if not hasattr(self, '_eos_found_count'):
+                        self._eos_found_count = 0
+                    self._eos_found_count += 1
+                    if self._eos_found_count <= 5:
+                        overwatch.info(
+                            f"[EOS DEBUG] Found EOS at episode={episode_id}, timestep={future_timestep}, "
+                            f"chunk_pos={i}, dataset={dataset_name}, task={original_instruction[:30]}"
+                        )
         
         # Log if substep instruction was successfully retrieved
         if substep_instruction != original_instruction:

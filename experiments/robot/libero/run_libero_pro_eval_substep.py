@@ -499,7 +499,7 @@ def save_rollout_video_with_substep_info(
             switch_color = (150, 100, 255)  # Purple (BGR)
             switch_text = ">>> EOS-triggered substep switch <<<"
             cv2.putText(img_bgr, switch_text, (10, y_offset), font, font_scale, switch_color, font_thickness, cv2.LINE_AA)
-            y_offset += line_spacing
+        y_offset += line_spacing
         
         # Line 5: Frame info
         frame_text = f"Frame: {frame_idx+1}/{len(rollout_images)}"
@@ -570,7 +570,7 @@ def run_episode(
             log_file
         )
         cfg.use_eos_detection = False
-    
+
     # Initialize SubstepManager if enabled
     substep_manager = None
     if cfg.use_substep_decomposition and llm_model is not None:
@@ -686,7 +686,7 @@ def run_episode(
         
         # Method 1: EOS-based substep switching (higher priority)
         if cfg.use_eos_detection and force_requery_after_queue and len(action_queue) == 0:
-            if substep_manager is not None:
+        if substep_manager is not None:
                 substep_manager.advance_substep()
                 progress_info = substep_manager.get_progress_info()
                 log_message(
@@ -807,18 +807,18 @@ def run_episode(
                     actions = result if not isinstance(result, tuple) else result[0]
             else:
                 # Standard action query without EOS detection
-                actions = get_action(
-                    cfg,
-                    model,
-                    observation,
-                    current_instruction,  # Use dynamic instruction (substep or original)
-                    processor=processor,
-                    action_head=action_head,
-                    proprio_projector=proprio_projector,
-                    noisy_action_projector=noisy_action_projector,
-                    use_film=cfg.use_film,
-                    h_head=head,
-                )
+            actions = get_action(
+                cfg,
+                model,
+                observation,
+                current_instruction,  # Use dynamic instruction (substep or original)
+                processor=processor,
+                action_head=action_head,
+                proprio_projector=proprio_projector,
+                noisy_action_projector=noisy_action_projector,
+                use_film=cfg.use_film,
+                h_head=head,
+            )
             
             action_queue.extend(actions)
             actions_accum.append(actions)
