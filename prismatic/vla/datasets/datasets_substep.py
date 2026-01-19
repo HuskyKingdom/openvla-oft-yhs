@@ -238,6 +238,28 @@ class SubstepRLDSBatchTransform:
         num_actions = actions.shape[0]
         current_action = actions[0]  # First action
         
+        # [EOS CLASSIFICATION] Generate EOS labels for each action in chunk
+        # Check EACH action position to see if it's a substep end
+        eos_labels = np.zeros((num_actions, 1), dtype=np.float32)
+        
+        if self.use_substep_eos:
+            # Check each position in the action chunk
+            for i in range(num_actions):
+                future_timestep = timestep + i
+                
+                # Query is_substep_end flag for this future timestep
+                _, is_future_substep_end = get_substep_instruction(
+                    self.substep_labels,
+                    dataset_name,
+                    original_instruction,
+                    episode_id,
+                    future_timestep,
+                    default_instruction=original_instruction,
+                )
+                
+                if is_future_substep_end:
+                    eos_labels[i, 0] = 1.0  # Mark this position as substep end
+        
         # Log if substep instruction was successfully retrieved
         if substep_instruction != original_instruction:
             overwatch.debug(
@@ -298,13 +320,14 @@ class SubstepRLDSBatchTransform:
         if not self.predict_stop_token and not (self.use_substep_eos and is_substep_end):
             labels[-1] = IGNORE_INDEX
         
-        # Return dict with 8D actions (including EOS flag) for ground truth
+        # Return dict with actions and separate EOS labels
         return_dict = dict(
             pixel_values=pixel_values,
             input_ids=input_ids,
             labels=labels,
             dataset_name=dataset_name,
-            actions=actions,  # Shape: (num_actions, 8) - includes EOS flag
+            actions=actions,       # Shape: (num_actions, 7) - base actions only
+            eos_labels=eos_labels, # Shape: (num_actions, 1) - EOS flags for classification
         )
         
         # Add additional inputs

@@ -114,12 +114,16 @@ def run_forward_pass(
     num_patches,
     compute_diffusion_l1=False,
     num_diffusion_steps_train=None,
+    eos_head=None,          # EOS classification head (optional)
+    eos_buffer=None,        # EOS buffer manager (optional)
+    lambda_eos=1.0,         # EOS loss weight
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
     """
-    Compute model forward pass with EOS-weighted loss for substep training.
+    Compute model forward pass with optional EOS classification.
     
-    This is an extended version of the original run_forward_pass that adds
-    weighted loss for EOS dimension to address class imbalance in substep training.
+    This version supports:
+    - Standard action prediction (L1 regression or diffusion)
+    - Optional separate EOS classification head with batch accumulation balancing
     """
     metrics = {}
 
@@ -249,8 +253,79 @@ def run_forward_pass(
                 }
             )
 
-    # Return both the loss tensor (with gradients) and the metrics dictionary (with detached values)
-    return loss, metrics
+    # [EOS CLASSIFICATION] Compute EOS loss with batch accumulation if enabled
+    eos_loss = torch.tensor(0.0, device=device_id)
+    eos_updated = False
+    
+    if eos_head is not None and eos_buffer is not None:
+        # EOS head only works with L1 regression or diffusion (requires actions_hidden_states)
+        if use_l1_regression or use_diffusion:
+            # Get EOS logits from the separate head
+            eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
+            
+            # Get ground truth EOS labels from batch
+            if "eos_labels" in batch:
+                eos_gt = batch["eos_labels"].to(device_id).to(torch.float32)  # (B, NUM_ACTIONS_CHUNK, 1)
+                
+                # Flatten for buffer processing
+                eos_logits_flat = eos_logits.reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
+                eos_gt_flat = eos_gt.reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
+                
+                # Add samples to buffer
+                eos_buffer.add_samples(eos_logits_flat, eos_gt_flat)
+                
+                # Check if we can compute loss
+                if eos_buffer.can_compute_loss():
+                    # Get balanced batch from buffer
+                    balanced_logits, balanced_labels = eos_buffer.get_balanced_batch()
+                    
+                    # Compute standard BCE loss (no weights needed - batch is balanced!)
+                    from prismatic.models.action_heads import compute_classification_metrics
+                    loss_fn = nn.BCEWithLogitsLoss()
+                    eos_loss = loss_fn(balanced_logits, balanced_labels)
+                    eos_updated = True
+                    
+                    # Compute classification metrics
+                    with torch.no_grad():
+                        eos_pred = torch.sigmoid(balanced_logits) > 0.5
+                        eos_metrics = compute_classification_metrics(
+                            eos_pred, balanced_labels > 0.5
+                        )
+                        # Add buffer statistics
+                        buffer_stats = eos_buffer.get_stats()
+                        eos_metrics.update({
+                            'eos_buffer_positive': buffer_stats['buffer_positive'],
+                            'eos_buffer_negative': buffer_stats['buffer_negative'],
+                            'eos_total_updates': buffer_stats['total_updates'],
+                            'eos_updated': True,
+                        })
+                        metrics.update(eos_metrics)
+                else:
+                    # Buffer not ready, log waiting status
+                    buffer_stats = eos_buffer.get_stats()
+                    metrics.update({
+                        'eos_buffer_positive': buffer_stats['buffer_positive'],
+                        'eos_buffer_negative': buffer_stats['buffer_negative'],
+                        'eos_waiting': True,
+                        'eos_updated': False,
+                    })
+            else:
+                # No EOS labels in batch (shouldn't happen with SubstepRLDSDataset)
+                metrics.update({'eos_no_labels': True})
+    
+    # Combine action loss and EOS loss
+    action_loss = loss  # Rename for clarity
+    total_loss = action_loss + lambda_eos * eos_loss
+    
+    # Update metrics
+    metrics.update({
+        'action_loss': action_loss.item(),
+        'eos_loss': eos_loss.item(),
+        'total_loss': total_loss.item(),
+    })
+    
+    # Return both the total loss tensor (with gradients) and the metrics dictionary (with detached values)
+    return total_loss, metrics
 
 
 @dataclass
@@ -313,6 +388,15 @@ class FinetuneSubstepConfig:
 
     # Substep EOS training
     use_substep_eos: bool = True                     # If True, inserts EOS token at substep boundaries for training
+    
+    # EOS Classification (separate head with balanced batch accumulation)
+    use_eos_classification: bool = True              # If True, uses separate EOS classification head
+    eos_target_positive: int = 20                    # Target number of EOS=1 samples to accumulate before update
+    eos_target_negative: int = 35                    # Target number of EOS=0 samples to accumulate before update
+    eos_hidden_dim: int = 1024                       # Hidden dimension for EOS classification head
+    eos_dropout: float = 0.1                         # Dropout rate for EOS classification head
+    lambda_eos: float = 1.0                          # Weight for EOS loss in total loss
+    eos_threshold: float = 0.5                       # Threshold for EOS detection during inference
 
     # fmt: on
 
@@ -520,6 +604,36 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.module.llm_dim}
         )
 
+    # If applicable, instantiate EOS classification head and buffer manager
+    eos_head = None
+    eos_buffer = None
+    if cfg.use_eos_classification:
+        print(f"[EOS Classification] Initializing separate EOS head with buffer accumulation")
+        print(f"  Target samples: {cfg.eos_target_positive} positive + {cfg.eos_target_negative} negative")
+        
+        from prismatic.models.action_heads import EOSClassificationHead, EOSBufferManager
+        
+        # Initialize EOS classification head
+        eos_head = init_module(
+            EOSClassificationHead,
+            "eos_head",
+            cfg,
+            device_id,
+            {
+                "input_dim": vla.module.llm_dim,
+                "hidden_dim": cfg.eos_hidden_dim,
+                "dropout": cfg.eos_dropout,
+            },
+            to_bf16=True,
+        )
+        
+        # Initialize buffer manager (not a nn.Module, just a helper class)
+        eos_buffer = EOSBufferManager(
+            target_positive=cfg.eos_target_positive,
+            target_negative=cfg.eos_target_negative,
+            device=device_id,
+        )
+
     # Get number of vision patches
     NUM_PATCHES = vla.module.vision_backbone.get_num_patches() * vla.module.vision_backbone.get_num_images_in_input()
     # If we have proprio inputs, a single proprio embedding is appended to the end of the vision patch embeddings
@@ -537,6 +651,8 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         trainable_params += [param for param in noisy_action_projector.parameters() if param.requires_grad]
     if cfg.use_proprio:
         trainable_params += [param for param in proprio_projector.parameters() if param.requires_grad]
+    if cfg.use_eos_classification:
+        trainable_params += [param for param in eos_head.parameters() if param.requires_grad]
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
 
@@ -647,6 +763,9 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                 num_patches=NUM_PATCHES,
                 compute_diffusion_l1=compute_diffusion_l1,
                 num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
+                eos_head=eos_head if cfg.use_eos_classification else None,
+                eos_buffer=eos_buffer if cfg.use_eos_classification else None,
+                lambda_eos=cfg.lambda_eos,
             )
 
             # Normalize loss to account for gradient accumulation
