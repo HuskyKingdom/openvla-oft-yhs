@@ -231,51 +231,12 @@ class SubstepRLDSBatchTransform:
             default_instruction=original_instruction,  # Fallback to original if not found
         )
         
-        # [CRITICAL] Extend actions with EOS flag (8th dimension)
-        # Original actions shape: (num_actions, 7) - [xyz, rotation, gripper]
-        # Extended actions shape: (num_actions, 8) - [xyz, rotation, gripper, eos_flag]
-        # EOS flag = 1.0 at substep end, 0.0 otherwise
+        # Get actions from batch
         import numpy as np
-        from prismatic.vla.constants import BASE_ACTION_DIM
         
-        base_actions = rlds_batch["action"]  # Shape: (num_actions, 7)
-        num_actions = base_actions.shape[0]
-        
-        # Create EOS flags: check EACH action in chunk to see if it's a substep end
-        # CRITICAL: Must check all future timesteps in the action chunk, not just current timestep
-        eos_flags = np.zeros((num_actions, 1), dtype=base_actions.dtype)
-        
-        if self.use_substep_eos:
-            # Check each position in the action chunk
-            for i in range(num_actions):
-                future_timestep = timestep + i
-                
-                # Query is_substep_end flag using the same function as substep instruction
-                # This ensures consistent data access logic for the 3-level nested structure:
-                # substep_labels[suite_name][task_name][episode_key]["timestep_labels"]
-                _, is_future_substep_end = get_substep_instruction(
-                    self.substep_labels,
-                    dataset_name,
-                    original_instruction,
-                    episode_id,
-                    future_timestep,
-                    default_instruction=original_instruction,
-                )
-                
-                if is_future_substep_end:
-                    eos_flags[i, 0] = 1.0  # Mark this position as substep end
-                    # Note: Continue checking remaining positions in case there are multiple
-                    # substep boundaries in the same action chunk
-        
-        # [DEBUG] Track EOS label statistics (for potential future monitoring)
-        if self.use_substep_eos:
-            num_eos_positive_in_sample = (eos_flags > 0.5).sum()
-            self.total_samples_generated += 1
-            self.total_eos_positive_generated += num_eos_positive_in_sample
-        
-        # Concatenate base actions with EOS flag
-        actions = np.concatenate([base_actions, eos_flags], axis=1)  # Shape: (num_actions, 8)
-        current_action = actions[0]  # First action with EOS flag
+        actions = rlds_batch["action"]  # Shape: (num_actions, 7)
+        num_actions = actions.shape[0]
+        current_action = actions[0]  # First action
         
         # Log if substep instruction was successfully retrieved
         if substep_instruction != original_instruction:
@@ -291,14 +252,11 @@ class SubstepRLDSBatchTransform:
         prompt_builder = self.prompt_builder_fn("openvla")
         
         # Get future action chunk
-        # CRITICAL: action_tokenizer only handles BASE_ACTION_DIM (7), not ACTION_DIM (8)
-        # We only tokenize the first 7 dimensions, EOS flag (dim 8) is for ground truth only
-        from prismatic.vla.constants import BASE_ACTION_DIM
-        future_actions = actions[1:, :BASE_ACTION_DIM]  # Only first 7 dims
+        future_actions = actions[1:]
         future_actions_string = ''.join(self.action_tokenizer(future_actions))
         
-        # Get action chunk string (only first 7 dims)
-        current_action_string = self.action_tokenizer(current_action[:BASE_ACTION_DIM])
+        # Get action chunk string
+        current_action_string = self.action_tokenizer(current_action)
         action_chunk_string = current_action_string + future_actions_string
         
         # Insert EOS token at substep boundary if enabled

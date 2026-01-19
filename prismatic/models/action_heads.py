@@ -82,16 +82,7 @@ class MLPResNet(nn.Module):
 
 
 class L1RegressionActionHead(nn.Module):
-    """
-    Simple MLP-based action head that generates continuous actions via L1 regression.
-    
-    Note: ACTION_DIM now includes EOS flag as the last dimension.
-    Input: hidden states from BASE_ACTION_DIM tokens (7, excluding EOS token)
-    Output: predictions for ACTION_DIM values (8, including EOS flag)
-    
-    This is because during training, action tokens (7 dims) are selected by mask,
-    but EOS token is not included in the mask (EOS token ID < ACTION_TOKEN_BEGIN_IDX).
-    """
+    """Simple MLP-based action head that generates continuous actions via L1 regression."""
     def __init__(
         self,
         input_dim=4096,
@@ -104,39 +95,24 @@ class L1RegressionActionHead(nn.Module):
             action_dim = ACTION_DIM
         self.action_dim = action_dim
         
-        # CRITICAL: input_dim is based on BASE_ACTION_DIM (7), not ACTION_DIM (8)
-        # because EOS token is not included in action_mask during training
-        from prismatic.vla.constants import BASE_ACTION_DIM
         self.model = MLPResNet(
             num_blocks=2, 
-            input_dim=input_dim*BASE_ACTION_DIM,  # Use BASE_ACTION_DIM (7) for input
+            input_dim=input_dim*action_dim,
             hidden_dim=hidden_dim, 
-            output_dim=action_dim  # Output ACTION_DIM (8) including EOS
+            output_dim=action_dim
         )
 
     def predict_action(self, actions_hidden_states):
         # actions_hidden_states: last hidden states of Transformer corresponding to action tokens in sequence
-        # - shape: (batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, hidden_dim)
-        #   Note: Only BASE_ACTION_DIM (7) tokens per action, EOS not included in mask
+        # - shape: (batch_size, NUM_ACTIONS_CHUNK * action_dim, hidden_dim)
         # Output:
-        # - shape: (batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM)
-        #   Note: Predicts ACTION_DIM (8) values including EOS flag
+        # - shape: (batch_size, NUM_ACTIONS_CHUNK, action_dim)
         batch_size = actions_hidden_states.shape[0]
         device = actions_hidden_states.device
-        # Reshape: (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, hidden_dim) 
-        #       -> (B, NUM_ACTIONS_CHUNK, BASE_ACTION_DIM * hidden_dim)
+        # Reshape: (B, NUM_ACTIONS_CHUNK * action_dim, hidden_dim) 
+        #       -> (B, NUM_ACTIONS_CHUNK, action_dim * hidden_dim)
         rearranged_actions_hidden_states = actions_hidden_states.reshape(batch_size, NUM_ACTIONS_CHUNK, -1)
-        # Model predicts ACTION_DIM (8) values from BASE_ACTION_DIM (7) tokens
         action = self.model(rearranged_actions_hidden_states)
-        
-        # [CRITICAL] Apply sigmoid to EOS flag (8th dimension) to constrain to [0, 1]
-        # This prevents numerical instability from unbounded EOS predictions
-        from prismatic.vla.constants import BASE_ACTION_DIM
-        if self.action_dim > BASE_ACTION_DIM:
-            # Split: first 7 dims (base actions) + 8th dim (EOS flag)
-            base_actions = action[..., :BASE_ACTION_DIM]
-            eos_flag = torch.sigmoid(action[..., BASE_ACTION_DIM:])  # Constrain to [0, 1]
-            action = torch.cat([base_actions, eos_flag], dim=-1)
         
         return action
 
@@ -196,12 +172,10 @@ class DiffusionActionHead(nn.Module):
             action_dim = ACTION_DIM
         self.action_dim = action_dim
         
-        # CRITICAL: Use BASE_ACTION_DIM (7) for transformer hidden dim
-        from prismatic.vla.constants import BASE_ACTION_DIM
         self.noise_predictor = NoisePredictionModel(
-            transformer_hidden_dim=hidden_dim*BASE_ACTION_DIM,  # Use BASE_ACTION_DIM
+            transformer_hidden_dim=hidden_dim*action_dim,
             hidden_dim=hidden_dim, 
-            action_dim=action_dim  # Output ACTION_DIM including EOS
+            action_dim=action_dim
         )
         self.num_diffusion_steps_train = num_diffusion_steps_train
         self.noise_scheduler = DDIMScheduler(num_train_timesteps=num_diffusion_steps_train, beta_schedule="squaredcos_cap_v2")

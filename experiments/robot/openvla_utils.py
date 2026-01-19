@@ -1285,12 +1285,7 @@ def get_vla_action(
 
 
     # Return action chunk as list of actions
-    # Note: actions are now 8D (with EOS flag at index 7)
-    # Extract only first 7 dimensions for actual robot control
-    from prismatic.vla.constants import BASE_ACTION_DIM
-    
-    # Extract base actions (first 7 dims) for robot execution
-    actions_list = [action[i, :BASE_ACTION_DIM] for i in range(len(action))]
+    actions_list = [action[i] for i in range(len(action))]
     
     if return_eos_info:
         # Return actions with EOS detection info

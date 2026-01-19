@@ -191,84 +191,17 @@ def run_forward_pass(
         text_hidden_states = last_hidden_states[:, num_patches:-1]
         # Get hidden states for action portion of response
         batch_size = batch["input_ids"].shape[0]
-        # CRITICAL: Use BASE_ACTION_DIM (7) not ACTION_DIM (8)
-        # because EOS token is not included in action mask (EOS token_id < ACTION_TOKEN_BEGIN_IDX)
-        from prismatic.vla.constants import BASE_ACTION_DIM
         actions_hidden_states = (
             text_hidden_states[current_action_mask | next_actions_mask]
-            .reshape(batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, -1)
+            .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
             .to(torch.bfloat16)
-        )  # (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, D)
+        )  # (B, NUM_ACTIONS_CHUNK * ACTION_DIM, D)
 
         if use_l1_regression:
             # Predict action
             predicted_actions = action_head.module.predict_action(actions_hidden_states)
-            
-            # [SAMPLE-LEVEL WEIGHTED LOSS FOR EOS] Split base actions (7D) and EOS flag (8th dimension)
-            # This addresses class imbalance: EOS=1 samples are only 1-5% of training data
-            base_pred = predicted_actions[..., :BASE_ACTION_DIM]  # First 7 dims
-            base_gt = ground_truth_actions[..., :BASE_ACTION_DIM]
-            eos_pred = predicted_actions[..., BASE_ACTION_DIM:]  # 8th dim (EOS flag)
-            eos_gt = ground_truth_actions[..., BASE_ACTION_DIM:]
-            
-            # Compute base loss (standard L1)
-            base_loss = torch.nn.L1Loss()(base_pred, base_gt)
-            
-            # Compute sample-level weighted EOS loss
-            # Key insight: Weight each sample individually, not the entire loss
-            # This ensures minority class (EOS=1) samples contribute significantly to gradients
-            eos_errors = torch.abs(eos_pred - eos_gt)  # Per-sample L1 errors
-            eos_weights = torch.ones_like(eos_gt)      # Initialize all weights to 1.0
-            eos_weights[eos_gt > 0.5] = 50.0           # EOS=1 samples get 50x weight
-            eos_loss = (eos_errors * eos_weights).mean()  # Weighted average
-            
-            # Combined loss (no additional global weight needed)
-            loss = base_loss + eos_loss
-            
-            # Store component losses for monitoring
-            base_loss_value = base_loss.item()
-            eos_loss_value = eos_loss.item()
-            
-            # [EOS TRAINING DEBUG] Detailed statistics for diagnosing loss collapse
-            num_eos_positive = (eos_gt > 0.5).sum().item()  # Count EOS=1 samples
-            num_eos_negative = (eos_gt <= 0.5).sum().item()  # Count EOS=0 samples
-            total_samples = eos_gt.numel()
-            
-            # Statistics for EOS predictions
-            eos_pred_min = eos_pred.min().item()
-            eos_pred_max = eos_pred.max().item()
-            eos_pred_mean = eos_pred.mean().item()
-            
-            # Statistics for EOS ground truth
-            eos_gt_min = eos_gt.min().item()
-            eos_gt_max = eos_gt.max().item()
-            eos_gt_mean = eos_gt.mean().item()
-            
-            # Separate statistics for EOS=1 samples (if any)
-            if num_eos_positive > 0:
-                eos_pred_positive = eos_pred[eos_gt > 0.5]
-                eos_pred_positive_mean = eos_pred_positive.mean().item()
-                eos_pred_positive_min = eos_pred_positive.min().item()
-                eos_pred_positive_max = eos_pred_positive.max().item()
-                
-                eos_errors_positive = eos_errors[eos_gt > 0.5]
-                eos_loss_positive_contribution = (eos_errors_positive * 50.0).sum().item() / total_samples
-            else:
-                eos_pred_positive_mean = 0.0
-                eos_pred_positive_min = 0.0
-                eos_pred_positive_max = 0.0
-                eos_loss_positive_contribution = 0.0
-            
-            # Separate statistics for EOS=0 samples
-            if num_eos_negative > 0:
-                eos_pred_negative = eos_pred[eos_gt <= 0.5]
-                eos_pred_negative_mean = eos_pred_negative.mean().item()
-                
-                eos_errors_negative = eos_errors[eos_gt <= 0.5]
-                eos_loss_negative_contribution = (eos_errors_negative * 1.0).sum().item() / total_samples
-            else:
-                eos_pred_negative_mean = 0.0
-                eos_loss_negative_contribution = 0.0
+            # Get full L1 loss
+            loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
 
         if use_diffusion:
             # Predict noise
@@ -298,18 +231,6 @@ def run_forward_pass(
 
         # Prepare metrics dict
         metrics_dict = {"loss_value": loss.item()}
-        
-        # Add component losses if using weighted L1 regression
-        if use_l1_regression:
-            metrics_dict["base_loss"] = base_loss_value
-            metrics_dict["eos_loss"] = eos_loss_value
-            metrics_dict["eos_positive_samples"] = num_eos_positive
-            metrics_dict["eos_positive_ratio"] = num_eos_positive / total_samples
-            metrics_dict["eos_pred_mean"] = eos_pred_mean
-            metrics_dict["eos_pred_positive_mean"] = eos_pred_positive_mean
-            metrics_dict["eos_loss_positive_contrib"] = eos_loss_positive_contribution
-            metrics_dict["eos_loss_negative_contrib"] = eos_loss_negative_contribution
-        
         metrics.update(metrics_dict)
 
         # Get detailed L1 losses for logging
@@ -701,14 +622,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "curr_action_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_accuracy": deque(maxlen=cfg.grad_accumulation_steps),
         "next_actions_l1_loss": deque(maxlen=cfg.grad_accumulation_steps),
-        "base_loss": deque(maxlen=cfg.grad_accumulation_steps),  # For EOS monitoring
-        "eos_loss": deque(maxlen=cfg.grad_accumulation_steps),   # For EOS monitoring
-        "eos_positive_samples": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_positive_ratio": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_pred_mean": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_pred_positive_mean": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_loss_positive_contrib": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_loss_negative_contrib": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
     # Start training

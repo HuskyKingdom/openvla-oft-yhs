@@ -377,14 +377,11 @@ def run_forward_pass(
         text_hidden_states = last_hidden_states[:, num_patches:-1]
         # Get hidden states for action portion of response
         batch_size = batch["input_ids"].shape[0]
-        # CRITICAL: Use BASE_ACTION_DIM (7) not ACTION_DIM (8)
-        # because EOS token is not included in action mask (EOS token_id < ACTION_TOKEN_BEGIN_IDX)
-        from prismatic.vla.constants import BASE_ACTION_DIM
         actions_hidden_states = (
             text_hidden_states[current_action_mask | next_actions_mask]
-            .reshape(batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, -1)
+            .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
             .to(torch.bfloat16)
-        )  # (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, D)
+        )  # (B, NUM_ACTIONS_CHUNK * ACTION_DIM, D)
 
         if use_l1_regression:
             # Predict action
@@ -520,10 +517,9 @@ def run_diffusion_sampling(
             # Get hidden states for text portion of prompt+response (after the vision patches)
             text_hidden_states = last_hidden_states[:, num_patches:-1]
             # Get hidden states for action portion of response
-            # Use BASE_ACTION_DIM (7) not ACTION_DIM (8) - EOS not in mask
             actions_hidden_states = text_hidden_states[current_action_mask | next_actions_mask].reshape(
-                batch_size, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, -1
-            )  # (B, NUM_ACTIONS_CHUNK * BASE_ACTION_DIM, D)
+                batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1
+            )  # (B, NUM_ACTIONS_CHUNK * ACTION_DIM, D)
             actions_hidden_states = actions_hidden_states.to(torch.bfloat16)
             # Predict noise
             noise_pred = action_head.module.predict_noise(actions_hidden_states)
