@@ -142,6 +142,13 @@ class PaddedCollatorForActionPrediction:
             proprio = torch.Tensor(np.squeeze(np.stack(proprio)))
         else:
             proprio = None
+        
+        # Stack EOS labels (for EOS classification head)
+        if "eos_labels" in instances[0]:
+            eos_labels = [torch.from_numpy(np.copy(instance["eos_labels"])) for instance in instances]
+            eos_labels = torch.stack(eos_labels)
+        else:
+            eos_labels = None
 
         output = dict(
             pixel_values=pixel_values,
@@ -153,4 +160,6 @@ class PaddedCollatorForActionPrediction:
         )
         if dataset_names is not None:
             output["dataset_names"] = dataset_names
+        if eos_labels is not None:
+            output["eos_labels"] = eos_labels
         return output
