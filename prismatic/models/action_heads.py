@@ -292,37 +292,41 @@ class EOSClassificationHead(nn.Module):
 
 class EOSBufferManager:
     """
-    EOS 样本缓冲区管理器，用于批次累积平衡策略。
+    EOS 样本缓冲区管理器 - 优化版本
     
-    核心思想：
-    - 累积正负样本直到达到目标比例 (如 20:35)
-    - 返回平衡的batch用于loss计算
-    - 只有凑够样本才计算loss，否则返回0
+    核心改进：
+    1. 固定容量buffer (如 50个EOS=0 + 50个EOS=1)
+    2. 每次随机采样固定数量 (如 20个EOS=0 + 15个EOS=1)
+    3. 采样后不清空buffer，保持样本多样性
+    4. 使用deque实现FIFO，自动丢弃最旧样本
     
     优势：
-    - 精确控制正负样本比例
-    - 不需要额外的样本权重
-    - 训练更稳定
+    - 更高的训练效率（更频繁的更新）
+    - 更好的样本多样性（随机采样 + 滚动buffer）
+    - 稳定的正负样本比例
     """
     def __init__(
         self,
-        target_positive=20,    # 目标正样本数
-        target_negative=35,    # 目标负样本数
+        buffer_capacity=50,     # 每类样本的buffer容量
+        sample_positive=15,     # 每次采样的正样本数
+        sample_negative=20,     # 每次采样的负样本数
+        min_positive=15,        # 触发更新的最小正样本数
+        min_negative=20,        # 触发更新的最小负样本数
         device='cuda'
     ):
-        self.target_positive = target_positive
-        self.target_negative = target_negative
+        from collections import deque
+        
+        self.buffer_capacity = buffer_capacity
+        self.sample_positive = sample_positive
+        self.sample_negative = sample_negative
+        self.min_positive = min_positive
+        self.min_negative = min_negative
         self.device = device
         
-        # 缓冲区：存储 (logits, labels)
-        self.positive_buffer = {
-            'logits': [],
-            'labels': []
-        }
-        self.negative_buffer = {
-            'logits': [],
-            'labels': []
-        }
+        # 使用deque实现固定容量的FIFO buffer
+        # 存储单个样本的 (logit, label) 元组
+        self.positive_buffer = deque(maxlen=buffer_capacity)
+        self.negative_buffer = deque(maxlen=buffer_capacity)
         
         # 统计信息
         self.total_positive_seen = 0
@@ -345,86 +349,58 @@ class EOSBufferManager:
         positive_mask = eos_labels > 0.5
         negative_mask = eos_labels <= 0.5
         
-        # 添加到对应缓冲区
+        # 逐个添加到对应缓冲区 (deque会自动处理容量限制)
         if positive_mask.any():
             pos_logits = eos_logits[positive_mask]
             pos_labels = eos_labels[positive_mask]
-            self.positive_buffer['logits'].append(pos_logits)
-            self.positive_buffer['labels'].append(pos_labels)
+            for logit, label in zip(pos_logits, pos_labels):
+                self.positive_buffer.append((logit, label))
             self.total_positive_seen += len(pos_logits)
         
         if negative_mask.any():
             neg_logits = eos_logits[negative_mask]
             neg_labels = eos_labels[negative_mask]
-            self.negative_buffer['logits'].append(neg_logits)
-            self.negative_buffer['labels'].append(neg_labels)
+            for logit, label in zip(neg_logits, neg_labels):
+                self.negative_buffer.append((logit, label))
             self.total_negative_seen += len(neg_logits)
     
     def can_compute_loss(self):
         """检查是否累积了足够的样本"""
-        num_positive = sum(len(x) for x in self.positive_buffer['logits'])
-        num_negative = sum(len(x) for x in self.negative_buffer['logits'])
-        
-        return (num_positive >= self.target_positive and 
-                num_negative >= self.target_negative)
+        return (len(self.positive_buffer) >= self.min_positive and 
+                len(self.negative_buffer) >= self.min_negative)
     
     def get_balanced_batch(self):
         """
-        获取平衡的batch并清空缓冲区
+        随机采样平衡的batch，不清空buffer
         
         Returns:
-            balanced_logits: (target_positive + target_negative,) tensor
-            balanced_labels: (target_positive + target_negative,) tensor
+            balanced_logits: (sample_positive + sample_negative,) tensor
+            balanced_labels: (sample_positive + sample_negative,) tensor
         """
-        # 合并缓冲区中的所有样本
-        all_pos_logits = torch.cat(self.positive_buffer['logits'])
-        all_pos_labels = torch.cat(self.positive_buffer['labels'])
-        all_neg_logits = torch.cat(self.negative_buffer['logits'])
-        all_neg_labels = torch.cat(self.negative_buffer['labels'])
+        import random
         
-        # 随机采样目标数量
-        pos_indices = torch.randperm(len(all_pos_logits), device=self.device)[:self.target_positive]
-        neg_indices = torch.randperm(len(all_neg_logits), device=self.device)[:self.target_negative]
+        # 从buffer中随机采样（不移除样本）
+        pos_samples = random.sample(list(self.positive_buffer), self.sample_positive)
+        neg_samples = random.sample(list(self.negative_buffer), self.sample_negative)
         
-        sampled_pos_logits = all_pos_logits[pos_indices]
-        sampled_pos_labels = all_pos_labels[pos_indices]
-        sampled_neg_logits = all_neg_logits[neg_indices]
-        sampled_neg_labels = all_neg_labels[neg_indices]
+        # 解包样本
+        pos_logits, pos_labels = zip(*pos_samples)
+        neg_logits, neg_labels = zip(*neg_samples)
+        
+        # 转换为tensor
+        pos_logits = torch.stack(list(pos_logits))
+        pos_labels = torch.stack(list(pos_labels))
+        neg_logits = torch.stack(list(neg_logits))
+        neg_labels = torch.stack(list(neg_labels))
         
         # 合并正负样本
-        balanced_logits = torch.cat([sampled_pos_logits, sampled_neg_logits])
-        balanced_labels = torch.cat([sampled_pos_labels, sampled_neg_labels])
+        balanced_logits = torch.cat([pos_logits, neg_logits])
+        balanced_labels = torch.cat([pos_labels, neg_labels])
         
         # 随机打乱
         shuffle_indices = torch.randperm(len(balanced_logits), device=self.device)
         balanced_logits = balanced_logits[shuffle_indices]
         balanced_labels = balanced_labels[shuffle_indices]
-        
-        # 清空缓冲区（保留多余的样本）
-        if len(all_pos_logits) > self.target_positive:
-            # 找到未被选中的索引
-            all_indices = torch.arange(len(all_pos_logits), device=self.device)
-            mask = torch.ones(len(all_pos_logits), dtype=torch.bool, device=self.device)
-            mask[pos_indices] = False
-            remaining_pos = all_pos_logits[mask]
-            remaining_pos_labels = all_pos_labels[mask]
-            self.positive_buffer['logits'] = [remaining_pos]
-            self.positive_buffer['labels'] = [remaining_pos_labels]
-        else:
-            self.positive_buffer['logits'] = []
-            self.positive_buffer['labels'] = []
-        
-        if len(all_neg_logits) > self.target_negative:
-            all_indices = torch.arange(len(all_neg_logits), device=self.device)
-            mask = torch.ones(len(all_neg_logits), dtype=torch.bool, device=self.device)
-            mask[neg_indices] = False
-            remaining_neg = all_neg_logits[mask]
-            remaining_neg_labels = all_neg_labels[mask]
-            self.negative_buffer['logits'] = [remaining_neg]
-            self.negative_buffer['labels'] = [remaining_neg_labels]
-        else:
-            self.negative_buffer['logits'] = []
-            self.negative_buffer['labels'] = []
         
         self.total_updates += 1
         
@@ -432,23 +408,20 @@ class EOSBufferManager:
     
     def get_stats(self):
         """获取统计信息"""
-        num_positive = sum(len(x) for x in self.positive_buffer['logits'])
-        num_negative = sum(len(x) for x in self.negative_buffer['logits'])
-        
         return {
-            'buffer_positive': num_positive,
-            'buffer_negative': num_negative,
+            'buffer_positive': len(self.positive_buffer),
+            'buffer_negative': len(self.negative_buffer),
             'total_positive_seen': self.total_positive_seen,
             'total_negative_seen': self.total_negative_seen,
             'total_updates': self.total_updates,
-            'positive_utilization': self.total_updates * self.target_positive / max(1, self.total_positive_seen),
-            'negative_utilization': self.total_updates * self.target_negative / max(1, self.total_negative_seen),
+            'positive_utilization': self.total_updates * self.sample_positive / max(1, self.total_positive_seen),
+            'negative_utilization': self.total_updates * self.sample_negative / max(1, self.total_negative_seen),
         }
     
     def reset(self):
         """重置缓冲区"""
-        self.positive_buffer = {'logits': [], 'labels': []}
-        self.negative_buffer = {'logits': [], 'labels': []}
+        self.positive_buffer.clear()
+        self.negative_buffer.clear()
         self.total_positive_seen = 0
         self.total_negative_seen = 0
         self.total_updates = 0

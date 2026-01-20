@@ -410,11 +410,14 @@ class FinetuneSubstepConfig:
     
     # EOS Classification (separate head with balanced batch accumulation)
     use_eos_classification: bool = True              # If True, uses separate EOS classification head
-    eos_target_positive: int = 5                     # Target number of EOS=1 samples to accumulate before update (降低以加快更新频率)
-    eos_target_negative: int = 10                    # Target number of EOS=0 samples to accumulate before update (保持约1:2比例)
+    eos_buffer_capacity: int = 50                    # Maximum number of samples per class to store in buffer
+    eos_sample_positive: int = 15                    # Number of EOS=1 samples to sample per update
+    eos_sample_negative: int = 20                    # Number of EOS=0 samples to sample per update
+    eos_min_positive: int = 15                       # Minimum EOS=1 samples needed before update
+    eos_min_negative: int = 20                       # Minimum EOS=0 samples needed before update
     eos_hidden_dim: int = 1024                       # Hidden dimension for EOS classification head
     eos_dropout: float = 0.1                         # Dropout rate for EOS classification head
-    lambda_eos: float = 2.0                          # Weight for EOS loss in total loss (提高权重以补偿更新频率降低)
+    lambda_eos: float = 2.0                          # Weight for EOS loss in total loss
     eos_threshold: float = 0.5                       # Threshold for EOS detection during inference
 
     # fmt: on
@@ -628,7 +631,9 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
     eos_buffer = None
     if cfg.use_eos_classification:
         print(f"[EOS Classification] Initializing separate EOS head with buffer accumulation")
-        print(f"  Target samples: {cfg.eos_target_positive} positive + {cfg.eos_target_negative} negative")
+        print(f"  Buffer capacity: {cfg.eos_buffer_capacity} samples per class")
+        print(f"  Sample size per update: {cfg.eos_sample_positive} positive + {cfg.eos_sample_negative} negative")
+        print(f"  Minimum samples for update: {cfg.eos_min_positive} positive + {cfg.eos_min_negative} negative")
         
         from prismatic.models.action_heads import EOSClassificationHead, EOSBufferManager
         
@@ -648,8 +653,11 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         
         # Initialize buffer manager (not a nn.Module, just a helper class)
         eos_buffer = EOSBufferManager(
-            target_positive=cfg.eos_target_positive,
-            target_negative=cfg.eos_target_negative,
+            buffer_capacity=cfg.eos_buffer_capacity,
+            sample_positive=cfg.eos_sample_positive,
+            sample_negative=cfg.eos_sample_negative,
+            min_positive=cfg.eos_min_positive,
+            min_negative=cfg.eos_min_negative,
             device=device_id,
         )
 
@@ -823,8 +831,8 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                 print(f"  Average EOS=1 per batch: {avg_pos_per_batch:.2f}")
                 
                 if avg_pos_per_batch > 0:
-                    batches_needed = cfg.eos_target_positive / avg_pos_per_batch
-                    print(f"  Estimated batches to reach {cfg.eos_target_positive} EOS=1: {batches_needed:.0f}")
+                    batches_needed = cfg.eos_min_positive / avg_pos_per_batch
+                    print(f"  Estimated batches to reach {cfg.eos_min_positive} EOS=1: {batches_needed:.0f}")
                 else:
                     print(f"  ⚠️  WARNING: No EOS=1 samples found in sampled batches!")
                 
@@ -832,7 +840,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     print(f"  ⚠️  WARNING: EOS=1 ratio is very low ({eos_ratio*100:.2f}%)!")
                     print(f"  Suggestions:")
                     print(f"    1. Check substep_labels file has 'is_substep_end' marked")
-                    print(f"    2. Try: --eos_target_positive=5 --eos_target_negative=10")
+                    print(f"    2. Try adjusting: --eos_min_positive=15 --eos_min_negative=20")
                     print(f"    3. Verify use_substep_eos=True")
             else:
                 print(f"  ⚠️  ERROR: Could not sample any batches from dataset!")
@@ -916,16 +924,17 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     print(f"\n{'='*80}")
                     print(f"[EOS DEBUG] Step {log_step}")
                     print(f"  Per-batch average: {avg_batch_pos:.2f} EOS=1, {avg_batch_neg:.2f} EOS=0")
-                    print(f"  Buffer status: {eos_pos_in_buffer}/{cfg.eos_target_positive} positive, "
-                          f"{eos_neg_in_buffer}/{cfg.eos_target_negative} negative")
+                    print(f"  Buffer status: {eos_pos_in_buffer}/{cfg.eos_buffer_capacity} positive, "
+                          f"{eos_neg_in_buffer}/{cfg.eos_buffer_capacity} negative")
+                    print(f"  Can update: positive>={cfg.eos_min_positive}, negative>={cfg.eos_min_negative}")
                     print(f"  Total seen: {total_pos_seen} positive, {total_neg_seen} negative")
                     print(f"  Total updates: {total_updates}")
-                    print(f"  Need: {cfg.eos_target_positive - eos_pos_in_buffer} more positive, "
-                          f"{cfg.eos_target_negative - eos_neg_in_buffer} more negative")
+                    print(f"  Need: {max(0, cfg.eos_min_positive - eos_pos_in_buffer)} more positive, "
+                          f"{max(0, cfg.eos_min_negative - eos_neg_in_buffer)} more negative")
                     
                     # Estimate steps needed
                     if avg_batch_pos > 0:
-                        steps_for_pos = (cfg.eos_target_positive - eos_pos_in_buffer) / avg_batch_pos
+                        steps_for_pos = max(0, cfg.eos_min_positive - eos_pos_in_buffer) / avg_batch_pos
                         print(f"  Estimated steps until update: ~{int(steps_for_pos)} steps (if positive rate holds)")
                     else:
                         print(f"  WARNING: No EOS=1 samples in recent batches!")

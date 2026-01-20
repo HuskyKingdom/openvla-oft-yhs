@@ -686,21 +686,21 @@ def run_episode(
         
         # Method 1: EOS-based substep switching (higher priority)
         if cfg.use_eos_detection and force_requery_after_queue and len(action_queue) == 0:
-        if substep_manager is not None:
-                substep_manager.advance_substep()
-                progress_info = substep_manager.get_progress_info()
-                log_message(
-                    f"[EOS SWITCH] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
-                    f"{progress_info['current_subgoal']}", 
-                    log_file
-                )
-                substep_switched = True
-                force_requery_after_queue = False  # Reset flag
-                should_requery = True
-                
-                # [VIDEO] Mark that this frame triggered an EOS-based switch
-                if len(substep_info_list) > 0:
-                    substep_info_list[-1]['eos_triggered_switch'] = True
+            if substep_manager is not None:
+                    substep_manager.advance_substep()
+                    progress_info = substep_manager.get_progress_info()
+                    log_message(
+                        f"[EOS SWITCH] ✓ Switched to step {progress_info['current_idx']+1}/{progress_info['total']}: "
+                        f"{progress_info['current_subgoal']}", 
+                        log_file
+                    )
+                    substep_switched = True
+                    force_requery_after_queue = False  # Reset flag
+                    should_requery = True
+                    
+                    # [VIDEO] Mark that this frame triggered an EOS-based switch
+                    if len(substep_info_list) > 0:
+                        substep_info_list[-1]['eos_triggered_switch'] = True
         
         # Method 2: Vision-based substep switching (only if EOS detection is disabled)
         # If EOS detection is enabled, only use EOS-based switching
@@ -807,21 +807,21 @@ def run_episode(
                     actions = result if not isinstance(result, tuple) else result[0]
             else:
                 # Standard action query without EOS detection
-            actions = get_action(
-                cfg,
-                model,
-                observation,
-                current_instruction,  # Use dynamic instruction (substep or original)
-                processor=processor,
-                action_head=action_head,
-                proprio_projector=proprio_projector,
-                noisy_action_projector=noisy_action_projector,
-                use_film=cfg.use_film,
-                h_head=head,
-            )
-            
-            action_queue.extend(actions)
-            actions_accum.append(actions)
+                actions = get_action(
+                    cfg,
+                    model,
+                    observation,
+                    current_instruction,  # Use dynamic instruction (substep or original)
+                    processor=processor,
+                    action_head=action_head,
+                    proprio_projector=proprio_projector,
+                    noisy_action_projector=noisy_action_projector,
+                    use_film=cfg.use_film,
+                    h_head=head,
+                )
+                
+                action_queue.extend(actions)
+                actions_accum.append(actions)
  
 
         # Get action from queue
