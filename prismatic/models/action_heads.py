@@ -292,15 +292,17 @@ class EOSClassificationHead(nn.Module):
 
 class EOSBufferManager:
     """
-    EOS 样本缓冲区管理器 - 优化版本
+    EOS 样本缓冲区管理器 - 优化版本（修复梯度问题）
     
     核心改进：
-    1. 固定容量buffer (如 50个EOS=0 + 50个EOS=1)
-    2. 每次随机采样固定数量 (如 20个EOS=0 + 15个EOS=1)
-    3. 采样后不清空buffer，保持样本多样性
-    4. 使用deque实现FIFO，自动丢弃最旧样本
+    1. 存储hidden states而不是logits，保留梯度计算能力
+    2. 固定容量buffer (如 50个EOS=0 + 50个EOS=1)
+    3. 每次随机采样固定数量 (如 20个EOS=0 + 15个EOS=1)
+    4. 采样时重新通过eos_head forward得到有梯度的logits
+    5. 使用deque实现FIFO，自动丢弃最旧样本
     
     优势：
+    - 正确保留梯度，EOS head能被训练
     - 更高的训练效率（更频繁的更新）
     - 更好的样本多样性（随机采样 + 滚动buffer）
     - 稳定的正负样本比例
@@ -324,7 +326,8 @@ class EOSBufferManager:
         self.device = device
         
         # 使用deque实现固定容量的FIFO buffer
-        # 存储单个样本的 (logit, label) 元组
+        # 存储单个样本的 (hidden_state, label) 元组
+        # hidden_state是detached的，但在采样时会重新forward得到有梯度的logits
         self.positive_buffer = deque(maxlen=buffer_capacity)
         self.negative_buffer = deque(maxlen=buffer_capacity)
         
@@ -333,16 +336,16 @@ class EOSBufferManager:
         self.total_negative_seen = 0
         self.total_updates = 0
     
-    def add_samples(self, eos_logits, eos_labels):
+    def add_samples(self, hidden_states, eos_labels):
         """
         添加新样本到缓冲区
         
         Args:
-            eos_logits: (N,) tensor - EOS预测logits (未经sigmoid)
+            hidden_states: (N, ACTION_DIM, hidden_dim) tensor - 每个样本包含ACTION_DIM个hidden states
             eos_labels: (N,) tensor - EOS真实标签 (0 or 1)
         """
-        # 确保在正确的设备上
-        eos_logits = eos_logits.detach().to(self.device)
+        # Detach hidden states以避免保留计算图，但保存它们以便后续重新forward
+        hidden_states = hidden_states.detach().to(self.device)
         eos_labels = eos_labels.detach().to(self.device)
         
         # 分离正负样本
@@ -351,30 +354,35 @@ class EOSBufferManager:
         
         # 逐个添加到对应缓冲区 (deque会自动处理容量限制)
         if positive_mask.any():
-            pos_logits = eos_logits[positive_mask]
+            pos_hidden = hidden_states[positive_mask]  # (num_pos, ACTION_DIM, hidden_dim)
             pos_labels = eos_labels[positive_mask]
-            for logit, label in zip(pos_logits, pos_labels):
-                self.positive_buffer.append((logit, label))
-            self.total_positive_seen += len(pos_logits)
+            for hidden, label in zip(pos_hidden, pos_labels):
+                # hidden: (ACTION_DIM, hidden_dim)
+                self.positive_buffer.append((hidden, label))
+            self.total_positive_seen += len(pos_hidden)
         
         if negative_mask.any():
-            neg_logits = eos_logits[negative_mask]
+            neg_hidden = hidden_states[negative_mask]  # (num_neg, ACTION_DIM, hidden_dim)
             neg_labels = eos_labels[negative_mask]
-            for logit, label in zip(neg_logits, neg_labels):
-                self.negative_buffer.append((logit, label))
-            self.total_negative_seen += len(neg_logits)
+            for hidden, label in zip(neg_hidden, neg_labels):
+                # hidden: (ACTION_DIM, hidden_dim)
+                self.negative_buffer.append((hidden, label))
+            self.total_negative_seen += len(neg_hidden)
     
     def can_compute_loss(self):
         """检查是否累积了足够的样本"""
         return (len(self.positive_buffer) >= self.min_positive and 
                 len(self.negative_buffer) >= self.min_negative)
     
-    def get_balanced_batch(self):
+    def get_balanced_batch(self, eos_head):
         """
-        随机采样平衡的batch，不清空buffer
+        随机采样平衡的batch，重新forward得到有梯度的logits
+        
+        Args:
+            eos_head: EOS classification head用于重新计算logits
         
         Returns:
-            balanced_logits: (sample_positive + sample_negative,) tensor
+            balanced_logits: (sample_positive + sample_negative,) tensor - 有梯度
             balanced_labels: (sample_positive + sample_negative,) tensor
         """
         import random
@@ -384,23 +392,50 @@ class EOSBufferManager:
         neg_samples = random.sample(list(self.negative_buffer), self.sample_negative)
         
         # 解包样本
-        pos_logits, pos_labels = zip(*pos_samples)
-        neg_logits, neg_labels = zip(*neg_samples)
+        pos_hidden, pos_labels = zip(*pos_samples)
+        neg_hidden, neg_labels = zip(*neg_samples)
         
         # 转换为tensor
-        pos_logits = torch.stack(list(pos_logits))
+        # pos_hidden/neg_hidden是list of (ACTION_DIM, hidden_dim)
+        pos_hidden = torch.stack(list(pos_hidden))  # (sample_positive, ACTION_DIM, hidden_dim)
         pos_labels = torch.stack(list(pos_labels))
-        neg_logits = torch.stack(list(neg_logits))
+        neg_hidden = torch.stack(list(neg_hidden))  # (sample_negative, ACTION_DIM, hidden_dim)
         neg_labels = torch.stack(list(neg_labels))
         
-        # 合并正负样本
-        balanced_logits = torch.cat([pos_logits, neg_logits])
+        # 合并正负样本的hidden states
+        balanced_hidden = torch.cat([pos_hidden, neg_hidden])  # (total_samples, ACTION_DIM, hidden_dim)
         balanced_labels = torch.cat([pos_labels, neg_labels])
         
         # 随机打乱
-        shuffle_indices = torch.randperm(len(balanced_logits), device=self.device)
-        balanced_logits = balanced_logits[shuffle_indices]
+        shuffle_indices = torch.randperm(len(balanced_hidden), device=self.device)
+        balanced_hidden = balanced_hidden[shuffle_indices]
         balanced_labels = balanced_labels[shuffle_indices]
+        
+        # 重新forward得到有梯度的logits
+        # EOSClassificationHead期望输入: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim)
+        # 但我们这里每个样本只有一个action chunk，所以需要reshape为: (B, ACTION_DIM, hidden_dim)
+        # 然后flatten: (B, ACTION_DIM * hidden_dim)
+        batch_size = balanced_hidden.shape[0]
+        hidden_dim = balanced_hidden.shape[2]
+        
+        # 导入ACTION_DIM常量
+        from prismatic.vla.constants import ACTION_DIM as ACT_DIM
+        
+        # Reshape为eos_head期望的格式
+        # (batch_size, ACTION_DIM, hidden_dim) -> (batch_size, 1, ACTION_DIM * hidden_dim)
+        balanced_hidden_reshaped = balanced_hidden.reshape(batch_size, 1, ACT_DIM * hidden_dim)
+        
+        # Forward通过eos_head（保留梯度）
+        # 需要先将 (batch_size, 1, ACTION_DIM * hidden_dim) reshape为 
+        # (batch_size, 1 * ACTION_DIM, hidden_dim) 以匹配eos_head的输入期望
+        # 但这样会有问题，因为eos_head期望 NUM_ACTIONS_CHUNK * ACTION_DIM 个tokens
+        
+        # 更简单的方法：直接调用eos_head的内部model（跳过reshape）
+        # 因为我们已经有了正确的feature格式
+        with torch.enable_grad():
+            # 直接使用MLP处理 (batch_size, 1, ACTION_DIM * hidden_dim)
+            balanced_logits = eos_head.model(balanced_hidden_reshaped)  # (batch_size, 1, 1)
+            balanced_logits = balanced_logits.squeeze(-1).squeeze(-1)  # (batch_size,)
         
         self.total_updates += 1
         

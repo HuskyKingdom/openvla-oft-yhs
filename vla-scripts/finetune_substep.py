@@ -261,26 +261,31 @@ def run_forward_pass(
     if eos_head is not None and eos_buffer is not None:
         # EOS head only works with L1 regression or diffusion (requires actions_hidden_states)
         if use_l1_regression or use_diffusion:
-            # Get EOS logits from the separate head
-            eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-            
             # Get ground truth EOS labels from batch
             if "eos_labels" in batch:
                 eos_gt = batch["eos_labels"].to(device_id).to(torch.float32)  # (B, NUM_ACTIONS_CHUNK, 1)
                 
-                # Flatten for buffer processing
-                eos_logits_flat = eos_logits.reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
-                eos_gt_flat = eos_gt.reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
+                # Reshape hidden states to separate each action chunk
+                # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim)
+                # -> (B, NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
+                batch_size = actions_hidden_states.shape[0]
+                hidden_per_chunk = actions_hidden_states.reshape(
+                    batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM, -1
+                )  # (B, NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
+                
+                # Flatten to get individual samples
+                hidden_flat = hidden_per_chunk.reshape(
+                    batch_size * NUM_ACTIONS_CHUNK, ACTION_DIM, -1
+                )  # (B * NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
+                eos_gt_flat = eos_gt.reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 
                 # [DEBUG] Count EOS samples in current batch
                 num_eos_positive = (eos_gt_flat > 0.5).sum().item()
                 num_eos_negative = (eos_gt_flat <= 0.5).sum().item()
                 
-                # Add samples to buffer
-                eos_buffer.add_samples(eos_logits_flat, eos_gt_flat)
+                # Add samples to buffer (passing ACTION_DIM hidden states per sample)
+                eos_buffer.add_samples(hidden_flat, eos_gt_flat)
                 
-                # [DEBUG] Print buffer status
-                buffer_stats_before = eos_buffer.get_stats()
                 metrics.update({
                     'eos_batch_positive': num_eos_positive,
                     'eos_batch_negative': num_eos_negative,
@@ -288,8 +293,8 @@ def run_forward_pass(
                 
                 # Check if we can compute loss
                 if eos_buffer.can_compute_loss():
-                    # Get balanced batch from buffer
-                    balanced_logits, balanced_labels = eos_buffer.get_balanced_batch()
+                    # Get balanced batch from buffer (will re-forward through eos_head with gradients)
+                    balanced_logits, balanced_labels = eos_buffer.get_balanced_batch(eos_head.module)
                     
                     # Compute standard BCE loss (no weights needed - batch is balanced!)
                     from prismatic.models.action_heads import compute_classification_metrics
@@ -299,14 +304,16 @@ def run_forward_pass(
                     
                     # [DEBUG] Print EOS loss value when updated
                     if device_id == 0:  # Only print from main process
+                        has_grad = balanced_logits.requires_grad
                         print(f"[EOS UPDATE] eos_loss = {eos_loss.item():.4f}, "
-                              f"balanced_batch_size = {len(balanced_logits)}, "
+                              f"batch = {len(balanced_logits)}, "
                               f"pos = {(balanced_labels > 0.5).sum().item()}, "
-                              f"neg = {(balanced_labels <= 0.5).sum().item()}")
+                              f"neg = {(balanced_labels <= 0.5).sum().item()}, "
+                              f"{'✓ HAS GRAD' if has_grad else '✗ NO GRAD'}")
                     
                     # Compute classification metrics
                     with torch.no_grad():
-                        eos_pred = torch.sigmoid(balanced_logits) > 0.5
+                        eos_pred = torch.sigmoid(balanced_logits.detach()) > 0.5
                         eos_metrics = compute_classification_metrics(
                             eos_pred, balanced_labels > 0.5
                         )
