@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Type
 
 import draccus
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -296,6 +297,13 @@ def run_forward_pass(
                     eos_loss = loss_fn(balanced_logits, balanced_labels)
                     eos_updated = True
                     
+                    # [DEBUG] Print EOS loss value when updated
+                    if device_id == 0:  # Only print from main process
+                        print(f"[EOS UPDATE] eos_loss = {eos_loss.item():.4f}, "
+                              f"balanced_batch_size = {len(balanced_logits)}, "
+                              f"pos = {(balanced_labels > 0.5).sum().item()}, "
+                              f"neg = {(balanced_labels <= 0.5).sum().item()}")
+                    
                     # Compute classification metrics
                     with torch.no_grad():
                         eos_pred = torch.sigmoid(balanced_logits) > 0.5
@@ -402,11 +410,11 @@ class FinetuneSubstepConfig:
     
     # EOS Classification (separate head with balanced batch accumulation)
     use_eos_classification: bool = True              # If True, uses separate EOS classification head
-    eos_target_positive: int = 20                    # Target number of EOS=1 samples to accumulate before update
-    eos_target_negative: int = 35                    # Target number of EOS=0 samples to accumulate before update
+    eos_target_positive: int = 5                     # Target number of EOS=1 samples to accumulate before update (降低以加快更新频率)
+    eos_target_negative: int = 10                    # Target number of EOS=0 samples to accumulate before update (保持约1:2比例)
     eos_hidden_dim: int = 1024                       # Hidden dimension for EOS classification head
     eos_dropout: float = 0.1                         # Dropout rate for EOS classification head
-    lambda_eos: float = 1.0                          # Weight for EOS loss in total loss
+    lambda_eos: float = 2.0                          # Weight for EOS loss in total loss (提高权重以补偿更新频率降低)
     eos_threshold: float = 0.5                       # Threshold for EOS detection during inference
 
     # fmt: on
@@ -779,7 +787,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         try:
             # Use the same dataloader (don't create a new one)
             temp_iter = iter(train_dataset)
-            
+
             for sample_idx in range(50):  # Sample 50 batches
                 try:
                     sample_batch = next(temp_iter)
@@ -870,6 +878,12 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             # Backward pass
             normalized_loss.backward()
 
+            # [DEBUG] Print EOS loss every batch (first 100 batches)
+            if distributed_state.is_main_process and batch_idx < 100 and cfg.use_eos_classification:
+                print(f"[Batch {batch_idx}] eos_loss={metrics.get('eos_loss', 0):.4f}, "
+                      f"action_loss={metrics.get('action_loss', 0):.4f}, "
+                      f"total_loss={metrics.get('total_loss', 0):.4f}")
+            
             # Store recent train metrics
             for metric_name, value in metrics.items():
                 if metric_name in recent_metrics:
