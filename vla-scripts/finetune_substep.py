@@ -115,9 +115,13 @@ def run_forward_pass(
     num_patches,
     compute_diffusion_l1=False,
     num_diffusion_steps_train=None,
-    eos_head=None,          # EOS classification head (optional)
-    eos_buffer=None,        # EOS buffer manager (optional)
-    lambda_eos=1.0,         # EOS loss weight
+    eos_head=None,              # EOS classification head (optional)
+    lambda_eos=1.0,             # EOS loss weight
+    use_global_weights=True,    # Use global fixed weights
+    pos_weight=50.0,            # Positive class weight for global weighting
+    use_focal_loss=False,       # Use Focal Loss instead of BCE
+    focal_alpha=0.25,           # Focal Loss alpha
+    focal_gamma=2.0,            # Focal Loss gamma
 ) -> Tuple[torch.Tensor, Dict[str, float]]:
     """
     Compute model forward pass with optional EOS classification.
@@ -254,90 +258,127 @@ def run_forward_pass(
                 }
             )
 
-    # [EOS CLASSIFICATION] Compute EOS loss with batch accumulation if enabled
+    # [EOS CLASSIFICATION] Compute EOS loss with weighted BCE or Focal Loss
+    # 关键改进：
+    # 1. 保持梯度流从loss回传到VLA主干，实现真正的Fine-tuning
+    # 2. 使用全局固定权重处理极端不平衡（如1:800）
+    # 3. 不跳过任何batch，包括全是负样本的batch
     eos_loss = torch.tensor(0.0, device=device_id)
-    eos_updated = False
     
-    if eos_head is not None and eos_buffer is not None:
+    if eos_head is not None:
         # EOS head only works with L1 regression or diffusion (requires actions_hidden_states)
         if use_l1_regression or use_diffusion:
             # Get ground truth EOS labels from batch
             if "eos_labels" in batch:
                 eos_gt = batch["eos_labels"].to(device_id).to(torch.float32)  # (B, NUM_ACTIONS_CHUNK, 1)
                 
-                # Reshape hidden states to separate each action chunk
-                # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim)
-                # -> (B, NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
-                batch_size = actions_hidden_states.shape[0]
-                hidden_per_chunk = actions_hidden_states.reshape(
-                    batch_size, NUM_ACTIONS_CHUNK, ACTION_DIM, -1
-                )  # (B, NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
+                # Forward through EOS head (保持梯度！)
+                # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
+                eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
                 
-                # Flatten to get individual samples
-                hidden_flat = hidden_per_chunk.reshape(
-                    batch_size * NUM_ACTIONS_CHUNK, ACTION_DIM, -1
-                )  # (B * NUM_ACTIONS_CHUNK, ACTION_DIM, hidden_dim)
-                eos_gt_flat = eos_gt.reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
+                # Flatten for loss computation
+                eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
+                eos_gt_flat = eos_gt.squeeze(-1).reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
                 
-                # [DEBUG] Count EOS samples in current batch
-                num_eos_positive = (eos_gt_flat > 0.5).sum().item()
-                num_eos_negative = (eos_gt_flat <= 0.5).sum().item()
+                # Count positive/negative samples
+                num_pos = (eos_gt_flat > 0.5).sum().item()
+                num_neg = (eos_gt_flat <= 0.5).sum().item()
+                total_samples = num_pos + num_neg
                 
-                # Add samples to buffer (passing ACTION_DIM hidden states per sample)
-                eos_buffer.add_samples(hidden_flat, eos_gt_flat)
-                
-                metrics.update({
-                    'eos_batch_positive': num_eos_positive,
-                    'eos_batch_negative': num_eos_negative,
-                })
-                
-                # Check if we can compute loss
-                if eos_buffer.can_compute_loss():
-                    # Get balanced batch from buffer (will re-forward through eos_head with gradients)
-                    balanced_logits, balanced_labels = eos_buffer.get_balanced_batch(eos_head.module)
+                # 计算loss（不再跳过任何batch！）
+                if use_focal_loss:
+                    # Focal Loss: 专门为极端不平衡设计
+                    # FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
+                    eos_probs = torch.sigmoid(eos_logits_flat)
                     
-                    # Compute standard BCE loss (no weights needed - batch is balanced!)
-                    from prismatic.models.action_heads import compute_classification_metrics
-                    loss_fn = nn.BCEWithLogitsLoss()
-                    eos_loss = loss_fn(balanced_logits, balanced_labels)
-                    eos_updated = True
+                    # Compute focal weight: (1 - p_t)^gamma
+                    # For positive samples: p_t = p, for negative: p_t = 1 - p
+                    p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
+                    focal_weight = (1 - p_t) ** focal_gamma
                     
-                    # [DEBUG] Print EOS loss value when updated
-                    if device_id == 0:  # Only print from main process
-                        has_grad = balanced_logits.requires_grad
-                        print(f"[EOS UPDATE] eos_loss = {eos_loss.item():.4f}, "
-                              f"batch = {len(balanced_logits)}, "
-                              f"pos = {(balanced_labels > 0.5).sum().item()}, "
-                              f"neg = {(balanced_labels <= 0.5).sum().item()}, "
-                              f"{'✓ HAS GRAD' if has_grad else '✗ NO GRAD'}")
+                    # Compute alpha weight (class balance)
+                    alpha_t = torch.where(
+                        eos_gt_flat > 0.5,
+                        torch.tensor(focal_alpha, device=device_id),
+                        torch.tensor(1 - focal_alpha, device=device_id)
+                    )
                     
-                    # Compute classification metrics
-                    with torch.no_grad():
-                        eos_pred = torch.sigmoid(balanced_logits.detach()) > 0.5
-                        eos_metrics = compute_classification_metrics(
-                            eos_pred, balanced_labels > 0.5
-                        )
-                        # Add buffer statistics
-                        buffer_stats = eos_buffer.get_stats()
-                        eos_metrics.update({
-                            'eos_buffer_positive': buffer_stats['buffer_positive'],
-                            'eos_buffer_negative': buffer_stats['buffer_negative'],
-                            'eos_total_updates': buffer_stats['total_updates'],
-                            'eos_updated': 1.0,  # Convert to float for wandb
-                        })
-                        metrics.update(eos_metrics)
+                    # BCE loss
+                    bce_loss = nn.functional.binary_cross_entropy_with_logits(
+                        eos_logits_flat, eos_gt_flat, reduction='none'
+                    )
+                    
+                    # Focal loss = alpha * focal_weight * BCE
+                    eos_loss = (alpha_t * focal_weight * bce_loss).mean()
+                    
+                    weight_info = {
+                        'eos_focal_alpha': focal_alpha,
+                        'eos_focal_gamma': focal_gamma,
+                    }
                 else:
-                    # Buffer not ready, log waiting status
-                    buffer_stats = eos_buffer.get_stats()
-                    metrics.update({
-                        'eos_buffer_positive': buffer_stats['buffer_positive'],
-                        'eos_buffer_negative': buffer_stats['buffer_negative'],
-                        'eos_waiting': 1.0,      # Convert to float for wandb
-                        'eos_updated': 0.0,      # Convert to float for wandb
+                    # Weighted BCE Loss
+                    if use_global_weights:
+                        # 使用全局固定权重（适合极端不平衡）
+                        # pos_weight: 正样本的权重倍数
+                        # 负样本权重固定为1.0，正样本权重为pos_weight
+                        pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
+                        loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
+                        eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
+                        
+                        weight_info = {
+                            'eos_pos_weight': pos_weight,
+                            'eos_neg_weight': 1.0,
+                            'eos_weight_type': 'global_fixed',
+                        }
+                    else:
+                        # 动态权重（batch内平衡，不适合极端不平衡）
+                        if num_pos > 0 and num_neg > 0:
+                            # 让正负样本的total loss贡献相等
+                            weight_pos = total_samples / (2.0 * num_pos)
+                            weight_neg = total_samples / (2.0 * num_neg)
+                        elif num_pos > 0:
+                            # 全是正样本（极少见）
+                            weight_pos = 1.0
+                            weight_neg = 1.0
+                        else:
+                            # 全是负样本（常见）
+                            weight_pos = 1.0
+                            weight_neg = 1.0
+                        
+                        # Create sample weights
+                        sample_weights = torch.where(
+                            eos_gt_flat > 0.5,
+                            torch.tensor(weight_pos, device=device_id),
+                            torch.tensor(weight_neg, device=device_id)
+                        )
+                        
+                        # Weighted BCE loss
+                        loss_fn = nn.BCEWithLogitsLoss(weight=sample_weights)
+                        eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
+                        
+                        weight_info = {
+                            'eos_pos_weight': weight_pos,
+                            'eos_neg_weight': weight_neg,
+                            'eos_weight_type': 'dynamic',
+                        }
+                
+                # Compute classification metrics
+                with torch.no_grad():
+                    from prismatic.models.action_heads import compute_classification_metrics
+                    eos_pred = torch.sigmoid(eos_logits_flat) > 0.5
+                    eos_metrics = compute_classification_metrics(
+                        eos_pred, eos_gt_flat > 0.5
+                    )
+                    eos_metrics.update({
+                        'eos_num_positive': num_pos,
+                        'eos_num_negative': num_neg,
+                        'eos_ratio': num_pos / max(1, total_samples),
+                        **weight_info,
                     })
+                    metrics.update(eos_metrics)
             else:
                 # No EOS labels in batch (shouldn't happen with SubstepRLDSDataset)
-                metrics.update({'eos_no_labels': True})
+                metrics.update({'eos_no_labels': 1.0})
     
     # Combine action loss and EOS loss
     action_loss = loss  # Rename for clarity
@@ -386,6 +427,7 @@ class FinetuneSubstepConfig:
     num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
     max_steps: int = 200_000                         # Max number of training steps
+    max_grad_norm: float = 1.0                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
     val_time_limit: int = 180                        # (When `use_val_set==True`) Time limit for computing validation metrics
@@ -415,17 +457,19 @@ class FinetuneSubstepConfig:
     # Substep EOS training
     use_substep_eos: bool = True                     # If True, inserts EOS token at substep boundaries for training
     
-    # EOS Classification (separate head with balanced batch accumulation)
+    # EOS Classification (separate head with weighted BCE loss)
     use_eos_classification: bool = True              # If True, uses separate EOS classification head
-    eos_buffer_capacity: int = 50                    # Maximum number of samples per class to store in buffer
-    eos_sample_positive: int = 15                    # Number of EOS=1 samples to sample per update
-    eos_sample_negative: int = 20                    # Number of EOS=0 samples to sample per update
-    eos_min_positive: int = 15                       # Minimum EOS=1 samples needed before update
-    eos_min_negative: int = 20                       # Minimum EOS=0 samples needed before update
     eos_hidden_dim: int = 1024                       # Hidden dimension for EOS classification head
     eos_dropout: float = 0.1                         # Dropout rate for EOS classification head
-    lambda_eos: float = 2.0                          # Weight for EOS loss in total loss
+    lambda_eos: float = 1.0                          # Weight for EOS loss in total loss
     eos_threshold: float = 0.5                       # Threshold for EOS detection during inference
+    
+    # EOS class weights (for extreme imbalance like 1:800)
+    eos_use_global_weights: bool = True              # Use global fixed weights instead of per-batch dynamic weights
+    eos_pos_weight: float = 50.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
+    eos_use_focal_loss: bool = False                 # Use Focal Loss (better for extreme imbalance)
+    eos_focal_alpha: float = 0.25                    # Focal Loss alpha (weight for positive class)
+    eos_focal_gamma: float = 2.0                     # Focal Loss gamma (focusing parameter)
 
     # fmt: on
 
@@ -633,16 +677,28 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             NoisyActionProjector, "noisy_action_projector", cfg, device_id, {"llm_dim": vla.module.llm_dim}
         )
 
-    # If applicable, instantiate EOS classification head and buffer manager
+    # If applicable, instantiate EOS classification head
     eos_head = None
-    eos_buffer = None
     if cfg.use_eos_classification:
-        print(f"[EOS Classification] Initializing separate EOS head with buffer accumulation")
-        print(f"  Buffer capacity: {cfg.eos_buffer_capacity} samples per class")
-        print(f"  Sample size per update: {cfg.eos_sample_positive} positive + {cfg.eos_sample_negative} negative")
-        print(f"  Minimum samples for update: {cfg.eos_min_positive} positive + {cfg.eos_min_negative} negative")
+        print(f"\n{'='*80}")
+        print(f"[EOS Classification] Initializing separate EOS head")
+        print(f"  Strategy: Weighted BCE loss with gradient flow to VLA backbone")
+        print(f"  Loss type: {'Focal Loss' if cfg.eos_use_focal_loss else 'Weighted BCE'}")
+        if cfg.eos_use_focal_loss:
+            print(f"  Focal Loss: alpha={cfg.eos_focal_alpha}, gamma={cfg.eos_focal_gamma}")
+        else:
+            if cfg.eos_use_global_weights:
+                print(f"  Global weights: pos={cfg.eos_pos_weight}, neg=1.0 (fixed)")
+            else:
+                print(f"  Dynamic weights: computed per-batch")
+        print(f"  Lambda EOS: {cfg.lambda_eos}")
+        print(f"  Gradient clipping: {'Enabled' if cfg.max_grad_norm > 0 else 'Disabled'}")
+        if cfg.max_grad_norm > 0:
+            print(f"    Max grad norm: {cfg.max_grad_norm}")
+        print(f"  ✓ 真正的Fine-tuning（梯度回传到VLA主干）")
+        print(f"{'='*80}\n")
         
-        from prismatic.models.action_heads import EOSClassificationHead, EOSBufferManager
+        from prismatic.models.action_heads import EOSClassificationHead
         
         # Initialize EOS classification head
         eos_head = init_module(
@@ -656,16 +712,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                 "dropout": cfg.eos_dropout,
             },
             to_bf16=True,
-        )
-        
-        # Initialize buffer manager (not a nn.Module, just a helper class)
-        eos_buffer = EOSBufferManager(
-            buffer_capacity=cfg.eos_buffer_capacity,
-            sample_positive=cfg.eos_sample_positive,
-            sample_negative=cfg.eos_sample_negative,
-            min_positive=cfg.eos_min_positive,
-            min_negative=cfg.eos_min_negative,
-            device=device_id,
         )
 
     # Get number of vision patches
@@ -780,13 +826,11 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "eos_precision": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_recall": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_f1": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_buffer_positive": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_buffer_negative": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_total_updates": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_updated": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_waiting": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_batch_positive": deque(maxlen=cfg.grad_accumulation_steps),
-        "eos_batch_negative": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_num_positive": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_num_negative": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_ratio": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_pos_weight": deque(maxlen=cfg.grad_accumulation_steps),
+        "eos_neg_weight": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
     # [EOS DEBUG] Sample batches to check EOS distribution before training
@@ -837,18 +881,31 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                 print(f"  EOS=0: {sample_eos_negative} ({(1-eos_ratio)*100:.2f}%)")
                 print(f"  Average EOS=1 per batch: {avg_pos_per_batch:.2f}")
                 
-                if avg_pos_per_batch > 0:
-                    batches_needed = cfg.eos_min_positive / avg_pos_per_batch
-                    print(f"  Estimated batches to reach {cfg.eos_min_positive} EOS=1: {batches_needed:.0f}")
-                else:
-                    print(f"  ⚠️  WARNING: No EOS=1 samples found in sampled batches!")
+                print(f"  Global imbalance ratio: 1:{int(1.0/eos_ratio)}")
+                
+                # 给出权重建议
+                if cfg.eos_use_global_weights:
+                    # 计算推荐的pos_weight
+                    # 一般设为 neg_samples / pos_samples，但可以适当调整
+                    recommended_weight = (1 - eos_ratio) / eos_ratio if eos_ratio > 0 else 100
+                    recommended_weight = min(recommended_weight, 100)  # 上限100
+                    
+                    print(f"\n  [Weight Recommendation]")
+                    print(f"    Current eos_pos_weight: {cfg.eos_pos_weight:.1f}")
+                    print(f"    Recommended eos_pos_weight: {recommended_weight:.1f}")
+                    if abs(cfg.eos_pos_weight - recommended_weight) > 20:
+                        print(f"    ⚠️  Consider adjusting: --eos_pos_weight={recommended_weight:.0f}")
                 
                 if eos_ratio < 0.01:
-                    print(f"  ⚠️  WARNING: EOS=1 ratio is very low ({eos_ratio*100:.2f}%)!")
-                    print(f"  Suggestions:")
-                    print(f"    1. Check substep_labels file has 'is_substep_end' marked")
-                    print(f"    2. Try adjusting: --eos_min_positive=15 --eos_min_negative=20")
-                    print(f"    3. Verify use_substep_eos=True")
+                    print(f"\n  ⚠️  EXTREME IMBALANCE DETECTED ({eos_ratio*100:.4f}%)!")
+                    print(f"  Recommendations:")
+                    print(f"    1. 使用全局固定权重: --eos_use_global_weights=True")
+                    print(f"    2. 设置高权重: --eos_pos_weight={int(recommended_weight)}")
+                    print(f"    3. 或使用Focal Loss: --eos_use_focal_loss=True")
+                    print(f"    4. 增加lambda_eos: --lambda_eos=2.0")
+                elif eos_ratio < 0.1:
+                    print(f"\n  ⚠️  High imbalance ({eos_ratio*100:.2f}%)")
+                    print(f"  建议使用全局固定权重: --eos_pos_weight={int(recommended_weight)}")
             else:
                 print(f"  ⚠️  ERROR: Could not sample any batches from dataset!")
                 print(f"  Check that SubstepRLDSDataset is properly configured")
@@ -883,13 +940,25 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                 compute_diffusion_l1=compute_diffusion_l1,
                 num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
                 eos_head=eos_head if cfg.use_eos_classification else None,
-                eos_buffer=eos_buffer if cfg.use_eos_classification else None,
                 lambda_eos=cfg.lambda_eos,
+                use_global_weights=cfg.eos_use_global_weights,
+                pos_weight=cfg.eos_pos_weight,
+                use_focal_loss=cfg.eos_use_focal_loss,
+                focal_alpha=cfg.eos_focal_alpha,
+                focal_gamma=cfg.eos_focal_gamma,
             )
 
             # Normalize loss to account for gradient accumulation
             normalized_loss = loss / cfg.grad_accumulation_steps
 
+            # [SAFETY] Check for NaN/Inf in loss (critical for high pos_weight training)
+            if not torch.isfinite(normalized_loss):
+                print(f"❌ [NaN/Inf Error] Step {batch_idx}: loss={normalized_loss.item()}")
+                print(f"   Metrics: {metrics}")
+                print(f"   Skipping this batch to prevent training crash...")
+                optimizer.zero_grad()  # Clear any accumulated gradients
+                continue  # Skip this batch
+            
             # Backward pass
             normalized_loss.backward()
 
@@ -915,36 +984,28 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
                 log_metrics_to_wandb(smoothened_metrics, "VLA Train", log_step, wandb)
                 
-                # [EOS DEBUG] Print EOS buffer status every 50 steps
-                if cfg.use_eos_classification and eos_buffer is not None and log_step % 50 == 0:
-                    buffer_stats = eos_buffer.get_stats()
-                    eos_pos_in_buffer = buffer_stats['buffer_positive']
-                    eos_neg_in_buffer = buffer_stats['buffer_negative']
-                    total_pos_seen = buffer_stats['total_positive_seen']
-                    total_neg_seen = buffer_stats['total_negative_seen']
-                    total_updates = buffer_stats['total_updates']
-                    
-                    # Calculate average from recent batches
-                    avg_batch_pos = smoothened_metrics.get('eos_batch_positive', 0)
-                    avg_batch_neg = smoothened_metrics.get('eos_batch_negative', 0)
+                # [EOS DEBUG] Print EOS stats every 50 steps
+                if cfg.use_eos_classification and log_step % 50 == 0:
+                    avg_num_pos = smoothened_metrics.get('eos_num_positive', 0)
+                    avg_num_neg = smoothened_metrics.get('eos_num_negative', 0)
+                    avg_ratio = smoothened_metrics.get('eos_ratio', 0)
+                    avg_pos_weight = smoothened_metrics.get('eos_pos_weight', 0)
+                    avg_neg_weight = smoothened_metrics.get('eos_neg_weight', 0)
+                    avg_eos_loss = smoothened_metrics.get('eos_loss', 0)
+                    avg_eos_acc = smoothened_metrics.get('eos_accuracy', 0)
+                    avg_eos_recall = smoothened_metrics.get('eos_recall', 0)
+                    avg_eos_precision = smoothened_metrics.get('eos_precision', 0)
                     
                     print(f"\n{'='*80}")
-                    print(f"[EOS DEBUG] Step {log_step}")
-                    print(f"  Per-batch average: {avg_batch_pos:.2f} EOS=1, {avg_batch_neg:.2f} EOS=0")
-                    print(f"  Buffer status: {eos_pos_in_buffer}/{cfg.eos_buffer_capacity} positive, "
-                          f"{eos_neg_in_buffer}/{cfg.eos_buffer_capacity} negative")
-                    print(f"  Can update: positive>={cfg.eos_min_positive}, negative>={cfg.eos_min_negative}")
-                    print(f"  Total seen: {total_pos_seen} positive, {total_neg_seen} negative")
-                    print(f"  Total updates: {total_updates}")
-                    print(f"  Need: {max(0, cfg.eos_min_positive - eos_pos_in_buffer)} more positive, "
-                          f"{max(0, cfg.eos_min_negative - eos_neg_in_buffer)} more negative")
-                    
-                    # Estimate steps needed
-                    if avg_batch_pos > 0:
-                        steps_for_pos = max(0, cfg.eos_min_positive - eos_pos_in_buffer) / avg_batch_pos
-                        print(f"  Estimated steps until update: ~{int(steps_for_pos)} steps (if positive rate holds)")
+                    print(f"[EOS Stats] Step {log_step}")
+                    print(f"  Batch samples: {avg_num_pos:.1f} EOS=1, {avg_num_neg:.1f} EOS=0 (ratio: {avg_ratio:.4f})")
+                    if cfg.eos_use_global_weights:
+                        print(f"  Global weights: pos={cfg.eos_pos_weight:.1f}, neg=1.0 (固定)")
                     else:
-                        print(f"  WARNING: No EOS=1 samples in recent batches!")
+                        print(f"  Dynamic weights: pos={avg_pos_weight:.2f}, neg={avg_neg_weight:.2f}")
+                    print(f"  Loss: {avg_eos_loss:.4f}")
+                    print(f"  Metrics: Acc={avg_eos_acc:.3f}, Recall={avg_eos_recall:.3f}, Prec={avg_eos_precision:.3f}")
+                    print(f"  ✓ 每个batch都更新，梯度流向VLA主干")
                     print(f"{'='*80}\n")
 
             # [If applicable] Linearly warm up learning rate from 10% to 100% of original
@@ -966,6 +1027,21 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
+                # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
+                # Clip gradients of all trainable parameters
+                if cfg.max_grad_norm > 0:
+                    total_norm = torch.nn.utils.clip_grad_norm_(
+                        trainable_params, 
+                        max_norm=cfg.max_grad_norm
+                    )
+                    # Log gradient norm for monitoring
+                    if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
+                        wandb.log({"VLA Train/Grad Norm": total_norm.item()}, step=log_step)
+                        # Warn if gradient norm is very large (before clipping)
+                        if total_norm.item() > cfg.max_grad_norm * 10:
+                            print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
+                                  f"(clipped to {cfg.max_grad_norm})")
+                
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
