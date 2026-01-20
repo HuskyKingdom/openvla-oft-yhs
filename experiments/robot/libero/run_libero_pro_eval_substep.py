@@ -237,18 +237,70 @@ def initialize_model(cfg: GenerateConfig):
     action_head = None
     if cfg.use_l1_regression or cfg.use_diffusion:
         action_head = get_action_head(cfg, model.llm_dim)
-        # Note: EOS detection now works in L1 regression mode too!
-        # We can extract token logits from language_model even when using action_head
-        if cfg.use_eos_detection:
-            logger.info(
-                f"[EOS INFO] ✓ EOS detection enabled. "
-                f"Works in both discrete token mode and L1 regression mode (action_head loaded)."
-            )
 
     # Load noisy action projector if using diffusion
     noisy_action_projector = None
     if cfg.use_diffusion:
         noisy_action_projector = get_noisy_action_projector(cfg, model.llm_dim)
+    
+    # [SUBSTEP EOS] Load EOS classification head if EOS detection is enabled
+    eos_head = None
+    if cfg.use_eos_detection:
+        try:
+            from prismatic.models.action_heads import EOSClassificationHead
+            from pathlib import Path
+            
+            # EOS detection requires continuous action mode (L1 regression or diffusion)
+            if not (cfg.use_l1_regression or cfg.use_diffusion):
+                logger.warning(
+                    "[EOS WARNING] ⚠️ EOS detection requires L1 regression or diffusion mode. "
+                    "Please set use_l1_regression=True or use_diffusion=True. Disabling EOS detection."
+                )
+                cfg.use_eos_detection = False
+            else:
+                # Initialize EOS head with default parameters (must match training config)
+                eos_hidden_dim = 1024  # Default from training config
+                eos_dropout = 0.1      # Default from training config
+                
+                eos_head = EOSClassificationHead(
+                    input_dim=model.llm_dim,
+                    hidden_dim=eos_hidden_dim,
+                    dropout=eos_dropout,
+                ).to(model.device).to(torch.bfloat16)
+                
+                # Load checkpoint
+                checkpoint_path = Path(cfg.pretrained_checkpoint)
+                
+                # Try to find EOS head checkpoint (either latest or specific step)
+                eos_checkpoint_candidates = [
+                    checkpoint_path / "eos_head--latest_checkpoint.pt",
+                    *sorted(checkpoint_path.glob("eos_head--*_checkpoint.pt"), reverse=True),
+                ]
+                
+                eos_checkpoint_file = None
+                for candidate in eos_checkpoint_candidates:
+                    if candidate.exists():
+                        eos_checkpoint_file = candidate
+                        break
+                
+                if eos_checkpoint_file is not None:
+                    state_dict = torch.load(eos_checkpoint_file, map_location=model.device, weights_only=True)
+                    eos_head.load_state_dict(state_dict)
+                    eos_head.eval()
+                    logger.info(f"[EOS INFO] ✓ Loaded EOS head from: {eos_checkpoint_file}")
+                    logger.info(f"[EOS INFO] ✓ EOS detection enabled for substep switching")
+                else:
+                    logger.warning(
+                        f"[EOS WARNING] ⚠️ EOS head checkpoint not found in {checkpoint_path}. "
+                        f"EOS detection will be disabled. Train with use_eos_classification=True to enable."
+                    )
+                    eos_head = None
+                    cfg.use_eos_detection = False
+                    
+        except Exception as e:
+            logger.error(f"[EOS ERROR] Failed to load EOS head: {e}")
+            eos_head = None
+            cfg.use_eos_detection = False
 
     # Get OpenVLA processor if needed
     processor = None
@@ -256,7 +308,7 @@ def initialize_model(cfg: GenerateConfig):
         processor = get_processor(cfg)
         check_unnorm_key(cfg, model)
 
-    return model, action_head, proprio_projector, noisy_action_projector, processor
+    return model, action_head, proprio_projector, noisy_action_projector, processor, eos_head
 
 
 def check_unnorm_key(cfg: GenerateConfig, model) -> None:
@@ -541,6 +593,7 @@ def run_episode(
     llm_tokenizer=None,
     sigclip_model=None,
     sigclip_processor=None,
+    eos_head=None,
 ):
     """Run a single episode in the environment."""
     # Reset environment
@@ -753,6 +806,8 @@ def run_episode(
                     use_film=cfg.use_film,
                     h_head=head,
                     return_eos_info=True,  # Request EOS detection info
+                    eos_head=eos_head,  # Pass EOS head for detection
+                    eos_threshold=0.5,  # Default threshold
                 )
                 
                 # Debug: Log result type and structure
@@ -865,6 +920,7 @@ def run_task(
     total_episodes=0,
     total_successes=0,
     log_file=None,
+    eos_head=None,
 ):
     """Run evaluation for a single task."""
     # Initialize LLM and SigCLIP models for substep decomposition if enabled
@@ -1000,6 +1056,7 @@ def run_task(
             llm_tokenizer,
             sigclip_model,
             sigclip_processor,
+            eos_head,  # Pass EOS head from model initialization
         )
 
         # Update counters
@@ -1149,7 +1206,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
                 cfg.task_suite_name = cfg.task_suite_name + "_" + evaluation_cfg.get("perturbation_mapping", {}).get(perturb_key, "")
 
     # Initialize model and components
-    model, action_head, proprio_projector, noisy_action_projector, processor = initialize_model(cfg)
+    model, action_head, proprio_projector, noisy_action_projector, processor, eos_head = initialize_model(cfg)
 
     # Get expected image dimensions
     resize_size = get_image_resize_size(cfg)
@@ -1180,6 +1237,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
             total_episodes,
             total_successes,
             log_file,
+            eos_head,  # Pass EOS head from model initialization
         )
 
     # Calculate final success rate

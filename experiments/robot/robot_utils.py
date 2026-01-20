@@ -108,6 +108,8 @@ def get_action(
     use_film: bool = False,
     h_head = None,
     return_eos_info: bool = False,
+    eos_head: Optional[torch.nn.Module] = None,
+    eos_threshold: float = 0.5,
 ) -> Union[List[np.ndarray], np.ndarray, Tuple]:
     """
     Query the model to get action predictions.
@@ -122,9 +124,13 @@ def get_action(
         proprio_projector: Optional proprioception projector
         noisy_action_projector: Optional noisy action projector for diffusion
         use_film: Whether to use FiLM
+        h_head: Optional energy model head
+        return_eos_info: Whether to return EOS detection info
+        eos_head: Optional EOS classification head for substep boundary detection
+        eos_threshold: Threshold for EOS detection (default: 0.5)
 
     Returns:
-        Union[List[np.ndarray], np.ndarray]: Predicted actions
+        Union[List[np.ndarray], np.ndarray]: Predicted actions, or tuple (actions, has_eos, eos_position) if return_eos_info=True
 
     Raises:
         ValueError: If model family is not supported
@@ -148,6 +154,8 @@ def get_action(
                 use_film=use_film,
                 h_head=h_head,
                 return_eos_info=return_eos_info,
+                eos_head=eos_head,
+                eos_threshold=eos_threshold,
             )
         else:
             raise ValueError(f"Unsupported model family: {cfg.model_family}")

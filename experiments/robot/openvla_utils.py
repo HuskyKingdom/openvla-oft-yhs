@@ -983,6 +983,8 @@ def get_vla_action(
     use_film: bool = False,
     h_head = None,
     return_eos_info: bool = False,
+    eos_head: Optional[torch.nn.Module] = None,
+    eos_threshold: float = 0.5,
 ) -> Union[List[np.ndarray], Tuple[List[np.ndarray], bool, Optional[int]]]:
     """
     Generate action predictions with the VLA policy.
@@ -997,9 +999,13 @@ def get_vla_action(
         proprio_projector: Optional proprioception projector
         noisy_action_projector: Optional noisy action projector for diffusion
         use_film: Whether to use FiLM
+        h_head: Optional energy model head
+        return_eos_info: Whether to return EOS detection info
+        eos_head: Optional EOS classification head for substep boundary detection
+        eos_threshold: Threshold for EOS detection (default: 0.5)
 
     Returns:
-        List[np.ndarray]: Predicted actions
+        List[np.ndarray]: Predicted actions, or tuple (actions, has_eos, eos_position) if return_eos_info=True
     """
     global _FLOPS_CALCULATED
     
@@ -1058,7 +1064,14 @@ def get_vla_action(
         if action_head is None:
             # Standard VLA output (single-image inputs, discrete actions)
             if return_eos_info:
-                result = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False, return_eos_info=True)
+                result = vla.predict_action(
+                    **inputs, 
+                    unnorm_key=cfg.unnorm_key, 
+                    do_sample=False, 
+                    return_eos_info=True,
+                    eos_head=eos_head,
+                    eos_threshold=eos_threshold,
+                )
                 if len(result) == 6:
                     action, _, _, _, has_eos, eos_position = result
                 else:
@@ -1082,6 +1095,8 @@ def get_vla_action(
                         action_head=action_head,
                         use_film=use_film,
                         return_eos_info=True,
+                        eos_head=eos_head,
+                        eos_threshold=eos_threshold,
                     )
                     if len(result) == 6:
                         action, hiddens, layer_actions, _, has_eos, eos_position = result
@@ -1113,6 +1128,8 @@ def get_vla_action(
                             action_head=action_head,
                             use_film=use_film,
                             return_eos_info=True,
+                            eos_head=eos_head,
+                            eos_threshold=eos_threshold,
                         )
                         if len(result) == 6:
                             action, hiddens, layer_actions, energy_pad_mask, has_eos, eos_position = result
@@ -1143,6 +1160,8 @@ def get_vla_action(
                             action_head=action_head,
                             use_film=use_film,
                             return_eos_info=True,
+                            eos_head=eos_head,
+                            eos_threshold=eos_threshold,
                         )
                         if len(result) == 6:
                             action, hiddens, _, _, has_eos, eos_position = result

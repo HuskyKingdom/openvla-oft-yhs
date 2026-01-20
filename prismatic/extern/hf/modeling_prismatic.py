@@ -1348,6 +1348,8 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         noisy_action_projector=None,
         use_film: bool = False,
         return_eos_info: bool = False,
+        eos_head=None,
+        eos_threshold: float = 0.5,
         **kwargs: str,
     ) -> np.ndarray:
         """Predict actions from input sequence, with options for different prediction methods.
@@ -1464,13 +1466,27 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
             )
             normalized_actions, actions_hidden_states, layer_actions, action_logits = result
 
-        # EOS detection from 8th dimension (action-based, not token-based)
-        # normalized_actions shape: (NUM_ACTIONS_CHUNK, ACTION_DIM)
-        # ACTION_DIM = 8, where dimension 8 is the EOS flag
-        # EOS detection placeholder (for 7D mode, this does nothing)
-        if return_eos_info:
-            # In 7D mode, EOS detection is not supported via action dimensions
-            pass
+        # [SUBSTEP EOS] Detect EOS using classification head (if provided)
+        # EOS head predicts whether each action in the chunk is a substep boundary
+        if return_eos_info and eos_head is not None and actions_hidden_states is not None:
+            with torch.no_grad():
+                # actions_hidden_states shape: (batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim)
+                # Forward through EOS head to get predictions for each action
+                eos_logits = eos_head(actions_hidden_states)  # (batch_size, NUM_ACTIONS_CHUNK, 1)
+                eos_probs = torch.sigmoid(eos_logits).squeeze(-1)  # (batch_size, NUM_ACTIONS_CHUNK)
+                
+                # Check if any action position exceeds threshold
+                eos_predictions = eos_probs > eos_threshold  # (batch_size, NUM_ACTIONS_CHUNK)
+                
+                # Find first EOS position in the batch (usually batch_size=1 during inference)
+                eos_positions = eos_predictions[0].nonzero(as_tuple=True)[0]
+                
+                if len(eos_positions) > 0:
+                    has_eos = True
+                    eos_position = eos_positions[0].item()  # First detected EOS position (action index 0-7)
+                else:
+                    has_eos = False
+                    eos_position = None
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)

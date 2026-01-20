@@ -1049,6 +1049,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Save model checkpoint: either keep latest checkpoint only or all checkpoints
             if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
+                # Save standard components
                 save_training_checkpoint(
                     cfg=cfg,
                     run_dir=run_dir,
@@ -1061,6 +1062,22 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     train_dataset=train_dataset,
                     distributed_state=distributed_state,
                 )
+                
+                # [SUBSTEP EOS] Save EOS head separately
+                if cfg.use_eos_classification and eos_head is not None and distributed_state.is_main_process:
+                    if cfg.save_latest_checkpoint_only:
+                        checkpoint_dir = run_dir
+                        checkpoint_name_suffix = "latest_checkpoint.pt"
+                    else:
+                        checkpoint_dir = Path(str(run_dir) + f"--{log_step}_chkpt")
+                        checkpoint_name_suffix = f"{log_step}_checkpoint.pt"
+                    
+                    eos_head_path = checkpoint_dir / f"eos_head--{checkpoint_name_suffix}"
+                    torch.save(eos_head.state_dict(), eos_head_path)
+                    print(f"✓ Saved EOS head checkpoint: {eos_head_path}")
+                
+                # Wait for EOS head to be saved
+                dist.barrier()
 
             # Test model on validation set
             if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
