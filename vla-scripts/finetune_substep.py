@@ -427,7 +427,7 @@ class FinetuneSubstepConfig:
     num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
     max_steps: int = 200_000                         # Max number of training steps
-    max_grad_norm: float = 1.0                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
+    max_grad_norm: float = 0.8                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
     val_time_limit: int = 180                        # (When `use_val_set==True`) Time limit for computing validation metrics
