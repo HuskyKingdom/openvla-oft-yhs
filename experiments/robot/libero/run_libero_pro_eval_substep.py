@@ -202,6 +202,7 @@ class GenerateConfig:
 
     # Substep EOS detection
     use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
+    eos_threshold: float = 0.5                       # Threshold for EOS detection (probability cutoff)
 
     # fmt: on
 
@@ -217,6 +218,14 @@ def validate_config(cfg: GenerateConfig) -> None:
 
     # Validate task suite
     assert cfg.task_suite_name in [suite.value for suite in TaskSuite], f"Invalid task suite: {cfg.task_suite_name}"
+    
+    # Validate EOS detection dependencies
+    if cfg.use_eos_detection and not cfg.use_substep_decomposition:
+        logger.warning(
+            "[EOS WARNING] ⚠️ EOS detection requires substep decomposition! "
+            "Please set use_substep_decomposition=True. Disabling EOS detection."
+        )
+        cfg.use_eos_detection = False
 
 
 def initialize_model(cfg: GenerateConfig):
@@ -612,18 +621,6 @@ def run_episode(
                "both speed and success rate), we recommend executing the full action chunk.")
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
-    # EOS detection now works in both discrete token mode and L1 regression mode
-    # No compatibility check needed
-    
-    # [CRITICAL] Check EOS detection dependency
-    if cfg.use_eos_detection and not cfg.use_substep_decomposition:
-        log_message(
-            "[EOS WARNING] ⚠️ EOS detection requires substep decomposition! "
-            "Please set use_substep_decomposition=True. Disabling EOS detection.",
-            log_file
-        )
-        cfg.use_eos_detection = False
-
     # Initialize SubstepManager if enabled
     substep_manager = None
     if cfg.use_substep_decomposition and llm_model is not None:
@@ -807,7 +804,7 @@ def run_episode(
                     h_head=head,
                     return_eos_info=True,  # Request EOS detection info
                     eos_head=eos_head,  # Pass EOS head for detection
-                    eos_threshold=0.5,  # Default threshold
+                    eos_threshold=cfg.eos_threshold,  # Use configured threshold
                 )
                 
                 # Debug: Log result type and structure
@@ -860,6 +857,10 @@ def run_episode(
                         log_file
                     )
                     actions = result if not isinstance(result, tuple) else result[0]
+                
+                # [CRITICAL] Add truncated/full actions to queue
+                action_queue.extend(actions)
+                actions_accum.append(actions)
             else:
                 # Standard action query without EOS detection
                 actions = get_action(
