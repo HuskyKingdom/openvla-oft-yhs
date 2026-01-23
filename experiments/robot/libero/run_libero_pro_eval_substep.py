@@ -136,6 +136,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def remove_ddp_prefix_from_checkpoint(state_dict: dict) -> dict:
+    """
+    Removes the 'module.' prefix from parameter names in a PyTorch model state dictionary 
+    that was saved using DistributedDataParallel (DDP).
+
+    Args:
+        state_dict (dict): PyTorch model state dictionary.
+
+    Returns:
+        dict: A new state dictionary with 'module.' prefixes removed from parameter names.
+    """
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        if k.startswith("module."):
+            new_state_dict[k[7:]] = v
+        else:
+            new_state_dict[k] = v
+    return new_state_dict
+
+
 @dataclass
 class GenerateConfig:
     # fmt: off
@@ -294,6 +314,8 @@ def initialize_model(cfg: GenerateConfig):
                 
                 if eos_checkpoint_file is not None:
                     state_dict = torch.load(eos_checkpoint_file, map_location=model.device, weights_only=True)
+                    # Remove DDP 'module.' prefix if present
+                    state_dict = remove_ddp_prefix_from_checkpoint(state_dict)
                     eos_head.load_state_dict(state_dict)
                     eos_head.eval()
                     logger.info(f"[EOS INFO] ✓ Loaded EOS head from: {eos_checkpoint_file}")
