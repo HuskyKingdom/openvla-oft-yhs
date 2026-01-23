@@ -1476,7 +1476,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 eos_probs = torch.sigmoid(eos_logits).squeeze(-1)  # (batch_size, NUM_ACTIONS_CHUNK)
                 
                 # [DEBUG] Print EOS probabilities for diagnosis
-                print(f"[EOS PROBS] {eos_probs[0].cpu().numpy()}")
+                print(f"[EOS PROBS] {eos_probs[0].float().cpu().numpy()}")
                 print(f"[EOS RANGE] min={eos_probs.min().item():.4f}, max={eos_probs.max().item():.4f}, mean={eos_probs.mean().item():.4f}")
                 print(f"[EOS THRESHOLD] {eos_threshold}")
                 
