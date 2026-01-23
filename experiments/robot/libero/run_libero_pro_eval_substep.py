@@ -222,7 +222,7 @@ class GenerateConfig:
 
     # Substep EOS detection
     use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
-    eos_threshold: float = 0.5                       # Threshold for EOS detection (probability cutoff)
+    eos_threshold: float = 0.03                       # Threshold for EOS detection (probability cutoff)
 
     # fmt: on
 
