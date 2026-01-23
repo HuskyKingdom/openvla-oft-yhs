@@ -1475,6 +1475,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 eos_logits = eos_head(actions_hidden_states)  # (batch_size, NUM_ACTIONS_CHUNK, 1)
                 eos_probs = torch.sigmoid(eos_logits).squeeze(-1)  # (batch_size, NUM_ACTIONS_CHUNK)
                 
+                # [DEBUG] Print EOS probabilities for diagnosis
+                print(f"[EOS PROBS] {eos_probs[0].cpu().numpy()}")
+                print(f"[EOS RANGE] min={eos_probs.min().item():.4f}, max={eos_probs.max().item():.4f}, mean={eos_probs.mean().item():.4f}")
+                print(f"[EOS THRESHOLD] {eos_threshold}")
+                
                 # Check if any action position exceeds threshold
                 eos_predictions = eos_probs > eos_threshold  # (batch_size, NUM_ACTIONS_CHUNK)
                 
@@ -1484,9 +1489,11 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
                 if len(eos_positions) > 0:
                     has_eos = True
                     eos_position = eos_positions[0].item()  # First detected EOS position (action index 0-7)
+                    print(f"[EOS DETECTED] ✓ Position {eos_position}, prob={eos_probs[0, eos_position].item():.4f}")
                 else:
                     has_eos = False
                     eos_position = None
+                    print(f"[EOS NOT DETECTED] ✗ All probs below threshold {eos_threshold}")
 
         # Unnormalize predicted actions
         actions = self._unnormalize_actions(normalized_actions, unnorm_key)

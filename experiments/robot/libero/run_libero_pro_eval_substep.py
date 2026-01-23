@@ -316,10 +316,24 @@ def initialize_model(cfg: GenerateConfig):
                     state_dict = torch.load(eos_checkpoint_file, map_location=model.device, weights_only=True)
                     # Remove DDP 'module.' prefix if present
                     state_dict = remove_ddp_prefix_from_checkpoint(state_dict)
+                    
+                    # [DEBUG] Check weight statistics
+                    logger.info(f"[EOS DEBUG] Loading checkpoint: {eos_checkpoint_file}")
+                    logger.info(f"[EOS DEBUG] State dict keys: {list(state_dict.keys())}")
+                    for key, param in state_dict.items():
+                        logger.info(f"[EOS DEBUG]   {key}: shape={param.shape}, mean={param.mean().item():.4f}, std={param.std().item():.4f}")
+                    
                     eos_head.load_state_dict(state_dict)
                     eos_head.eval()
+                    
+                    # [DEBUG] Check loaded weights
+                    logger.info(f"[EOS DEBUG] After loading:")
+                    for name, param in eos_head.named_parameters():
+                        logger.info(f"[EOS DEBUG]   {name}: mean={param.mean().item():.4f}, std={param.std().item():.4f}")
+                    
                     logger.info(f"[EOS INFO] ✓ Loaded EOS head from: {eos_checkpoint_file}")
                     logger.info(f"[EOS INFO] ✓ EOS detection enabled for substep switching")
+                    logger.info(f"[EOS INFO] Config: hidden_dim={eos_hidden_dim}, dropout={eos_dropout}")
                 else:
                     logger.warning(
                         f"[EOS WARNING] ⚠️ EOS head checkpoint not found in {checkpoint_path}. "
