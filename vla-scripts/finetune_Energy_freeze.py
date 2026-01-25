@@ -1054,7 +1054,7 @@ def finetune(cfg: FinetuneConfig) -> None:
         NUM_PATCHES += 1
 
     # energy_model = EnergyModel(vla.module.llm_dim,7,512,4,NUM_ACTIONS_CHUNK).to(device_id).to(torch.bfloat16)
-    energy_model = EnergyModel(vla.module.llm_dim,7).to(device_id)
+    energy_model = EnergyModel(vla.module.llm_dim,7,hidden=1024,head=16,layers=8).to(device_id)
 
 
     # freezing
