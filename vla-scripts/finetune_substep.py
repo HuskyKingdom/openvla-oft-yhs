@@ -466,9 +466,9 @@ class FinetuneSubstepConfig:
     
     # EOS class weights (for extreme imbalance like 1:800)
     eos_use_global_weights: bool = True              # Use global fixed weights instead of per-batch dynamic weights
-    eos_pos_weight: float = 3.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
+    eos_pos_weight: float = 2.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
     eos_use_focal_loss: bool = True                 # Use Focal Loss (better for extreme imbalance)
-    eos_focal_alpha: float = 0.35                    # Focal Loss alpha (weight for positive class)
+    eos_focal_alpha: float = 0.25                    # Focal Loss alpha (weight for positive class)
     eos_focal_gamma: float = 2.0                     # Focal Loss gamma (focusing parameter)
 
     # fmt: on
