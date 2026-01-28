@@ -985,10 +985,6 @@ def k_step_energy_correction_seq(
             print(f"Warning: NaN detected in updated action at iteration {iter_idx}, using previous valid action")
             A = A_prev.clone()
             break
-        else:
-            print(f"Warning: NaN detected in updated action at iteration {iter_idx}, using previous valid action")
-            A = A_prev.clone()
-            break
 
     energy_head.eval()
     A_corrected = A.detach().clone().requires_grad_(True)
