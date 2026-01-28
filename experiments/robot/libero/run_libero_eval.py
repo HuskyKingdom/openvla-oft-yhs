@@ -138,9 +138,9 @@ class GenerateConfig:
     remove_wrap:bool = False
     energy_k:int = 1
     energy_alpha:float = 0.5
-    energy_hidden_size:int = 512
-    energy_head_size:int = 8
-    energy_layers:int = 4
+    energy_hidden_size:int = 1024
+    energy_head_size:int = 16
+    energy_layers:int = 8
 
     # fmt: on
 
