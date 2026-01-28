@@ -191,7 +191,7 @@ class EnergyModel(nn.Module):
 
     def forward(self, hN: torch.Tensor, a: torch.Tensor, pad_mask = None, reduce="sum", gamma=None) -> torch.Tensor:
         """
-        hN: [B, S, D_h], a: [B, H,  D_a]
+        hN: [B, S, D_h] or [S, D_h], a: [B, H,  D_a]
         return: energy [B, 1]
         """
 
@@ -211,6 +211,14 @@ class EnergyModel(nn.Module):
 
         hN = hN.float()
         a  = a.float()
+        
+        # Ensure hN has batch dimension if it's 2-D
+        if hN.dim() == 2:
+            hN = hN.unsqueeze(0)  # [S, D_h] -> [1, S, D_h]
+        
+        # Ensure a has batch dimension if it's 2-D
+        if a.dim() == 2:
+            a = a.unsqueeze(0)  # [H, D_a] -> [1, H, D_a]
         
         assert_finite(hN, "hN")
         assert_finite(a,  "a")
