@@ -137,7 +137,7 @@ class GenerateConfig:
     task_label:str = ""
     remove_wrap:bool = False
     energy_k:int = 1
-    energy_alpha:float = 0.5
+    energy_alpha:float = 0.1
     energy_hidden_size:int = 1024
     energy_head_size:int = 16
     energy_layers:int = 8
