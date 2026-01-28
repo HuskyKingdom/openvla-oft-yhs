@@ -247,6 +247,26 @@ class EnergyModel(nn.Module):
         # energy = self.pool(energy_feat) # [B,Da]
         # E = self.prediction_head(energy) # [B, 1]
 
+        # Adjust pad_mask to match context_mapped sequence length
+        if pad_mask is not None:
+            B, S_context = context_mapped.shape[:2]
+            
+            # Ensure pad_mask is 2-D [B, S]
+            if pad_mask.dim() == 1:
+                pad_mask = pad_mask.unsqueeze(0).expand(B, -1)
+            
+            pad_mask_seq_len = pad_mask.shape[1]
+            
+            if pad_mask_seq_len != S_context:
+                # If pad_mask is longer, take the first S_context elements
+                # This assumes hN is a subset of the full sequence (e.g., only vision patches)
+                if pad_mask_seq_len > S_context:
+                    pad_mask = pad_mask[:, :S_context]
+                else:
+                    # If pad_mask is shorter, pad with False (no masking for extra positions)
+                    pad_mask_padded = torch.zeros(B, S_context, dtype=pad_mask.dtype, device=pad_mask.device)
+                    pad_mask_padded[:, :pad_mask_seq_len] = pad_mask
+                    pad_mask = pad_mask_padded
 
         Z, _ = self.cross(query=action_mapped, key=context_mapped, value=context_mapped, need_weights=False, key_padding_mask=pad_mask)
         # assert_finite(Z, "attn_out")
