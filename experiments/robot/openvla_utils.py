@@ -940,17 +940,23 @@ def k_step_energy_correction_seq(
 
     # k iterations of residule correction
     A_prev = A.clone()  # Keep previous valid A
-    for _ in range(max(1, int(k))):
+    for iter_idx in range(max(1, int(k))):
         A = A.detach().clone().requires_grad_(True)
         with torch.enable_grad():
             E = energy_head(h, A, energy_mask)
             E_sum = E.sum() if E.dim() > 0 else E
-            grad_A = torch.autograd.grad(E_sum, A)[0]  # [1,H,Da]
+            grad_A = torch.autograd.grad(E_sum, A, create_graph=False, retain_graph=False)[0]  # [1,H,Da]
 
-        # Check for NaN in gradient
+        # Check for NaN/Inf in gradient
         if not torch.isfinite(grad_A).all():
-            print(f"Warning: NaN detected in gradient, skipping this iteration")
+            print(f"Warning: NaN/Inf detected in gradient at iteration {iter_idx}, E={E.item():.6f}, skipping")
             A = A_prev.clone()
+            break
+
+        # Check gradient magnitude
+        grad_norm = grad_A.flatten(1).norm(dim=-1).item()
+        if grad_norm < 1e-8:
+            print(f"Warning: Gradient too small (norm={grad_norm:.2e}) at iteration {iter_idx}, E={E.item():.6f}, stopping")
             break
 
         if correct_first_only:
@@ -971,10 +977,16 @@ def k_step_energy_correction_seq(
         
         # Check for NaN in updated A
         if torch.isfinite(A_new).all():
+            # Check if energy actually decreased (optional check, can be expensive)
+            # For now, just update if finite
             A = A_new
             A_prev = A.clone()
         else:
-            print(f"Warning: NaN detected in updated action, using previous valid action")
+            print(f"Warning: NaN detected in updated action at iteration {iter_idx}, using previous valid action")
+            A = A_prev.clone()
+            break
+        else:
+            print(f"Warning: NaN detected in updated action at iteration {iter_idx}, using previous valid action")
             A = A_prev.clone()
             break
 
