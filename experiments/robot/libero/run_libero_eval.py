@@ -142,6 +142,8 @@ class GenerateConfig:
     energy_head_size:int = 16
     energy_layers:int = 8
 
+    energy_path: str = "/home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/ckpoints/energy_scale_100k/energy_model--100000_checkpoint.pt"
+
     # fmt: on
 
 
@@ -449,7 +451,7 @@ def run_task(
         # loading energy model
         if cfg.e_decoding:
             hnn_potential_mlp_head = EnergyModel(model.llm_dim,7,hidden=cfg.energy_hidden_size,head=cfg.energy_head_size,layers=cfg.energy_layers).to(model.device)
-            hnn_potential_mlp_head.load_state_dict(torch.load(cfg.pretrained_checkpoint + "/energy_model--100000_checkpoint.pt"))
+            hnn_potential_mlp_head.load_state_dict(torch.load(cfg.energy_path))
         else:
             hnn_potential_mlp_head = None
 
