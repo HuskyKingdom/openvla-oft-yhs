@@ -939,12 +939,19 @@ def k_step_energy_correction_seq(
         act_range_t = act_range_t.view(1, 1, -1)  # [1,1,Da]
 
     # k iterations of residule correction
+    A_prev = A.clone()  # Keep previous valid A
     for _ in range(max(1, int(k))):
         A = A.detach().clone().requires_grad_(True)
         with torch.enable_grad():
             E = energy_head(h, A, energy_mask)
             E_sum = E.sum() if E.dim() > 0 else E
             grad_A = torch.autograd.grad(E_sum, A)[0]  # [1,H,Da]
+
+        # Check for NaN in gradient
+        if not torch.isfinite(grad_A).all():
+            print(f"Warning: NaN detected in gradient, skipping this iteration")
+            A = A_prev.clone()
+            break
 
         if correct_first_only:
             mask = torch.zeros_like(grad_A); mask[:, 0, :] = 1.0
@@ -960,10 +967,32 @@ def k_step_energy_correction_seq(
             coef = torch.minimum(torch.ones_like(step_norm), (clip_frac * base_norm) / step_norm)
             step = step * coef.view(1, 1, 1)
 
-        A = (A - step).detach()
+        A_new = (A - step).detach()
+        
+        # Check for NaN in updated A
+        if torch.isfinite(A_new).all():
+            A = A_new
+            A_prev = A.clone()
+        else:
+            print(f"Warning: NaN detected in updated action, using previous valid action")
+            A = A_prev.clone()
+            break
 
     energy_head.eval()
     A_corrected = A.detach().clone().requires_grad_(True)
+    
+    # Check and fix NaN values in A_corrected before processing
+    if not torch.isfinite(A_corrected).all():
+        print(f"Warning: NaN detected in A_corrected, replacing with A0")
+        # Use A0 as fallback, but need to process it the same way as A was processed
+        A_corrected = A0.clone()
+        A_corrected = normalize_gripper_action_tensor(A_corrected)
+        # Invert gripper action (multiply last dimension by -1)
+        A_corrected[..., -1] *= -1.0
+        A_corrected = A_corrected.detach().clone()
+        A_corrected[..., -1] = torch.where(A_corrected[..., -1] == -1, 1, 0)
+        A_corrected = A_corrected.requires_grad_(True)
+    
     A_corrected[..., -1] = torch.round(A_corrected[..., -1]).clamp(0, 1)
     E_corrected = energy_head(h, A_corrected, energy_mask)
     energy_head.train()
