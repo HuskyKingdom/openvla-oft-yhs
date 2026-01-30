@@ -19,7 +19,29 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from PIL import Image
-import clip
+
+# Try to import CLIP - support multiple implementations
+try:
+    import clip as openai_clip
+    HAS_OPENAI_CLIP = True
+except ImportError:
+    HAS_OPENAI_CLIP = False
+    openai_clip = None
+
+try:
+    import open_clip
+    HAS_OPEN_CLIP = True
+except ImportError:
+    HAS_OPEN_CLIP = False
+    open_clip = None
+
+try:
+    from transformers import CLIPModel, CLIPProcessor
+    HAS_TRANSFORMERS_CLIP = True
+except ImportError:
+    HAS_TRANSFORMERS_CLIP = False
+    CLIPModel = None
+    CLIPProcessor = None
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -64,30 +86,85 @@ class TaskAwareRLDSBatchTransform(RLDSBatchTransform):
 
 
 def load_clip_model(device: str = "cuda"):
-    """加载CLIP模型用于提取图像特征"""
-    try:
-        model, preprocess = clip.load("ViT-B/32", device=device)
-        model.eval()
-        return model, preprocess
-    except Exception as e:
-        print(f"加载CLIP模型失败: {e}")
-        print("尝试使用CPU...")
-        model, preprocess = clip.load("ViT-B/32", device="cpu")
-        model.eval()
-        return model, preprocess
+    """
+    加载CLIP模型用于提取图像特征
+    支持多种CLIP实现：OpenAI CLIP, Open CLIP, Transformers CLIP
+    """
+    # Try OpenAI CLIP first
+    if HAS_OPENAI_CLIP:
+        try:
+            model, preprocess = openai_clip.load("ViT-B/32", device=device)
+            model.eval()
+            return model, preprocess, "openai_clip"
+        except Exception as e:
+            print(f"OpenAI CLIP加载失败: {e}")
+            try:
+                model, preprocess = openai_clip.load("ViT-B/32", device="cpu")
+                model.eval()
+                return model, preprocess, "openai_clip"
+            except Exception as e2:
+                print(f"OpenAI CLIP (CPU)加载失败: {e2}")
+    
+    # Try Open CLIP
+    if HAS_OPEN_CLIP:
+        try:
+            model, _, preprocess = open_clip.create_model_and_transforms(
+                "ViT-B-32", pretrained="openai", device=device
+            )
+            model.eval()
+            return model, preprocess, "open_clip"
+        except Exception as e:
+            print(f"Open CLIP加载失败: {e}")
+            try:
+                model, _, preprocess = open_clip.create_model_and_transforms(
+                    "ViT-B-32", pretrained="openai", device="cpu"
+                )
+                model.eval()
+                return model, preprocess, "open_clip"
+            except Exception as e2:
+                print(f"Open CLIP (CPU)加载失败: {e2}")
+    
+    # Try Transformers CLIP
+    if HAS_TRANSFORMERS_CLIP:
+        try:
+            model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+            processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            model.eval()
+            return model, processor, "transformers_clip"
+        except Exception as e:
+            print(f"Transformers CLIP加载失败: {e}")
+            try:
+                model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cpu")
+                processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+                model.eval()
+                return model, processor, "transformers_clip"
+            except Exception as e2:
+                print(f"Transformers CLIP (CPU)加载失败: {e2}")
+    
+    raise RuntimeError(
+        "无法加载CLIP模型！请安装以下之一：\n"
+        "  - OpenAI CLIP: pip install git+https://github.com/openai/CLIP.git\n"
+        "  - Open CLIP: pip install open-clip-torch\n"
+        "  - Transformers CLIP: pip install transformers (已包含)"
+    )
 
 
 def extract_image_features(
     pixel_values: torch.Tensor,
     clip_model,
+    clip_processor,
+    clip_type: str,
     device: str = "cuda"
 ) -> torch.Tensor:
     """
     使用CLIP提取图像特征（批量处理以提高效率）
+    支持多种CLIP实现
     
     Args:
         pixel_values: [B, C, H, W] 图像tensor（ImageNet归一化的）
         clip_model: CLIP模型
+        clip_processor: CLIP处理器/预处理器
+        clip_type: CLIP类型 ("openai_clip", "open_clip", "transformers_clip")
         device: 设备
     
     Returns:
@@ -95,38 +172,72 @@ def extract_image_features(
     """
     B, C, H, W = pixel_values.shape
     
-    # 反归一化（假设使用ImageNet均值和标准差）
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
-    
-    # 反归一化
-    pixel_values_denorm = pixel_values * std + mean
-    pixel_values_denorm = torch.clamp(pixel_values_denorm, 0, 1)
-    
-    # 调整大小到CLIP的输入尺寸 (224x224)
-    if H != 224 or W != 224:
-        pixel_values_denorm = F.interpolate(
-            pixel_values_denorm,
-            size=(224, 224),
-            mode='bilinear',
-            align_corners=False
-        )
-    
-    # CLIP期望的输入是[-1, 1]范围（经过normalize）
-    # CLIP的preprocess会做: (pixel - mean) / std，其中mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711]
-    # 但为了简化，我们直接使用CLIP的视觉编码器，它内部会处理
-    # 我们需要将[0,1]转换为CLIP的输入格式
-    clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1).to(device)
-    clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1).to(device)
-    
-    # 转换为CLIP的输入格式
-    pixel_values_clip = (pixel_values_denorm - clip_mean) / clip_std
-    
-    # 提取特征
     with torch.no_grad():
-        image_features = clip_model.encode_image(pixel_values_clip)
-        # 归一化特征
-        image_features = F.normalize(image_features, p=2, dim=-1)
+        if clip_type == "openai_clip" or clip_type == "open_clip":
+            # OpenAI CLIP 或 Open CLIP
+            # 反归一化（假设使用ImageNet均值和标准差）
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+            
+            # 反归一化
+            pixel_values_denorm = pixel_values * std + mean
+            pixel_values_denorm = torch.clamp(pixel_values_denorm, 0, 1)
+            
+            # 调整大小到CLIP的输入尺寸 (224x224)
+            if H != 224 or W != 224:
+                pixel_values_denorm = F.interpolate(
+                    pixel_values_denorm,
+                    size=(224, 224),
+                    mode='bilinear',
+                    align_corners=False
+                )
+            
+            # CLIP期望的输入格式
+            if clip_type == "openai_clip":
+                # OpenAI CLIP: 使用特定的均值和标准差
+                clip_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1).to(device)
+                clip_std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1).to(device)
+                pixel_values_clip = (pixel_values_denorm - clip_mean) / clip_std
+                image_features = clip_model.encode_image(pixel_values_clip)
+            else:
+                # Open CLIP: 使用processor进行预处理
+                # 将tensor转换为PIL Images
+                images = []
+                for i in range(B):
+                    img_array = (pixel_values_denorm[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                    img_pil = Image.fromarray(img_array)
+                    images.append(img_pil)
+                
+                # 使用processor预处理（Open CLIP的processor是一个transform）
+                img_tensors = torch.stack([clip_processor(img) for img in images]).to(device)
+                # Open CLIP的encode_image支持normalize参数
+                image_features = clip_model.encode_image(img_tensors, normalize=True)
+            
+            # 归一化特征（如果还没有归一化）
+            if clip_type == "openai_clip":
+                image_features = F.normalize(image_features, p=2, dim=-1)
+        
+        elif clip_type == "transformers_clip":
+            # Transformers CLIP
+            # 将tensor转换为PIL Images
+            mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(device)
+            std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(device)
+            pixel_values_denorm = pixel_values * std + mean
+            pixel_values_denorm = torch.clamp(pixel_values_denorm, 0, 1)
+            
+            images = []
+            for i in range(B):
+                img_array = (pixel_values_denorm[i].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                img_pil = Image.fromarray(img_array)
+                images.append(img_pil)
+            
+            # 使用processor预处理
+            inputs = clip_processor(images=images, return_tensors="pt").to(device)
+            image_features = clip_model.get_image_features(**inputs)
+            image_features = F.normalize(image_features, p=2, dim=-1)
+        
+        else:
+            raise ValueError(f"不支持的CLIP类型: {clip_type}")
     
     return image_features
 
@@ -210,7 +321,8 @@ def compute_collision_rate(
         统计结果字典
     """
     print(f"正在加载CLIP模型...")
-    clip_model, _ = load_clip_model(device)
+    clip_model, clip_processor, clip_type = load_clip_model(device)
+    print(f"成功加载CLIP模型 (类型: {clip_type})")
     
     print(f"正在加载VLA处理器...")
     # 加载VLA处理器
@@ -313,7 +425,9 @@ def compute_collision_rate(
             
             # 提取图像特征
             pixel_values = batch["pixel_values"].to(device)
-            image_features = extract_image_features(pixel_values, clip_model, device)
+            image_features = extract_image_features(
+                pixel_values, clip_model, clip_processor, clip_type, device
+            )
             
             # 计算相似度矩阵
             similarity_matrix = compute_cosine_similarity_matrix(image_features)
