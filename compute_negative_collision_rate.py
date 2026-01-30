@@ -162,6 +162,7 @@ def extract_image_features(
     
     Args:
         pixel_values: [B, C, H, W] 图像tensor（ImageNet归一化的）
+                     可能包含多个图像堆叠在通道维度（如主相机+手腕相机）
         clip_model: CLIP模型
         clip_processor: CLIP处理器/预处理器
         clip_type: CLIP类型 ("openai_clip", "open_clip", "transformers_clip")
@@ -171,6 +172,16 @@ def extract_image_features(
         features: [B, D] 图像特征向量
     """
     B, C, H, W = pixel_values.shape
+    
+    # 处理多图像输入：只使用主相机图像（前3个通道）
+    # 如果C > 3，可能是多个图像堆叠或fused backbone（6通道）
+    if C != 3:
+        if C > 3:
+            # 只取前3个通道（主相机图像）
+            pixel_values = pixel_values[:, :3, :, :]
+            C = 3
+        else:
+            raise ValueError(f"不支持的图像通道数: {C}，期望3个通道（RGB）")
     
     with torch.no_grad():
         if clip_type == "openai_clip" or clip_type == "open_clip":
