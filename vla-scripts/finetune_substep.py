@@ -280,30 +280,23 @@ def run_forward_pass(
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 eos_gt_flat = eos_gt.squeeze(-1).reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
                 
+                # [CRITICAL] 限制Logits范围（最直接有效的方法）
+                # 在计算Loss之前，强制把EOS的输出限制在安全范围内
+                # 这能防止 exp(100) 这种溢出发生，确保 sigmoid 和 BCE loss 的数值稳定性
+                # 范围 [-10, 10] 对应 sigmoid 输出 [4.5e-5, 0.99995]，完全覆盖有效概率范围
+                eos_logits_flat = torch.clamp(eos_logits_flat, min=-10.0, max=10.0)
+                
                 # Count positive/negative samples
                 num_pos = (eos_gt_flat > 0.5).sum().item()
                 num_neg = (eos_gt_flat <= 0.5).sum().item()
                 total_samples = num_pos + num_neg
                 
                 # 计算loss（不再跳过任何batch！）
+                # 注意：eos_logits_flat 已经在上面被clamp到 [-10, 10] 范围
                 if use_focal_loss:
                     # Focal Loss: 专门为极端不平衡设计
-                    # FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
-                    # [NUMERICAL STABILITY FIX] Clamp logits to prevent extreme values
-                    eos_logits_flat = torch.clamp(eos_logits_flat, min=-10.0, max=10.0)
-                    
-                    # Compute probabilities with numerical stability
-                    eos_probs = torch.sigmoid(eos_logits_flat)
-                    eos_probs = torch.clamp(eos_probs, min=1e-7, max=1.0 - 1e-7)  # Prevent 0 or 1
-                    
-                    # Compute p_t with stability
-                    # For positive samples: p_t = p, for negative: p_t = 1 - p
-                    p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
-                    p_t = torch.clamp(p_t, min=1e-7, max=1.0 - 1e-7)  # Prevent 0 or 1
-                    
-                    # Compute focal weight: (1 - p_t)^gamma with stability
-                    focal_weight = (1 - p_t) ** focal_gamma
-                    focal_weight = torch.clamp(focal_weight, min=1e-7)  # Prevent 0 (critical for preventing NaN)
+                    # 标准实现：FL = alpha_t * (1 - p_t)^gamma * BCE_loss
+                    # 其中 p_t = exp(-BCE_loss)，这是数值稳定的获取 p_t 的方法
                     
                     # Compute alpha weight (class balance)
                     alpha_t = torch.where(
@@ -312,14 +305,19 @@ def run_forward_pass(
                         torch.tensor(1 - focal_alpha, device=device_id)
                     )
                     
-                    # BCE loss (already numerically stable, but clamp to prevent extreme values)
+                    # 更加标准的 Focal Loss 实现 (避免混合调用 BCE API)
+                    # 先计算 BCE loss（使用 logits，数值稳定）
                     bce_loss = nn.functional.binary_cross_entropy_with_logits(
                         eos_logits_flat, eos_gt_flat, reduction='none'
                     )
-                    bce_loss = torch.clamp(bce_loss, max=100.0)  # Prevent inf
                     
-                    # Focal loss = alpha * focal_weight * BCE
-                    eos_loss = (alpha_t * focal_weight * bce_loss).mean()
+                    # p_t = exp(-bce_loss) 这是一个数值稳定的获取 p_t 的方法！
+                    # 避免了直接计算 sigmoid 和 1-sigmoid，从而避免数值下溢问题
+                    p_t = torch.exp(-bce_loss)
+                    
+                    # Focal loss = alpha_t * (1 - p_t)^gamma * bce_loss
+                    loss = alpha_t * (1 - p_t) ** focal_gamma * bce_loss
+                    eos_loss = loss.mean()
                     
                     # [SAFETY CHECK] Fallback to weighted BCE if NaN detected
                     if not torch.isfinite(eos_loss):
@@ -339,9 +337,7 @@ def run_forward_pass(
                         # 使用全局固定权重（适合极端不平衡）
                         # pos_weight: 正样本的权重倍数
                         # 负样本权重固定为1.0，正样本权重为pos_weight
-                        # [NUMERICAL STABILITY FIX] Clamp logits to prevent extreme values
-                        eos_logits_flat = torch.clamp(eos_logits_flat, min=-10.0, max=10.0)
-                        
+                        # 注意：eos_logits_flat 已经在上面被clamp到 [-10, 10] 范围
                         pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
                         loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
                         eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)

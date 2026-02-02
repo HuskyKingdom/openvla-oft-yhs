@@ -88,7 +88,27 @@ eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
 
 ## 解决方案
 
-### 方案1：修复Focal Loss数值稳定性（推荐）✅
+### 方案A：限制Logits范围（最直接有效）✅ **已实施**
+
+**实施位置**：`vla-scripts/finetune_substep.py:280-284`
+
+**关键改进**：
+- 在EOS head输出后**立即**限制logits范围到 `[-10, 10]`
+- 这能防止 `exp(100)` 这种溢出发生
+- 确保所有后续计算（sigmoid、BCE loss、Focal loss）都使用安全的logits值
+- 范围 `[-10, 10]` 对应 sigmoid 输出 `[4.5e-5, 0.99995]`，完全覆盖有效概率范围
+
+**代码位置**：
+```python
+# Forward through EOS head
+eos_logits = eos_head.module.forward(actions_hidden_states)
+eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)
+
+# [CRITICAL] 限制Logits范围（最直接有效的方法）
+eos_logits_flat = torch.clamp(eos_logits_flat, min=-10.0, max=10.0)
+```
+
+### 方案1：修复Focal Loss数值稳定性（推荐）✅ **已实施**
 
 **修改位置**：`vla-scripts/finetune_substep.py:289-312`
 
