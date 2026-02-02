@@ -321,8 +321,10 @@ def run_forward_pass(
                     
                     # [SAFETY CHECK] Fallback to weighted BCE if NaN detected
                     if not torch.isfinite(eos_loss):
-                        print(f"⚠️  [Focal Loss NaN]: Using fallback weighted BCE")
-                        pos_weight_tensor = torch.tensor([focal_alpha / (1 - focal_alpha)], device=device_id)
+                        print(f"⚠️  [Focal Loss NaN]: Using fallback weighted BCE with pos_weight={pos_weight}")
+                        # 使用配置中的 pos_weight（通常很大，如50-100，适合极度不平衡数据）
+                        # 而不是从 focal_alpha 计算（focal_alpha通常很小，如0.25，会产生错误的权重）
+                        pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
                         eos_loss = nn.functional.binary_cross_entropy_with_logits(
                             eos_logits_flat, eos_gt_flat, pos_weight=pos_weight_tensor
                         )
@@ -490,7 +492,7 @@ class FinetuneSubstepConfig:
     
     # EOS class weights (for extreme imbalance like 1:800)
     eos_use_global_weights: bool = True              # Use global fixed weights instead of per-batch dynamic weights
-    eos_pos_weight: float = 1.5                 # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
+    eos_pos_weight: float = 25                 # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
     eos_use_focal_loss: bool = True                 # Use Focal Loss (better for extreme imbalance)
     eos_focal_alpha: float = 0.25                    # Focal Loss alpha (weight for positive class)
     eos_focal_gamma: float = 2.0                     # Focal Loss gamma (focusing parameter)
