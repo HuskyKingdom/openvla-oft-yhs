@@ -280,23 +280,21 @@ def run_forward_pass(
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 eos_gt_flat = eos_gt.squeeze(-1).reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
                 
-                # [CRITICAL] 限制Logits范围（最直接有效的方法）
-                # 在计算Loss之前，强制把EOS的输出限制在安全范围内
-                # 这能防止 exp(100) 这种溢出发生，确保 sigmoid 和 BCE loss 的数值稳定性
-                # 范围 [-10, 10] 对应 sigmoid 输出 [4.5e-5, 0.99995]，完全覆盖有效概率范围
-                eos_logits_flat = torch.clamp(eos_logits_flat, min=-10.0, max=10.0)
-                
                 # Count positive/negative samples
                 num_pos = (eos_gt_flat > 0.5).sum().item()
                 num_neg = (eos_gt_flat <= 0.5).sum().item()
                 total_samples = num_pos + num_neg
                 
                 # 计算loss（不再跳过任何batch！）
-                # 注意：eos_logits_flat 已经在上面被clamp到 [-10, 10] 范围
                 if use_focal_loss:
                     # Focal Loss: 专门为极端不平衡设计
-                    # 标准实现：FL = alpha_t * (1 - p_t)^gamma * BCE_loss
-                    # 其中 p_t = exp(-BCE_loss)，这是数值稳定的获取 p_t 的方法
+                    # FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
+                    eos_probs = torch.sigmoid(eos_logits_flat)
+                    
+                    # Compute focal weight: (1 - p_t)^gamma
+                    # For positive samples: p_t = p, for negative: p_t = 1 - p
+                    p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
+                    focal_weight = (1 - p_t) ** focal_gamma
                     
                     # Compute alpha weight (class balance)
                     alpha_t = torch.where(
@@ -305,29 +303,13 @@ def run_forward_pass(
                         torch.tensor(1 - focal_alpha, device=device_id)
                     )
                     
-                    # 更加标准的 Focal Loss 实现 (避免混合调用 BCE API)
-                    # 先计算 BCE loss（使用 logits，数值稳定）
+                    # BCE loss
                     bce_loss = nn.functional.binary_cross_entropy_with_logits(
                         eos_logits_flat, eos_gt_flat, reduction='none'
                     )
                     
-                    # p_t = exp(-bce_loss) 这是一个数值稳定的获取 p_t 的方法！
-                    # 避免了直接计算 sigmoid 和 1-sigmoid，从而避免数值下溢问题
-                    p_t = torch.exp(-bce_loss)
-                    
-                    # Focal loss = alpha_t * (1 - p_t)^gamma * bce_loss
-                    loss = alpha_t * (1 - p_t) ** focal_gamma * bce_loss
-                    eos_loss = loss.mean()
-                    
-                    # [SAFETY CHECK] Fallback to weighted BCE if NaN detected
-                    if not torch.isfinite(eos_loss):
-                        print(f"⚠️  [Focal Loss NaN]: Using fallback weighted BCE with pos_weight={pos_weight}")
-                        # 使用配置中的 pos_weight（通常很大，如50-100，适合极度不平衡数据）
-                        # 而不是从 focal_alpha 计算（focal_alpha通常很小，如0.25，会产生错误的权重）
-                        pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
-                        eos_loss = nn.functional.binary_cross_entropy_with_logits(
-                            eos_logits_flat, eos_gt_flat, pos_weight=pos_weight_tensor
-                        )
+                    # Focal loss = alpha * focal_weight * BCE
+                    eos_loss = (alpha_t * focal_weight * bce_loss).mean()
                     
                     weight_info = {
                         'eos_focal_alpha': focal_alpha,
@@ -339,17 +321,9 @@ def run_forward_pass(
                         # 使用全局固定权重（适合极端不平衡）
                         # pos_weight: 正样本的权重倍数
                         # 负样本权重固定为1.0，正样本权重为pos_weight
-                        # 注意：eos_logits_flat 已经在上面被clamp到 [-10, 10] 范围
                         pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
                         loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
                         eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
-                        
-                        # [SAFETY CHECK] Fallback if NaN detected
-                        if not torch.isfinite(eos_loss):
-                            print(f"⚠️  [Weighted BCE NaN]: Using unweighted BCE")
-                            eos_loss = nn.functional.binary_cross_entropy_with_logits(
-                                eos_logits_flat, eos_gt_flat
-                            )
                         
                         weight_info = {
                             'eos_pos_weight': pos_weight,
@@ -453,7 +427,7 @@ class FinetuneSubstepConfig:
     num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
     max_steps: int = 200_000                         # Max number of training steps
-    max_grad_norm: float = 1.0                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
+    max_grad_norm: float = 0.8                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
     val_time_limit: int = 180                        # (When `use_val_set==True`) Time limit for computing validation metrics
@@ -492,7 +466,7 @@ class FinetuneSubstepConfig:
     
     # EOS class weights (for extreme imbalance like 1:800)
     eos_use_global_weights: bool = True              # Use global fixed weights instead of per-batch dynamic weights
-    eos_pos_weight: float = 25                 # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
+    eos_pos_weight: float = 2.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
     eos_use_focal_loss: bool = True                 # Use Focal Loss (better for extreme imbalance)
     eos_focal_alpha: float = 0.25                    # Focal Loss alpha (weight for positive class)
     eos_focal_gamma: float = 2.0                     # Focal Loss gamma (focusing parameter)
@@ -981,8 +955,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             if not torch.isfinite(normalized_loss):
                 print(f"❌ [NaN/Inf Error] Step {batch_idx}: loss={normalized_loss.item()}")
                 print(f"   Metrics: {metrics}")
-                print(f"   Action loss: {metrics.get('action_loss', 'N/A')}")
-                print(f"   EOS loss: {metrics.get('eos_loss', 'N/A')}")
                 print(f"   Skipping this batch to prevent training crash...")
                 optimizer.zero_grad()  # Clear any accumulated gradients
                 continue  # Skip this batch
@@ -1055,23 +1027,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                # [CRITICAL] Check for NaN gradients before clipping
-                has_nan_grad = False
-                for param in trainable_params:
-                    if param.grad is not None:
-                        if not torch.isfinite(param.grad).all():
-                            has_nan_grad = True
-                            if distributed_state.is_main_process:
-                                print(f"❌ [NaN Gradient] Step {gradient_step_idx}: param shape={param.shape}")
-                            break
-                
-                if has_nan_grad:
-                    if distributed_state.is_main_process:
-                        print(f"⚠️  [Skipping Step] Step {gradient_step_idx}: NaN gradients detected")
-                    optimizer.zero_grad()
-                    progress.update()
-                    continue
-                
                 # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
                 # Clip gradients of all trainable parameters
                 if cfg.max_grad_norm > 0:
@@ -1079,15 +1034,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                         trainable_params, 
                         max_norm=cfg.max_grad_norm
                     )
-                    
-                    # Check if gradient norm is finite after clipping
-                    if not torch.isfinite(total_norm):
-                        if distributed_state.is_main_process:
-                            print(f"❌ [NaN after clipping] Step {gradient_step_idx}: Skipping step")
-                        optimizer.zero_grad()
-                        progress.update()
-                        continue
-                    
                     # Log gradient norm for monitoring
                     if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
                         wandb.log({"VLA Train/Grad Norm": total_norm.item()}, step=log_step)
