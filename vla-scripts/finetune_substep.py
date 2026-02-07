@@ -98,7 +98,14 @@ from finetune import (
 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import random
 
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 def run_forward_pass(
     vla,
@@ -275,7 +282,8 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-                
+                eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
+
                 # Flatten for loss computation
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 eos_gt_flat = eos_gt.squeeze(-1).reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
@@ -1105,5 +1113,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
 
 if __name__ == "__main__":
+    set_seed(42) # reproducibility
     finetune_substep()
 
