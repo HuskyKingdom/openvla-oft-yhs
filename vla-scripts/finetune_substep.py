@@ -295,29 +295,32 @@ def run_forward_pass(
                 
                 # 计算loss（不再跳过任何batch！）
                 if use_focal_loss:
-                    # Focal Loss: 专门为极端不平衡设计
-                    # FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
-                    eos_probs = torch.sigmoid(eos_logits_flat)
+                    # --- [CRITICAL FIX] 数值稳定的 Focal Loss 实现 ---
+                    # 步骤 A: 计算基础的 BCE Loss (不 reduce)，利用 PyTorch 的数值稳定性
+                    # 这比手动写 -log(sigmoid(x)) 稳定得多
+                    bce_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
+                    bce_loss = bce_loss_fn(eos_logits_flat, eos_gt_flat)
                     
-                    # Compute focal weight: (1 - p_t)^gamma
-                    # For positive samples: p_t = p, for negative: p_t = 1 - p
-                    p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
+                    # 步骤 B: 计算概率 (仅用于权重计算，不需要梯度回传给它，detached以防万一)
+                    with torch.no_grad():
+                        eos_probs = torch.sigmoid(eos_logits_flat)
+                        p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
+                    
+                    # 步骤 C: 计算 Focal Weight
+                    # (1 - p_t)^gamma
                     focal_weight = (1 - p_t) ** focal_gamma
                     
-                    # Compute alpha weight (class balance)
+                    # 步骤 D: Alpha Balancing
                     alpha_t = torch.where(
                         eos_gt_flat > 0.5,
                         torch.tensor(focal_alpha, device=device_id),
                         torch.tensor(1 - focal_alpha, device=device_id)
                     )
                     
-                    # BCE loss
-                    bce_loss = nn.functional.binary_cross_entropy_with_logits(
-                        eos_logits_flat, eos_gt_flat, reduction='none'
-                    )
-                    
-                    # Focal loss = alpha * focal_weight * BCE
-                    eos_loss = (alpha_t * focal_weight * bce_loss).mean()
+                    # 步骤 E: 组合 (Loss = Weight * BCE)
+                    # 这样梯度主要通过 bce_loss 传回，这是最稳定的路径
+                    loss_per_sample = alpha_t * focal_weight * bce_loss
+                    eos_loss = loss_per_sample.mean()
                     
                     weight_info = {
                         'eos_focal_alpha': focal_alpha,
@@ -959,13 +962,12 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             # Normalize loss to account for gradient accumulation
             normalized_loss = loss / cfg.grad_accumulation_steps
 
-            # [SAFETY] Check for NaN/Inf in loss (critical for high pos_weight training)
+            # Check for NaN in Loss (Loss 熔断)
             if not torch.isfinite(normalized_loss):
-                print(f"❌ [NaN/Inf Error] Step {batch_idx}: loss={normalized_loss.item()}")
+                print(f"❌ [Loss NaN/Inf] Step {batch_idx}: loss={normalized_loss.item()}")
                 print(f"   Metrics: {metrics}")
-                print(f"   Skipping this batch to prevent training crash...")
-                optimizer.zero_grad()  # Clear any accumulated gradients
-                continue  # Skip this batch
+                optimizer.zero_grad() 
+                continue # 跳过此 Batch
             
             # Backward pass
             normalized_loss.backward()
@@ -1035,8 +1037,69 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
-                # Clip gradients of all trainable parameters
+                # --- [CRITICAL FIX] 梯度熔断机制 ---
+                # 1. 在做任何操作前，先检查梯度是否健康
+                grad_is_finite = True
+                nan_param_name = "unknown"
+                
+                for name, param in vla.named_parameters():
+                    if param.grad is not None:
+                        if not torch.isfinite(param.grad).all():
+                            grad_is_finite = False
+                            nan_param_name = name
+                            break
+                
+                # 也要检查 action_head 和 eos_head
+                if grad_is_finite and (cfg.use_l1_regression or cfg.use_diffusion):
+                    try:
+                        for name, param in action_head.named_parameters():
+                            if param.grad is not None and not torch.isfinite(param.grad).all():
+                                grad_is_finite = False
+                                nan_param_name = f"action_head.{name}"
+                                break
+                    except (NameError, AttributeError):
+                        pass  # action_head not defined or has no parameters
+                
+                if grad_is_finite and cfg.use_eos_classification and eos_head is not None:
+                    try:
+                        for name, param in eos_head.named_parameters():
+                            if param.grad is not None and not torch.isfinite(param.grad).all():
+                                grad_is_finite = False
+                                nan_param_name = f"eos_head.{name}"
+                                break
+                    except (NameError, AttributeError):
+                        pass  # eos_head not defined or has no parameters
+                
+                if grad_is_finite and cfg.use_proprio:
+                    try:
+                        for name, param in proprio_projector.named_parameters():
+                            if param.grad is not None and not torch.isfinite(param.grad).all():
+                                grad_is_finite = False
+                                nan_param_name = f"proprio_projector.{name}"
+                                break
+                    except (NameError, AttributeError):
+                        pass  # proprio_projector not defined or has no parameters
+                
+                if grad_is_finite and cfg.use_diffusion:
+                    try:
+                        for name, param in noisy_action_projector.named_parameters():
+                            if param.grad is not None and not torch.isfinite(param.grad).all():
+                                grad_is_finite = False
+                                nan_param_name = f"noisy_action_projector.{name}"
+                                break
+                    except (NameError, AttributeError):
+                        pass  # noisy_action_projector not defined or has no parameters
+
+                # 2. 如果发现梯度 NaN，立即熔断！
+                if not grad_is_finite:
+                    print(f"⚠️ [Gradient NaN] Step {gradient_step_idx}: Found NaN gradients in {nan_param_name}!")
+                    print(f"   Action: Skipping optimizer step to save the model.")
+                    optimizer.zero_grad() # 清空脏梯度
+                    
+                    # 可选：如果连续发生 NaN，可能需要降低学习率，这里先不做，先跳过
+                    continue 
+
+                # 3. 梯度裁剪 (Clip)
                 if cfg.max_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         trainable_params, 
@@ -1050,6 +1113,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                             print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
                                   f"(clipped to {cfg.max_grad_norm})")
                 
+                # 4. 更新参数
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
