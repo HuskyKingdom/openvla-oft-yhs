@@ -629,3 +629,5 @@ grep -r "ACTION_DIM.*=.*8" prismatic/vla/constants.py
 - 关键 bug 修复：EOS flag 标注逻辑（在 `datasets_substep.py` 中）
 - 数值稳定性关键：对 EOS 维度应用 sigmoid 激活
 
+
+
