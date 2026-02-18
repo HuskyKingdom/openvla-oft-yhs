@@ -168,19 +168,6 @@ def run_forward_pass(
             diffusion_timestep_embeddings=diffusion_timestep_embeddings if use_diffusion else None,
             use_film=use_film,
         )
-    
-    # [NaN TRACE] Check VLA output
-    if output.loss is not None and not torch.isfinite(output.loss):
-        print(f"❌ [NaN TRACE] VLA output.loss contains NaN/Inf: {output.loss.item()}")
-    if output.logits is not None and not torch.isfinite(output.logits).all():
-        nan_count = (~torch.isfinite(output.logits)).sum().item()
-        print(f"❌ [NaN TRACE] VLA output.logits contains {nan_count} NaN/Inf values")
-        print(f"   Logits shape: {output.logits.shape}, min={output.logits.min().item():.4f}, max={output.logits.max().item():.4f}")
-    if output.hidden_states is not None:
-        for i, h in enumerate(output.hidden_states):
-            if not torch.isfinite(h).all():
-                nan_count = (~torch.isfinite(h)).sum().item()
-                print(f"❌ [NaN TRACE] VLA hidden_states[{i}] contains {nan_count} NaN/Inf values")
 
     # Get action masks needed for logging
     ground_truth_token_ids = batch["labels"][:, 1:].to(device_id)
@@ -225,57 +212,19 @@ def run_forward_pass(
             .reshape(batch_size, NUM_ACTIONS_CHUNK * ACTION_DIM, -1)
             .to(torch.bfloat16)
         )  # (B, NUM_ACTIONS_CHUNK * ACTION_DIM, D)
-        
-        # [NaN TRACE] Check actions_hidden_states
-        if not torch.isfinite(actions_hidden_states).all():
-            nan_count = (~torch.isfinite(actions_hidden_states)).sum().item()
-            print(f"❌ [NaN TRACE] actions_hidden_states contains {nan_count} NaN/Inf values")
-            print(f"   Shape: {actions_hidden_states.shape}, min={actions_hidden_states.min().item():.4f}, max={actions_hidden_states.max().item():.4f}")
 
         if use_l1_regression:
             # Predict action
             predicted_actions = action_head.module.predict_action(actions_hidden_states)
-            
-            # [NaN TRACE] Check predicted_actions
-            if not torch.isfinite(predicted_actions).all():
-                nan_count = (~torch.isfinite(predicted_actions)).sum().item()
-                print(f"❌ [NaN TRACE] predicted_actions contains {nan_count} NaN/Inf values")
-                print(f"   Shape: {predicted_actions.shape}, min={predicted_actions.min().item():.4f}, max={predicted_actions.max().item():.4f}")
-            
             # Get full L1 loss
             loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
-            
-            # [NaN TRACE] Check action loss
-            if not torch.isfinite(loss):
-                print(f"❌ [NaN TRACE] action_loss (L1) is NaN/Inf: {loss.item()}")
-                print(f"   ground_truth_actions: min={ground_truth_actions.min().item():.4f}, max={ground_truth_actions.max().item():.4f}")
-                print(f"   predicted_actions: min={predicted_actions.min().item():.4f}, max={predicted_actions.max().item():.4f}")
 
         if use_diffusion:
             # Predict noise
             noise_pred = action_head.module.predict_noise(actions_hidden_states)
-            
-            # [NaN TRACE] Check noise_pred
-            if not torch.isfinite(noise_pred).all():
-                nan_count = (~torch.isfinite(noise_pred)).sum().item()
-                print(f"❌ [NaN TRACE] noise_pred contains {nan_count} NaN/Inf values")
-                print(f"   Shape: {noise_pred.shape}, min={noise_pred.min().item():.4f}, max={noise_pred.max().item():.4f}")
-            
             # Get diffusion noise prediction MSE loss
             noise_pred = noise_pred.reshape(noise.shape)
-            
-            # [NaN TRACE] Check noise (ground truth)
-            if not torch.isfinite(noise).all():
-                nan_count = (~torch.isfinite(noise)).sum().item()
-                print(f"❌ [NaN TRACE] noise (ground truth) contains {nan_count} NaN/Inf values")
-            
             loss = nn.functional.mse_loss(noise_pred, noise, reduction="mean")
-            
-            # [NaN TRACE] Check diffusion loss
-            if not torch.isfinite(loss):
-                print(f"❌ [NaN TRACE] action_loss (diffusion MSE) is NaN/Inf: {loss.item()}")
-                print(f"   noise_pred: min={noise_pred.min().item():.4f}, max={noise_pred.max().item():.4f}")
-                print(f"   noise: min={noise.min().item():.4f}, max={noise.max().item():.4f}")
 
             # Only sample actions and compute L1 losses if specified
             if compute_diffusion_l1:
@@ -333,28 +282,11 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-                
-                # [NaN TRACE] Check eos_logits before clamping
-                if not torch.isfinite(eos_logits).all():
-                    nan_count = (~torch.isfinite(eos_logits)).sum().item()
-                    print(f"❌ [NaN TRACE] eos_logits (before clamp) contains {nan_count} NaN/Inf values")
-                    print(f"   Shape: {eos_logits.shape}, min={eos_logits.min().item():.4f}, max={eos_logits.max().item():.4f}")
-                
                 eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
-                
-                # [NaN TRACE] Check eos_logits after clamping
-                if not torch.isfinite(eos_logits).all():
-                    nan_count = (~torch.isfinite(eos_logits)).sum().item()
-                    print(f"❌ [NaN TRACE] eos_logits (after clamp) contains {nan_count} NaN/Inf values")
 
                 # Flatten for loss computation
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
                 eos_gt_flat = eos_gt.squeeze(-1).reshape(-1)          # (B * NUM_ACTIONS_CHUNK,)
-                
-                # [NaN TRACE] Check eos_gt
-                if not torch.isfinite(eos_gt_flat).all():
-                    nan_count = (~torch.isfinite(eos_gt_flat)).sum().item()
-                    print(f"❌ [NaN TRACE] eos_gt_flat contains {nan_count} NaN/Inf values")
                 
                 # Count positive/negative samples
                 num_pos = (eos_gt_flat > 0.5).sum().item()
@@ -363,61 +295,29 @@ def run_forward_pass(
                 
                 # 计算loss（不再跳过任何batch！）
                 if use_focal_loss:
-                    # --- [CRITICAL FIX] 数值稳定的 Focal Loss 实现 ---
-                    # 步骤 A: 计算基础的 BCE Loss (不 reduce)，利用 PyTorch 的数值稳定性
-                    # 这比手动写 -log(sigmoid(x)) 稳定得多
-                    bce_loss_fn = nn.BCEWithLogitsLoss(reduction='none')
-                    bce_loss = bce_loss_fn(eos_logits_flat, eos_gt_flat)
+                    # Focal Loss: 专门为极端不平衡设计
+                    # FL(p_t) = -alpha_t * (1 - p_t)^gamma * log(p_t)
+                    eos_probs = torch.sigmoid(eos_logits_flat)
                     
-                    # [NaN TRACE] Check bce_loss
-                    if not torch.isfinite(bce_loss).all():
-                        nan_count = (~torch.isfinite(bce_loss)).sum().item()
-                        print(f"❌ [NaN TRACE] bce_loss (Focal) contains {nan_count} NaN/Inf values")
-                        print(f"   bce_loss: min={bce_loss.min().item():.4f}, max={bce_loss.max().item():.4f}, mean={bce_loss.mean().item():.4f}")
-                    
-                    # 步骤 B: 计算概率 (仅用于权重计算，不需要梯度回传给它，detached以防万一)
-                    with torch.no_grad():
-                        eos_probs = torch.sigmoid(eos_logits_flat)
-                        p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
-                    
-                    # [NaN TRACE] Check p_t
-                    if not torch.isfinite(p_t).all():
-                        nan_count = (~torch.isfinite(p_t)).sum().item()
-                        print(f"❌ [NaN TRACE] p_t contains {nan_count} NaN/Inf values")
-                        print(f"   p_t: min={p_t.min().item():.4f}, max={p_t.max().item():.4f}")
-                    
-                    # 步骤 C: 计算 Focal Weight
-                    # (1 - p_t)^gamma
+                    # Compute focal weight: (1 - p_t)^gamma
+                    # For positive samples: p_t = p, for negative: p_t = 1 - p
+                    p_t = torch.where(eos_gt_flat > 0.5, eos_probs, 1 - eos_probs)
                     focal_weight = (1 - p_t) ** focal_gamma
                     
-                    # [NaN TRACE] Check focal_weight
-                    if not torch.isfinite(focal_weight).all():
-                        nan_count = (~torch.isfinite(focal_weight)).sum().item()
-                        print(f"❌ [NaN TRACE] focal_weight contains {nan_count} NaN/Inf values")
-                        print(f"   focal_weight: min={focal_weight.min().item():.4f}, max={focal_weight.max().item():.4f}, gamma={focal_gamma}")
-                    
-                    # 步骤 D: Alpha Balancing
+                    # Compute alpha weight (class balance)
                     alpha_t = torch.where(
                         eos_gt_flat > 0.5,
                         torch.tensor(focal_alpha, device=device_id),
                         torch.tensor(1 - focal_alpha, device=device_id)
                     )
                     
-                    # 步骤 E: 组合 (Loss = Weight * BCE)
-                    # 这样梯度主要通过 bce_loss 传回，这是最稳定的路径
-                    loss_per_sample = alpha_t * focal_weight * bce_loss
+                    # BCE loss
+                    bce_loss = nn.functional.binary_cross_entropy_with_logits(
+                        eos_logits_flat, eos_gt_flat, reduction='none'
+                    )
                     
-                    # [NaN TRACE] Check loss_per_sample
-                    if not torch.isfinite(loss_per_sample).all():
-                        nan_count = (~torch.isfinite(loss_per_sample)).sum().item()
-                        print(f"❌ [NaN TRACE] loss_per_sample (Focal) contains {nan_count} NaN/Inf values")
-                        print(f"   loss_per_sample: min={loss_per_sample.min().item():.4f}, max={loss_per_sample.max().item():.4f}")
-                    
-                    eos_loss = loss_per_sample.mean()
-                    
-                    # [NaN TRACE] Check eos_loss (Focal)
-                    if not torch.isfinite(eos_loss):
-                        print(f"❌ [NaN TRACE] eos_loss (Focal) is NaN/Inf: {eos_loss.item()}")
+                    # Focal loss = alpha * focal_weight * BCE
+                    eos_loss = (alpha_t * focal_weight * bce_loss).mean()
                     
                     weight_info = {
                         'eos_focal_alpha': focal_alpha,
@@ -432,12 +332,6 @@ def run_forward_pass(
                         pos_weight_tensor = torch.tensor([pos_weight], device=device_id)
                         loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
                         eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
-                        
-                        # [NaN TRACE] Check eos_loss (Weighted BCE)
-                        if not torch.isfinite(eos_loss):
-                            print(f"❌ [NaN TRACE] eos_loss (Weighted BCE, global) is NaN/Inf: {eos_loss.item()}")
-                            print(f"   pos_weight={pos_weight}, eos_logits_flat: min={eos_logits_flat.min().item():.4f}, max={eos_logits_flat.max().item():.4f}")
-                            print(f"   eos_gt_flat: min={eos_gt_flat.min().item():.4f}, max={eos_gt_flat.max().item():.4f}, num_pos={num_pos}, num_neg={num_neg}")
                         
                         weight_info = {
                             'eos_pos_weight': pos_weight,
@@ -470,12 +364,6 @@ def run_forward_pass(
                         loss_fn = nn.BCEWithLogitsLoss(weight=sample_weights)
                         eos_loss = loss_fn(eos_logits_flat, eos_gt_flat)
                         
-                        # [NaN TRACE] Check eos_loss (Dynamic Weighted BCE)
-                        if not torch.isfinite(eos_loss):
-                            print(f"❌ [NaN TRACE] eos_loss (Weighted BCE, dynamic) is NaN/Inf: {eos_loss.item()}")
-                            print(f"   weight_pos={weight_pos}, weight_neg={weight_neg}, num_pos={num_pos}, num_neg={num_neg}")
-                            print(f"   eos_logits_flat: min={eos_logits_flat.min().item():.4f}, max={eos_logits_flat.max().item():.4f}")
-                        
                         weight_info = {
                             'eos_pos_weight': weight_pos,
                             'eos_neg_weight': weight_neg,
@@ -502,21 +390,7 @@ def run_forward_pass(
     
     # Combine action loss and EOS loss
     action_loss = loss  # Rename for clarity
-    
-    # [NaN TRACE] Check action_loss before combining
-    if not torch.isfinite(action_loss):
-        print(f"❌ [NaN TRACE] action_loss is NaN/Inf: {action_loss.item()}")
-    
-    # [NaN TRACE] Check eos_loss before combining
-    if not torch.isfinite(eos_loss):
-        print(f"❌ [NaN TRACE] eos_loss is NaN/Inf: {eos_loss.item()}")
-    
     total_loss = action_loss + lambda_eos * eos_loss
-    
-    # [NaN TRACE] Check total_loss
-    if not torch.isfinite(total_loss):
-        print(f"❌ [NaN TRACE] total_loss is NaN/Inf: {total_loss.item()}")
-        print(f"   action_loss={action_loss.item():.4f}, eos_loss={eos_loss.item():.4f}, lambda_eos={lambda_eos}")
     
     # Update metrics
     metrics.update({
@@ -600,7 +474,7 @@ class FinetuneSubstepConfig:
     
     # EOS class weights (for extreme imbalance like 1:800)
     eos_use_global_weights: bool = True              # Use global fixed weights instead of per-batch dynamic weights
-    eos_pos_weight: float = 2.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
+    eos_pos_weight: float = 20.0                     # Fixed weight for EOS=1 class (针对极端不平衡，如1:800，设为50-100)
     eos_use_focal_loss: bool = True                 # Use Focal Loss (better for extreme imbalance)
     eos_focal_alpha: float = 0.25                    # Focal Loss alpha (weight for positive class)
     eos_focal_gamma: float = 2.0                     # Focal Loss gamma (focusing parameter)
@@ -1085,24 +959,13 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             # Normalize loss to account for gradient accumulation
             normalized_loss = loss / cfg.grad_accumulation_steps
 
-            # Check for NaN in Loss (Loss 熔断)
+            # [SAFETY] Check for NaN/Inf in loss (critical for high pos_weight training)
             if not torch.isfinite(normalized_loss):
-                print(f"\n{'='*80}")
-                print(f"❌ [Loss NaN/Inf] Step {batch_idx}: loss={normalized_loss.item()}")
-                print(f"   [Loss Breakdown]")
-                print(f"     Raw loss: {loss.item():.6f}")
-                print(f"     Normalized loss: {normalized_loss.item():.6f}")
-                print(f"     Grad accumulation steps: {cfg.grad_accumulation_steps}")
-                print(f"   [Metrics]")
-                for key, value in metrics.items():
-                    if isinstance(value, (int, float)):
-                        print(f"     {key}: {value:.6f}")
-                    else:
-                        print(f"     {key}: {value}")
-                print(f"   [Action] Skipping this batch to prevent training crash")
-                print(f"{'='*80}\n")
-                optimizer.zero_grad() 
-                continue # 跳过此 Batch
+                print(f"❌ [NaN/Inf Error] Step {batch_idx}: loss={normalized_loss.item()}")
+                print(f"   Metrics: {metrics}")
+                print(f"   Skipping this batch to prevent training crash...")
+                optimizer.zero_grad()  # Clear any accumulated gradients
+                continue  # Skip this batch
             
             # Backward pass
             normalized_loss.backward()
@@ -1172,114 +1035,8 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                # --- [CRITICAL FIX] 梯度熔断机制 ---
-                # 1. 在做任何操作前，先检查梯度是否健康
-                grad_is_finite = True
-                nan_param_name = "unknown"
-                
-                for name, param in vla.named_parameters():
-                    if param.grad is not None:
-                        if not torch.isfinite(param.grad).all():
-                            grad_is_finite = False
-                            nan_param_name = name
-                            break
-                
-                # 也要检查 action_head 和 eos_head
-                if grad_is_finite and (cfg.use_l1_regression or cfg.use_diffusion):
-                    try:
-                        for name, param in action_head.named_parameters():
-                            if param.grad is not None and not torch.isfinite(param.grad).all():
-                                grad_is_finite = False
-                                nan_param_name = f"action_head.{name}"
-                                break
-                    except (NameError, AttributeError):
-                        pass  # action_head not defined or has no parameters
-                
-                if grad_is_finite and cfg.use_eos_classification and eos_head is not None:
-                    try:
-                        for name, param in eos_head.named_parameters():
-                            if param.grad is not None and not torch.isfinite(param.grad).all():
-                                grad_is_finite = False
-                                nan_param_name = f"eos_head.{name}"
-                                break
-                    except (NameError, AttributeError):
-                        pass  # eos_head not defined or has no parameters
-                
-                if grad_is_finite and cfg.use_proprio:
-                    try:
-                        for name, param in proprio_projector.named_parameters():
-                            if param.grad is not None and not torch.isfinite(param.grad).all():
-                                grad_is_finite = False
-                                nan_param_name = f"proprio_projector.{name}"
-                                break
-                    except (NameError, AttributeError):
-                        pass  # proprio_projector not defined or has no parameters
-                
-                if grad_is_finite and cfg.use_diffusion:
-                    try:
-                        for name, param in noisy_action_projector.named_parameters():
-                            if param.grad is not None and not torch.isfinite(param.grad).all():
-                                grad_is_finite = False
-                                nan_param_name = f"noisy_action_projector.{name}"
-                                break
-                    except (NameError, AttributeError):
-                        pass  # noisy_action_projector not defined or has no parameters
-
-                # 2. 如果发现梯度 NaN，立即熔断！
-                if not grad_is_finite:
-                    print(f"\n{'='*80}")
-                    print(f"⚠️ [Gradient NaN] Step {gradient_step_idx}: Found NaN gradients in {nan_param_name}!")
-                    print(f"   Action: Skipping optimizer step to save the model.")
-                    
-                    # [NaN TRACE] 详细打印所有模块的梯度统计
-                    print(f"\n   [Gradient Statistics]")
-                    print(f"   VLA parameters:")
-                    vla_nan_count = 0
-                    vla_inf_count = 0
-                    for name, param in vla.named_parameters():
-                        if param.grad is not None:
-                            nan_mask = ~torch.isfinite(param.grad)
-                            nan_count = nan_mask.sum().item()
-                            inf_count = (torch.isinf(param.grad)).sum().item()
-                            if nan_count > 0 or inf_count > 0:
-                                print(f"     {name}: {nan_count} NaN, {inf_count} Inf, shape={param.grad.shape}, norm={param.grad.norm().item():.4f}")
-                                vla_nan_count += nan_count
-                                vla_inf_count += inf_count
-                    print(f"   Total VLA: {vla_nan_count} NaN, {vla_inf_count} Inf")
-                    
-                    if (cfg.use_l1_regression or cfg.use_diffusion):
-                        try:
-                            print(f"   Action head parameters:")
-                            for name, param in action_head.named_parameters():
-                                if param.grad is not None:
-                                    nan_mask = ~torch.isfinite(param.grad)
-                                    nan_count = nan_mask.sum().item()
-                                    inf_count = (torch.isinf(param.grad)).sum().item()
-                                    if nan_count > 0 or inf_count > 0:
-                                        print(f"     {name}: {nan_count} NaN, {inf_count} Inf, shape={param.grad.shape}")
-                        except (NameError, AttributeError):
-                            pass
-                    
-                    if cfg.use_eos_classification and eos_head is not None:
-                        try:
-                            print(f"   EOS head parameters:")
-                            for name, param in eos_head.named_parameters():
-                                if param.grad is not None:
-                                    nan_mask = ~torch.isfinite(param.grad)
-                                    nan_count = nan_mask.sum().item()
-                                    inf_count = (torch.isinf(param.grad)).sum().item()
-                                    if nan_count > 0 or inf_count > 0:
-                                        print(f"     {name}: {nan_count} NaN, {inf_count} Inf, shape={param.grad.shape}")
-                        except (NameError, AttributeError):
-                            pass
-                    
-                    print(f"{'='*80}\n")
-                    optimizer.zero_grad() # 清空脏梯度
-                    
-                    # 可选：如果连续发生 NaN，可能需要降低学习率，这里先不做，先跳过
-                    continue 
-
-                # 3. 梯度裁剪 (Clip)
+                # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
+                # Clip gradients of all trainable parameters
                 if cfg.max_grad_norm > 0:
                     total_norm = torch.nn.utils.clip_grad_norm_(
                         trainable_params, 
@@ -1293,7 +1050,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                             print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
                                   f"(clipped to {cfg.max_grad_norm})")
                 
-                # 4. 更新参数
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
@@ -1357,6 +1113,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
 
 if __name__ == "__main__":
-    # set_seed(42) # reproducibility
+    set_seed(42) # reproducibility
     finetune_substep()
 
