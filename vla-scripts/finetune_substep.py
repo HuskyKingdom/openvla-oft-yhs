@@ -586,12 +586,14 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         vla_download_path = snapshot_download(repo_id=cfg.vla_path)
         # Overwrite VLA path
         cfg.vla_path = vla_download_path
-    else:
-        # Register OpenVLA model to HF Auto Classes (not needed if the model is on HF Hub)
-        AutoConfig.register("openvla", OpenVLAConfig)
-        AutoImageProcessor.register(OpenVLAConfig, PrismaticImageProcessor)
-        AutoProcessor.register(OpenVLAConfig, PrismaticProcessor)
-        AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
+
+    # Register OpenVLA model to HF Auto Classes using LOCAL class definitions.
+    # This ensures we always use the local code (including PrismaticProcessor) regardless
+    # of what version is cached in the checkpoint directory or HF module cache.
+    AutoConfig.register("openvla", OpenVLAConfig)
+    AutoImageProcessor.register(OpenVLAConfig, PrismaticImageProcessor)
+    AutoProcessor.register(OpenVLAConfig, PrismaticProcessor)
+    AutoModelForVision2Seq.register(OpenVLAConfig, OpenVLAForActionPrediction)
 
     # Update config.json and sync model files
     if distributed_state.is_main_process:
@@ -601,13 +603,14 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
     # Wait for model files to be synced
     dist.barrier()
 
-    # Load processor and VLA
-    processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=True)
+    # Load processor and VLA using locally registered classes (trust_remote_code=False),
+    # which avoids loading potentially stale processing_prismatic.py from the checkpoint dir.
+    processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=False)
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.vla_path,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
-        trust_remote_code=True,
+        trust_remote_code=False,
     ).to(device_id)
 
     # Set number of images in VLA input
