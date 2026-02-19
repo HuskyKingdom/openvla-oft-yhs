@@ -12,7 +12,7 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
 
 ### Implementation Status
 
-#### Day 1 (Current)
+#### Day 1-2 (Completed)
 - [x] Created InfoBot bottleneck architecture modules
   - `InfoBottleneckLayer`: Cross-attention based compression
   - `LanguageConditionedBottleneck`: Language-parameterized bottleneck
@@ -20,18 +20,34 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
   - `InfoBotActionHead`: Action prediction from bottleneck features
 - [x] Created standalone training script `finetune_infobot.py`
 - [x] Committed changes and pushed to GitHub
+
+#### Day 2-3 (Current - Training In Progress)
 - [x] **Training job submitted to AMD cluster**
-  - Job ID: 6029 (updated to mi3508xl partition)
+  - Job ID: 6032 (final working version)
   - Partition: mi3508xl (8x MI350X)
   - Runtime: 12 hours
-  - Status: **SUBMITTED** ✅
+  - Status: **TRAINING SUCCESSFULLY** ✅
+  - Current Step: 370+
+  - Loss: ~0.30-0.40 (stable)
+  
+**Issues Encountered & Fixed:**
+1. Wrong partition (mi3008xl → mi3508xl)
+2. DDP issues with MI estimator (moved outside DDP wrapper)
+3. NaN losses from MI estimator (disabled for now)
+4. SLURM script syntax errors
+
+**Current Configuration:**
+- Bottleneck: cross_attn, dim=256, tokens=8
+- MI regularization: DISABLED (caused NaN)
+- Training with L1 action loss only
+- Beta = 0.0
 
 ### Implementation Plan
 1. [x] Create InfoBotVLA architecture with bottleneck layer
 2. [x] Implement mutual information regularization loss
 3. [x] Integrate with existing APD dataset
-4. [x] Train on AMD cluster (Job 6026 running)
-5. [ ] Evaluate on LIBERO-PRO benchmark
+4. [x] Train on AMD cluster (Job 6032 running successfully)
+5. [ ] Evaluate on LIBERO-PRO benchmark (pending training completion)
 
 ### Technical Details
 
@@ -40,8 +56,8 @@ $$\mathcal{L}_{total} = \mathcal{L}_{action} + \beta \cdot I(Z_v; V | L)$$
 
 Where:
 - $\mathcal{L}_{action}$: L1 action prediction loss
-- $I(Z_v; V | L)$: Conditional mutual information (minimized)
-- $\beta = 0.1$ (tunable hyperparameter)
+- $I(Z_v; V | L)$: Conditional mutual information (minimized) - **DISABLED**
+- $\beta = 0.0$ (MI loss disabled due to NaN)
 
 #### Architecture Components
 1. **Bottleneck Layer**: Compresses visual features from (B, N_v, D) → (B, K, D_b)
@@ -49,10 +65,11 @@ Where:
    - D_b=256 compressed dimension
    - Cross-attention with language conditioning
 
-2. **MI Estimator**: InfoNCE-based contrastive estimation
+2. **MI Estimator**: InfoNCE-based contrastive estimation (**DISABLED**)
    - Projects bottleneck and visual features to 128-dim
    - Temperature-scaled similarity matrix
    - Symmetric InfoNCE loss
+   - Issue: Causes NaN losses even with numerical stability fixes
 
 3. **Action Head**: Predicts actions from bottleneck + language
    - Cross-attention: action queries → context
@@ -65,7 +82,8 @@ Where:
 
 ### Timeline
 - Day 1: Architecture implementation ✅
-- Day 2: Training script + SLURM job
-- Day 3-4: Training on AMD cluster
-- Day 5-6: Evaluation on LIBERO-PRO
+- Day 2: Training script + SLURM job ✅
+- Day 3: Training on AMD cluster (in progress - stable at step 370+) 🔄
+- Day 4-5: Continue training to 200K steps
+- Day 6: Evaluation on LIBERO-PRO
 - Day 7: Analysis and paper writing
