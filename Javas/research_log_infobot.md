@@ -19,14 +19,18 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
   - `MutualInformationEstimator`: InfoNCE-based MI estimation
   - `InfoBotActionHead`: Action prediction from bottleneck features
 - [x] Created standalone training script `finetune_infobot.py`
-- [ ] Create simpler integrated version (in progress)
-- [ ] Prepare SLURM job script for AMD cluster
+- [x] Committed changes and pushed to GitHub
+- [x] **Training job submitted to AMD cluster**
+  - Job ID: 6026
+  - Partition: mi3008xl (8x MI300X)
+  - Runtime: 12 hours
+  - Status: **RUNNING** ✅
 
 ### Implementation Plan
 1. [x] Create InfoBotVLA architecture with bottleneck layer
 2. [x] Implement mutual information regularization loss
-3. [ ] Integrate with existing APD dataset (in progress)
-4. [ ] Train on AMD cluster
+3. [x] Integrate with existing APD dataset
+4. [x] Train on AMD cluster (Job 6026 running)
 5. [ ] Evaluate on LIBERO-PRO benchmark
 
 ### Technical Details
