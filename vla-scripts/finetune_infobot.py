@@ -396,7 +396,7 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
     """Main training function for InfoBot-VLA."""
     
     assert cfg.use_lora, "Only LoRA fine-tuning is supported!"
-    assert not os.path.exists(cfg.substep_labels_path) or cfg.substep_labels_path == "substep_labels_output.json", \
+    assert os.path.exists(cfg.substep_labels_path), \
         f"Substep labels file not found: {cfg.substep_labels_path}"
     
     cfg.vla_path = cfg.vla_path.rstrip("/")
