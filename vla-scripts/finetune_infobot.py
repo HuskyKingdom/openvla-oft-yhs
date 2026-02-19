@@ -230,11 +230,8 @@ class InfoBotVLAModel(nn.Module):
         else:
             raise ValueError(f"Unknown bottleneck type: {bottleneck_type}")
         
-        # MI Estimator for regularization
-        self.mi_estimator = MutualInformationEstimator(
-            bottleneck_dim=bottleneck_dim,
-            visual_dim=self.llm_dim,
-        )
+        # MI Estimator for regularization - created outside DDP to avoid gradient issues
+        # self.mi_estimator = MutualInformationEstimator(...)
         
         # Action head (replaces base VLA's action prediction)
         if use_l1_regression:
@@ -468,11 +465,14 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
     # Wrap InfoBot with DDP
     infobot_model = DDP(infobot_model, device_ids=[device_id], find_unused_parameters=True)
     
-    # MI estimator (already inside InfoBot, but we need separate reference for loss)
-    mi_estimator = infobot_model.module.mi_estimator
+    # MI estimator - created separately to avoid DDP issues
+    mi_estimator = MutualInformationEstimator(
+        bottleneck_dim=cfg.bottleneck_dim,
+        visual_dim=infobot_model.module.llm_dim,
+    ).to(device_id).to(torch.bfloat16)
     
-    # Setup optimizer
-    trainable_params = list(infobot_model.parameters())
+    # Setup optimizer - include both InfoBot and MI estimator
+    trainable_params = list(infobot_model.parameters()) + list(mi_estimator.parameters())
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
     optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
     
