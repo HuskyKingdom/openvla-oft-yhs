@@ -21,10 +21,10 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
 - [x] Created standalone training script `finetune_infobot.py`
 - [x] Committed changes and pushed to GitHub
 - [x] **Training job submitted to AMD cluster**
-  - Job ID: 6026
-  - Partition: mi3008xl (8x MI300X)
+  - Job ID: 6029 (updated to mi3508xl partition)
+  - Partition: mi3508xl (8x MI350X)
   - Runtime: 12 hours
-  - Status: **RUNNING** ✅
+  - Status: **SUBMITTED** ✅
 
 ### Implementation Plan
 1. [x] Create InfoBotVLA architecture with bottleneck layer
