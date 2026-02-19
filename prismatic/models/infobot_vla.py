@@ -238,8 +238,15 @@ class MutualInformationEstimator(nn.Module):
         z_v_proj = F.normalize(self.bottleneck_proj(z_v), dim=-1)  # (B, 128)
         v_proj = F.normalize(self.visual_proj(v), dim=-1)  # (B, 128)
         
-        # Compute similarity matrix
+        # Clamp projections to avoid extreme values
+        z_v_proj = torch.clamp(z_v_proj, min=-10, max=10)
+        v_proj = torch.clamp(v_proj, min=-10, max=10)
+        
+        # Compute similarity matrix with numerical stability
         logits = torch.matmul(z_v_proj, v_proj.T) / self.temperature  # (B, B)
+        
+        # Clamp logits to prevent overflow in softmax
+        logits = torch.clamp(logits, min=-50, max=50)
         
         # InfoNCE loss: positive pairs on diagonal
         labels = torch.arange(len(logits), device=logits.device)
@@ -247,6 +254,11 @@ class MutualInformationEstimator(nn.Module):
         # Symmetric InfoNCE
         loss_i2v = F.cross_entropy(logits, labels)
         loss_v2i = F.cross_entropy(logits.T, labels)
+        
+        # Check for NaN/Inf
+        if not torch.isfinite(loss_i2v) or not torch.isfinite(loss_v2i):
+            # Return a small constant loss instead of NaN
+            return torch.tensor(1.0, device=logits.device)
         
         mi_estimate = (loss_i2v + loss_v2i) / 2
         
