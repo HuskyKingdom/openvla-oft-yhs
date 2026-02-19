@@ -22,7 +22,7 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --data_root_dir /work1/chunyilee/yuhang/modified_libero_rlds \
   --dataset_name libero_4_task_suites_no_noops \
   --substep_labels_path /work1/chunyilee/yuhang/openvla-oft-yhs/substep_labels_output.json \
-  --run_root_dir /work1/aiginternal/yuhang/openvla-oft-yhs/ckpoints \
+  --run_root_dir /work1/chunyilee/yuhang/openvla-oft-yhs/ckpoints \
   --use_infobot True \
   --bottleneck_type cross_attn \
   --bottleneck_dim 256 \
