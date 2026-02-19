@@ -27,7 +27,6 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --bottleneck_type cross_attn \
   --bottleneck_dim 256 \
   --num_bottleneck_tokens 8 \
-  --beta_mi 0.1 \
   --use_l1_regression True \
   --use_lora True \
   --lora_rank 32 \
@@ -42,5 +41,4 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --use_proprio True \
   --wandb_entity "yhscode-university-of-liverpool" \
   --wandb_project "yhscode-university-of-liverpool" \
-  --run_id_note infobot_base_no_mi \\
-  --beta_mi 0.0 \\
+  --run_id_note infobot_base_no_mi
