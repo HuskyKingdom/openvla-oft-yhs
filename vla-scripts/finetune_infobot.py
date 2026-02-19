@@ -369,16 +369,15 @@ def run_infobot_forward_pass(
     # mi_loss = mi_estimator(...)
     mi_loss = torch.tensor(0.0, device=device_id)
     
-    # Check for NaN/Inf in action loss
+    # Check for NaN/Inf in action loss - DEBUG MODE: raise error instead of masking
     if not torch.isfinite(action_loss):
-        metrics = {
-            'total_loss': 0.0,
-            'action_loss': 0.0,
-            'mi_loss': 0.0,
-            'curr_action_l1_loss': 0.0,
-            'beta_mi': beta_mi,
-        }
-        return torch.tensor(0.0, device=device_id, requires_grad=True), metrics
+        print(f"\n❌ [NaN/Inf Detected] Step {batch_idx}:")
+        print(f"  Action Loss: {action_loss.item()}")
+        print(f"  Predicted Actions range: [{predicted_actions.min().item():.4f}, {predicted_actions.max().item():.4f}]")
+        print(f"  Ground Truth range: [{ground_truth_actions.min().item():.4f}, {ground_truth_actions.max().item():.4f}]")
+        
+        # Skip this batch but don't return 0 (which causes model collapse)
+        raise ValueError(f"NaN/Inf in action loss at step {batch_idx}. Check model architecture.")
     
     # Total loss (without MI for now)
     total_loss = action_loss  # + beta_mi * mi_loss

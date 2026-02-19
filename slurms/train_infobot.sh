@@ -31,14 +31,15 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --use_lora True \
   --lora_rank 32 \
   --batch_size 8 \
-  --learning_rate 5e-4 \
+  --learning_rate 2e-4 \
+  --max_grad_norm 0.8 \
   --num_steps_before_decay 100000 \
   --max_steps 200000 \
-  --save_freq 10000 \
+  --save_freq 5000 \
   --save_latest_checkpoint_only False \
   --image_aug True \
   --num_images_in_input 2 \
   --use_proprio True \
   --wandb_entity "yhscode-university-of-liverpool" \
   --wandb_project "yhscode-university-of-liverpool" \
-  --run_id_note infobot_base_no_mi
+  --run_id_note infobot_v2_stable

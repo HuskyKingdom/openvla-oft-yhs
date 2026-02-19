@@ -55,11 +55,14 @@ class InfoBottleneckLayer(nn.Module):
         )
         
         # Project visual features to language dimension for attention
-        self.visual_to_lang = nn.Linear(visual_dim, language_dim)
+        self.visual_to_lang = nn.Sequential(
+            nn.LayerNorm(visual_dim),
+            nn.Linear(visual_dim, language_dim)
+        )
         
-        # Learnable bottleneck tokens (initialized randomly)
+        # Learnable bottleneck tokens (initialized with smaller variance)
         self.bottleneck_tokens = nn.Parameter(
-            torch.randn(1, num_bottleneck_tokens, language_dim)
+            torch.randn(1, num_bottleneck_tokens, language_dim) * 0.02
         )
         
         # MLP for further compression
