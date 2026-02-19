@@ -365,17 +365,12 @@ def run_infobot_forward_pass(
     if use_l1_regression:
         action_loss = torch.nn.L1Loss()(predicted_actions, ground_truth_actions)
     
-    # MI regularization loss (use float32 for numerical stability)
-    with torch.cuda.amp.autocast(enabled=False):
-        mi_loss = mi_estimator(
-            bottleneck_features.detach().float(), 
-            visual_features.detach().float()
-        )
+    # MI regularization loss (disabled for now due to NaN issues)
+    # mi_loss = mi_estimator(...)
+    mi_loss = torch.tensor(0.0, device=device_id)
     
-    # Check for NaN/Inf in losses
-    if not torch.isfinite(action_loss) or not torch.isfinite(mi_loss):
-        # Return a dummy loss that won't break training
-        total_loss = torch.tensor(0.0, device=device_id, requires_grad=True)
+    # Check for NaN/Inf in action loss
+    if not torch.isfinite(action_loss):
         metrics = {
             'total_loss': 0.0,
             'action_loss': 0.0,
@@ -383,10 +378,10 @@ def run_infobot_forward_pass(
             'curr_action_l1_loss': 0.0,
             'beta_mi': beta_mi,
         }
-        return total_loss, metrics
+        return torch.tensor(0.0, device=device_id, requires_grad=True), metrics
     
-    # Total loss
-    total_loss = action_loss + beta_mi * mi_loss
+    # Total loss (without MI for now)
+    total_loss = action_loss  # + beta_mi * mi_loss
     
     # Compute detailed metrics
     with torch.no_grad():

@@ -42,4 +42,5 @@ FLASH_ATTENTION_TRITON_AMD_ENABLE="TRUE" torchrun --standalone --nnodes 1 --npro
   --use_proprio True \
   --wandb_entity "yhscode-university-of-liverpool" \
   --wandb_project "yhscode-university-of-liverpool" \
-  --run_id_note infobot_beta0.1_bottleneck256
+  --run_id_note infobot_base_no_mi \\
+  --beta_mi 0.0 \\
