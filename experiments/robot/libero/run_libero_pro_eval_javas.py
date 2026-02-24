@@ -224,6 +224,12 @@ class GenerateConfig:
     use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
     eos_threshold: float = 0.03                       # Threshold for EOS detection (probability cutoff)
 
+    # InfoBot-VLA parameters
+    use_infobot: bool = False                        # Enable InfoBot-VLA architecture
+    infobot_bottleneck_type: str = "cross_attn"      # Bottleneck type: cross_attn or lang_conditioned
+    infobot_bottleneck_dim: int = 256                # Bottleneck dimension
+    infobot_num_tokens: int = 8                      # Number of bottleneck tokens
+
     # fmt: on
 
 
@@ -252,25 +258,89 @@ def initialize_model(cfg: GenerateConfig):
     """Initialize model and associated components."""
     # Load model
     model = get_model(cfg)
+    
+    # [INFOBOT] Wrap with InfoBot-VLA if enabled
+    infobot_model = None
+    if cfg.use_infobot:
+        try:
+            from prismatic.models.infobot_vla import InfoBotVLAModel
+            from pathlib import Path
+            
+            logger.info(f"[INFOBOT] Enabling InfoBot-VLA architecture")
+            logger.info(f"[INFOBOT] Bottleneck type: {cfg.infobot_bottleneck_type}")
+            logger.info(f"[INFOBOT] Bottleneck dim: {cfg.infobot_bottleneck_dim}")
+            logger.info(f"[INFOBOT] Num tokens: {cfg.infobot_num_tokens}")
+            
+            # Create InfoBot wrapper
+            infobot_model = InfoBotVLAModel(
+                base_vla=model,
+                bottleneck_type=cfg.infobot_bottleneck_type,
+                bottleneck_dim=cfg.infobot_bottleneck_dim,
+                num_bottleneck_tokens=cfg.infobot_num_tokens,
+                use_l1_regression=cfg.use_l1_regression,
+            ).to(model.device).to(torch.bfloat16)
+            
+            # Load InfoBot checkpoint
+            checkpoint_path = Path(cfg.pretrained_checkpoint)
+            
+            # Try to find InfoBot checkpoint
+            infobot_checkpoint_candidates = [
+                checkpoint_path / "infobot--latest_checkpoint.pt",
+                *sorted(checkpoint_path.glob("infobot--*_checkpoint.pt"), reverse=True),
+            ]
+            
+            infobot_checkpoint_file = None
+            for candidate in infobot_checkpoint_candidates:
+                if candidate.exists():
+                    infobot_checkpoint_file = candidate
+                    break
+            
+            if infobot_checkpoint_file is not None:
+                state_dict = torch.load(infobot_checkpoint_file, map_location=model.device, weights_only=True)
+                # Remove DDP 'module.' prefix if present
+                state_dict = remove_ddp_prefix_from_checkpoint(state_dict)
+                
+                logger.info(f"[INFOBOT] Loading checkpoint: {infobot_checkpoint_file}")
+                infobot_model.load_state_dict(state_dict)
+                infobot_model.eval()
+                
+                logger.info(f"[INFOBOT] ✓ Loaded InfoBot-VLA from: {infobot_checkpoint_file}")
+            else:
+                logger.warning(
+                    f"[INFOBOT WARNING] ⚠️ InfoBot checkpoint not found in {checkpoint_path}. "
+                    f"InfoBot will use random initialization."
+                )
+            
+            # Replace model with InfoBot for action generation
+            model = infobot_model
+            
+        except Exception as e:
+            logger.error(f"[INFOBOT ERROR] Failed to load InfoBot: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            infobot_model = None
+            cfg.use_infobot = False
 
     # Load proprio projector if needed
     proprio_projector = None
     if cfg.use_proprio:
         proprio_projector = get_proprio_projector(
             cfg,
-            model.llm_dim,
+            model.llm_dim if hasattr(model, 'llm_dim') else model.base_vla.llm_dim,
             proprio_dim=8,  # 8-dimensional proprio for LIBERO
         )
 
     # Load action head if needed
     action_head = None
     if cfg.use_l1_regression or cfg.use_diffusion:
-        action_head = get_action_head(cfg, model.llm_dim)
+        # Get llm_dim from model or base_vla (for InfoBot)
+        llm_dim = model.llm_dim if hasattr(model, 'llm_dim') else model.base_vla.llm_dim
+        action_head = get_action_head(cfg, llm_dim)
 
     # Load noisy action projector if using diffusion
     noisy_action_projector = None
     if cfg.use_diffusion:
-        noisy_action_projector = get_noisy_action_projector(cfg, model.llm_dim)
+        noisy_action_projector = get_noisy_action_projector(cfg, llm_dim)
     
     # [SUBSTEP EOS] Load EOS classification head if EOS detection is enabled
     eos_head = None
@@ -291,8 +361,11 @@ def initialize_model(cfg: GenerateConfig):
                 eos_hidden_dim = 1024  # Default from training config
                 eos_dropout = 0.1      # Default from training config
                 
+                # Get llm_dim from model or base_vla (for InfoBot)
+                eos_input_dim = model.llm_dim if hasattr(model, 'llm_dim') else model.base_vla.llm_dim
+                
                 eos_head = EOSClassificationHead(
-                    input_dim=model.llm_dim,
+                    input_dim=eos_input_dim,
                     hidden_dim=eos_hidden_dim,
                     dropout=eos_dropout,
                 ).to(model.device).to(torch.bfloat16)
@@ -366,10 +439,14 @@ def check_unnorm_key(cfg: GenerateConfig, model) -> None:
 
     # In some cases, the key must be manually modified (e.g. after training on a modified version of the dataset
     # with the suffix "_no_noops" in the dataset name)
-    if unnorm_key not in model.norm_stats and f"{unnorm_key}_no_noops" in model.norm_stats:
+    
+    # Handle InfoBot model (access norm_stats through base_vla)
+    norm_stats = model.norm_stats if hasattr(model, 'norm_stats') else model.base_vla.norm_stats
+    
+    if unnorm_key not in norm_stats and f"{unnorm_key}_no_noops" in norm_stats:
         unnorm_key = f"{unnorm_key}_no_noops"
 
-    assert unnorm_key in model.norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+    assert unnorm_key in norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
 
     # Set the unnorm_key in cfg
     cfg.unnorm_key = unnorm_key

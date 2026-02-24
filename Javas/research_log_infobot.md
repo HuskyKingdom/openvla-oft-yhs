@@ -21,20 +21,23 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
 - [x] Created standalone training script `finetune_infobot.py`
 - [x] Committed changes and pushed to GitHub
 
-#### Day 2-3 (Current - Training In Progress)
-- [x] **Training job submitted to AMD cluster**
-  - Job ID: 6032 (final working version)
-  - Partition: mi3508xl (8x MI350X)
-  - Runtime: 12 hours
-  - Status: **TRAINING SUCCESSFULLY** ✅
-  - Current Step: 370+
-  - Loss: ~0.30-0.40 (stable)
+#### Day 2-3 (Training & Bug Fixing)
+- [x] **Training job 6213 submitted**
+  - Status: **FAILED** - Model collapse at Step 1850 (Loss=0.0000)
+  - Root cause: Bottleneck architecture instability + NaN masking
   
+- [x] **Bug fix and retrain**
+  - Fixed initialization with LayerNorm and scaled random init
+  - Reduced learning rate from 5e-4 → 2e-4
+  - Added explicit NaN error detection
+  - **New Job 6214 submitted** ✅
+
 **Issues Encountered & Fixed:**
 1. Wrong partition (mi3008xl → mi3508xl)
 2. DDP issues with MI estimator (moved outside DDP wrapper)
 3. NaN losses from MI estimator (disabled for now)
 4. SLURM script syntax errors
+5. **Model collapse at Step 1850** (fixed in Job 6214)
 
 **Current Configuration:**
 - Bottleneck: cross_attn, dim=256, tokens=8
@@ -50,6 +53,26 @@ InfoBot-VLA: Visual → Language Bottleneck → Action (must use language)
 5. [ ] Evaluate on LIBERO-PRO benchmark (pending training completion)
 
 ### Technical Details
+
+#### Critical Bug Fix (Day 3 - Job 6214)
+**Problem:** Training Job 6213 collapsed at Step 1850 with Loss=0.0000 (NaN outputs)
+**Root Cause:** Bottleneck features (dim=256) incompatible with action head expectations,
+model produced NaN values which were silently masked, causing collapse.
+**Fixes Applied:**
+1. Added LayerNorm before projections in InfoBottleneckLayer
+2. Scaled bottleneck token initialization by 0.02 (stable variance)
+3. Reduced learning rate from 5e-4 to 2e-4
+4. Replaced silent NaN masking with explicit error raising for debugging
+5. Increased checkpoint frequency from 10K to 5K steps
+
+**New Training Job:**
+- Job ID: **6214** (submitted after bug fix)
+- Partition: mi3508xl (8x MI350X)
+- Runtime: 12 hours
+- Learning rate: 2e-4 (was 5e-4)
+- Save freq: 5000 steps
+- Run ID: infobot_v2_stable
+- Status: **PENDING START** ⏳
 
 #### Loss Function
 $$\mathcal{L}_{total} = \mathcal{L}_{action} + \beta \cdot I(Z_v; V | L)$$

@@ -404,3 +404,177 @@ def compute_infobot_loss(
     }
     
     return total_loss, loss_dict
+
+
+class InfoBotVLAModel(nn.Module):
+    """
+    InfoBot-VLA Model wrapper that adds information bottleneck to OpenVLA.
+    
+    Architecture:
+        Vision Backbone → Projector → InfoBottleneck (conditioned on Language) → Action Head
+    """
+    def __init__(
+        self,
+        base_vla,
+        bottleneck_type: str = "cross_attn",
+        bottleneck_dim: int = 256,
+        num_bottleneck_tokens: int = 8,
+        use_l1_regression: bool = True,
+    ):
+        super().__init__()
+        self.base_vla = base_vla
+        self.llm_dim = base_vla.llm_dim
+        self.bottleneck_type = bottleneck_type
+        self.bottleneck_dim = bottleneck_dim
+        self.num_bottleneck_tokens = num_bottleneck_tokens
+        
+        # Vision backbone and projector from base VLA
+        self.vision_backbone = base_vla.vision_backbone
+        self.projector = base_vla.projector
+        
+        # Language model from base VLA (for getting language embeddings)
+        self.language_model = base_vla.language_model
+        
+        # InfoBot Bottleneck
+        if bottleneck_type == "cross_attn":
+            self.bottleneck = InfoBottleneckLayer(
+                visual_dim=self.llm_dim,
+                language_dim=self.llm_dim,
+                bottleneck_dim=bottleneck_dim,
+                num_bottleneck_tokens=num_bottleneck_tokens,
+            )
+        elif bottleneck_type == "lang_conditioned":
+            self.bottleneck = LanguageConditionedBottleneck(
+                visual_dim=self.llm_dim,
+                language_dim=self.llm_dim,
+                bottleneck_dim=bottleneck_dim,
+                num_bottleneck_tokens=num_bottleneck_tokens,
+            )
+        else:
+            raise ValueError(f"Unknown bottleneck type: {bottleneck_type}")
+        
+        # Action head (replaces base VLA's action prediction)
+        if use_l1_regression:
+            from prismatic.models.action_heads import L1RegressionActionHead
+            from prismatic.vla.constants import ACTION_DIM
+            self.action_head = L1RegressionActionHead(
+                input_dim=bottleneck_dim,
+                hidden_dim=self.llm_dim,
+                action_dim=ACTION_DIM,
+            )
+        
+        # Flag for returning bottleneck features during training
+        self.return_bottleneck_features = False
+        
+    def forward(
+        self,
+        pixel_values: torch.Tensor,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        labels: Optional[torch.Tensor] = None,
+        output_hidden_states: bool = False,
+        proprio: Optional[torch.Tensor] = None,
+        proprio_projector: Optional[nn.Module] = None,
+    ):
+        """
+        Forward pass with InfoBot bottleneck.
+        """
+        # Get input embeddings from language model
+        input_embeddings = self.language_model.get_input_embeddings()(input_ids)
+        
+        # Get visual features
+        patch_features = self.vision_backbone(pixel_values)
+        projected_visual = self.projector(patch_features)
+        
+        # Add proprio if provided
+        if proprio_projector is not None and proprio is not None:
+            proprio = proprio.reshape(projected_visual.shape[0], -1)
+            proprio_features = proprio_projector(proprio).unsqueeze(1)
+            projected_visual = torch.cat([projected_visual, proprio_features], dim=1)
+        
+        # Use input_embeddings as language features (simplified)
+        lang_embeddings = input_embeddings
+        
+        # Apply InfoBot bottleneck
+        if self.bottleneck_type == "cross_attn":
+            bottleneck_features, bottleneck_info = self.bottleneck(
+                visual_features=projected_visual,
+                language_features=lang_embeddings,
+            )
+        else:
+            bottleneck_features = self.bottleneck(
+                visual_features=projected_visual,
+                language_features=lang_embeddings,
+            )
+            bottleneck_info = {}
+        
+        # Get action hidden states from bottleneck
+        batch_size = bottleneck_features.shape[0]
+        from prismatic.vla.constants import ACTION_DIM
+        actions_hidden_states = bottleneck_features.unsqueeze(2).expand(
+            -1, -1, ACTION_DIM, -1
+        ).reshape(batch_size, self.num_bottleneck_tokens * ACTION_DIM, self.bottleneck_dim)
+        
+        # Predict actions
+        predicted_actions = self.action_head.predict_action(actions_hidden_states)
+        
+        output = {
+            'predicted_actions': predicted_actions,
+            'bottleneck_features': bottleneck_features,
+            'visual_features': projected_visual,
+            'language_embeddings': lang_embeddings,
+        }
+        
+        if self.return_bottleneck_features or self.training:
+            output['bottleneck_info'] = bottleneck_info
+        
+        return output
+    
+    def predict_action(
+        self,
+        pixel_values: torch.Tensor,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        unnorm_key: str,
+        do_sample: bool = False,
+        **kwargs
+    ):
+        """
+        Predict actions for evaluation.
+        
+        This method matches the interface of OpenVLAForActionPrediction.predict_action()
+        """
+        batch_size = pixel_values.shape[0]
+        
+        # Get proprio if provided
+        proprio = kwargs.get('proprio', None)
+        proprio_projector = kwargs.get('proprio_projector', None)
+        
+        # Forward pass
+        with torch.no_grad():
+            output = self.forward(
+                pixel_values=pixel_values,
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                proprio=proprio,
+                proprio_projector=proprio_projector,
+            )
+        
+        predicted_actions = output['predicted_actions']
+        
+        # Unnormalize actions
+        if unnorm_key in self.base_vla.norm_stats:
+            action_norm_stats = self.base_vla.norm_stats[unnorm_key]["action"]
+            action_mean = torch.tensor(action_norm_stats["mean"], device=predicted_actions.device, dtype=predicted_actions.dtype)
+            action_std = torch.tensor(action_norm_stats["std"], device=predicted_actions.device, dtype=predicted_actions.dtype)
+            predicted_actions = predicted_actions * action_std + action_mean
+        
+        # Convert to list of numpy arrays
+        actions = []
+        for i in range(predicted_actions.shape[0]):
+            actions.append(predicted_actions[i].cpu().float().numpy())
+        
+        # Return format compatible with get_vla_action
+        if len(actions) == 1:
+            return actions[0], None, None, None
+        return actions, None, None, None
