@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=infobot_vla
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --partition=mi3508xl
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
