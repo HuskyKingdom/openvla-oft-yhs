@@ -316,13 +316,18 @@ def initialize_model(cfg: GenerateConfig):
             logger.info(f"[INFOBOT] Num tokens: {cfg.infobot_num_tokens}")
             
             # Create InfoBot wrapper
+            # [8BIT FIX] When using 8-bit/4-bit quantization, don't call .to(device)
             infobot_model = InfoBotVLAModel(
                 base_vla=model,
                 bottleneck_type=cfg.infobot_bottleneck_type,
                 bottleneck_dim=cfg.infobot_bottleneck_dim,
                 num_bottleneck_tokens=cfg.infobot_num_tokens,
                 use_l1_regression=cfg.use_l1_regression,
-            ).to(model.device).to(torch.bfloat16)
+            )
+            # Only move to device if not using quantization
+            if not cfg.load_in_8bit and not cfg.load_in_4bit:
+                infobot_model = infobot_model.to(model.device)
+            infobot_model = infobot_model.to(torch.bfloat16)
             
             # Load InfoBot checkpoint
             checkpoint_path = Path(cfg.pretrained_checkpoint)
