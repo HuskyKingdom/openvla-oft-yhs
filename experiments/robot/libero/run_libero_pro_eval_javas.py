@@ -345,41 +345,38 @@ def initialize_model(cfg: GenerateConfig):
                     break
             
             if infobot_checkpoint_file is not None:
-                # [MEMORY OPT] Load checkpoint to CPU first, extract only bottleneck weights
-                # to avoid duplicating base VLA weights in memory
                 logger.info(f"[INFOBOT] Loading checkpoint from: {infobot_checkpoint_file}")
                 checkpoint = torch.load(infobot_checkpoint_file, map_location='cpu', weights_only=True)
                 
-                # InfoBot checkpoint format: dict with 'infobot_state_dict' key
+                # InfoBot checkpoint format: dict with 'infobot_state_dict' key, or flat state_dict
                 if isinstance(checkpoint, dict) and 'infobot_state_dict' in checkpoint:
                     full_state_dict = checkpoint['infobot_state_dict']
                     logger.info(f"[INFOBOT] Loaded checkpoint with step={checkpoint.get('step', 'unknown')}")
                 else:
-                    # Fallback: assume it's a raw state_dict
+                    # Flat state_dict (full InfoBot model weights)
                     full_state_dict = checkpoint
                 
                 # Remove DDP 'module.' prefix if present
                 full_state_dict = remove_ddp_prefix_from_checkpoint(full_state_dict)
                 
-                # [MEMORY OPT] Extract only bottleneck and action_head weights
-                # Base VLA weights are already loaded, don't need to reload them
-                bottleneck_state_dict = {}
-                for key, value in full_state_dict.items():
-                    if key.startswith('bottleneck.'):
-                        bottleneck_state_dict[key] = value
+                # Count key categories for logging
+                key_cats = {}
+                for k in full_state_dict:
+                    prefix = k.split('.')[0]
+                    key_cats[prefix] = key_cats.get(prefix, 0) + 1
+                logger.info(f"[INFOBOT] Checkpoint key categories: {key_cats}")
                 
-                logger.info(f"[INFOBOT] Extracted {len(bottleneck_state_dict)} bottleneck params")
-                
-                # Load only the bottleneck weights
+                # Load full state_dict (includes LoRA, action_head, bottleneck)
                 missing_keys, unexpected_keys = infobot_model.load_state_dict(
-                    bottleneck_state_dict, 
-                    strict=False  # Don't require all keys to match
+                    full_state_dict,
+                    strict=False
                 )
                 
+                # Log summary (not full key lists to avoid log spam)
                 if missing_keys:
-                    logger.warning(f"[INFOBOT] Missing keys when loading bottleneck: {missing_keys}")
+                    logger.info(f"[INFOBOT] {len(missing_keys)} missing keys (expected for base_vla duplication)")
                 if unexpected_keys:
-                    logger.warning(f"[INFOBOT] Unexpected keys when loading bottleneck: {unexpected_keys}")
+                    logger.info(f"[INFOBOT] {len(unexpected_keys)} unexpected keys")
                 
                 # Move to GPU
                 infobot_model = infobot_model.to(model.device)
@@ -387,8 +384,8 @@ def initialize_model(cfg: GenerateConfig):
                 
                 logger.info(f"[INFOBOT] ✓ Loaded InfoBot-VLA from: {infobot_checkpoint_file}")
                 
-                # Free memory from full checkpoint
-                del checkpoint, full_state_dict, bottleneck_state_dict
+                # Free memory
+                del checkpoint, full_state_dict
                 import gc
                 gc.collect()
                 if torch.cuda.is_available():
