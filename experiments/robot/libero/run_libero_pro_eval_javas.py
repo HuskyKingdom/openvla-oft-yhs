@@ -283,22 +283,32 @@ def initialize_model(cfg: GenerateConfig):
         
         # [CRITICAL FIX] Apply LoRA configuration to match training
         # The InfoBot checkpoint was trained with LoRA adapters, so we need to apply
-        # the same LoRA config before loading the checkpoint
+        # the EXACT same LoRA config before loading the checkpoint
         logger.info(f"[INFOBOT] Applying LoRA configuration (rank={cfg.lora_rank}) to base VLA")
         from peft import LoraConfig, get_peft_model
         
         lora_config = LoraConfig(
             r=cfg.lora_rank,
-            lora_alpha=min(cfg.lora_rank, 16),  # Same as training: min(lora_rank, 16)
+            lora_alpha=min(cfg.lora_rank, 16),
             lora_dropout=0.0,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-            use_rslora=True,  # Same as training
+            target_modules="all-linear",  # MATCH TRAINING: all-linear, not specific layers
+            init_lora_weights="gaussian",  # MATCH TRAINING: gaussian init
             bias="none",
         )
         
-        # Apply LoRA to the language model
-        model.language_model = get_peft_model(model.language_model, lora_config)
-        logger.info(f"[INFOBOT] LoRA applied to language model")
+        # Apply LoRA to the ENTIRE base_vla (like training does)
+        # NOT just language_model - must wrap the whole VLA for key names to match
+        model = get_peft_model(model, lora_config)
+        
+        # Set to inference mode (disable gradient computation for LoRA)
+        for param in model.parameters():
+            param.requires_grad = False
+        model.eval()
+        
+        logger.info(f"[INFOBOT] LoRA applied to full base_vla (inference mode)")
+        
+        # Print trainable parameters (for debugging)
+        model.print_trainable_parameters()
         
         # Load dataset statistics from InfoBot checkpoint (not from base VLA)
         import os
