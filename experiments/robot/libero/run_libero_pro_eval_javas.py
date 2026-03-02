@@ -326,7 +326,8 @@ def initialize_model(cfg: GenerateConfig):
                     break
             
             if infobot_checkpoint_file is not None:
-                checkpoint = torch.load(infobot_checkpoint_file, map_location=model.device, weights_only=True)
+                # Load to CPU first to avoid OOM
+                checkpoint = torch.load(infobot_checkpoint_file, map_location='cpu', weights_only=True)
                 
                 # InfoBot checkpoint format: dict with 'infobot_state_dict' key
                 if isinstance(checkpoint, dict) and 'infobot_state_dict' in checkpoint:
@@ -341,6 +342,7 @@ def initialize_model(cfg: GenerateConfig):
                 
                 logger.info(f"[INFOBOT] Loading checkpoint: {infobot_checkpoint_file}")
                 infobot_model.load_state_dict(state_dict)
+                infobot_model.to(model.device) # Move to GPU after loading
                 infobot_model.eval()
                 
                 logger.info(f"[INFOBOT] ✓ Loaded InfoBot-VLA from: {infobot_checkpoint_file}")
@@ -361,8 +363,9 @@ def initialize_model(cfg: GenerateConfig):
             cfg.use_infobot = False
 
     # Load proprio projector if needed
+    # [INFOBOT] Skip loading from separate file - included in InfoBot checkpoint
     proprio_projector = None
-    if cfg.use_proprio:
+    if cfg.use_proprio and not cfg.use_infobot:
         proprio_projector = get_proprio_projector(
             cfg,
             model.llm_dim if hasattr(model, 'llm_dim') else model.base_vla.llm_dim,
@@ -370,15 +373,17 @@ def initialize_model(cfg: GenerateConfig):
         )
 
     # Load action head if needed
+    # [INFOBOT] Skip loading from separate file - included in InfoBot checkpoint
     action_head = None
-    if cfg.use_l1_regression or cfg.use_diffusion:
+    if (cfg.use_l1_regression or cfg.use_diffusion) and not cfg.use_infobot:
         # Get llm_dim from model or base_vla (for InfoBot)
         llm_dim = model.llm_dim if hasattr(model, 'llm_dim') else model.base_vla.llm_dim
         action_head = get_action_head(cfg, llm_dim)
 
     # Load noisy action projector if using diffusion
+    # [INFOBOT] Skip loading from separate file
     noisy_action_projector = None
-    if cfg.use_diffusion:
+    if cfg.use_diffusion and not cfg.use_infobot:
         noisy_action_projector = get_noisy_action_projector(cfg, llm_dim)
     
     # [SUBSTEP EOS] Load EOS classification head if EOS detection is enabled
