@@ -326,26 +326,55 @@ def initialize_model(cfg: GenerateConfig):
                     break
             
             if infobot_checkpoint_file is not None:
-                # Load to CPU first to avoid OOM
+                # [MEMORY OPT] Load checkpoint to CPU first, extract only bottleneck weights
+                # to avoid duplicating base VLA weights in memory
+                logger.info(f"[INFOBOT] Loading checkpoint from: {infobot_checkpoint_file}")
                 checkpoint = torch.load(infobot_checkpoint_file, map_location='cpu', weights_only=True)
                 
                 # InfoBot checkpoint format: dict with 'infobot_state_dict' key
                 if isinstance(checkpoint, dict) and 'infobot_state_dict' in checkpoint:
-                    state_dict = checkpoint['infobot_state_dict']
+                    full_state_dict = checkpoint['infobot_state_dict']
                     logger.info(f"[INFOBOT] Loaded checkpoint with step={checkpoint.get('step', 'unknown')}")
                 else:
                     # Fallback: assume it's a raw state_dict
-                    state_dict = checkpoint
+                    full_state_dict = checkpoint
                 
                 # Remove DDP 'module.' prefix if present
-                state_dict = remove_ddp_prefix_from_checkpoint(state_dict)
+                full_state_dict = remove_ddp_prefix_from_checkpoint(full_state_dict)
                 
-                logger.info(f"[INFOBOT] Loading checkpoint: {infobot_checkpoint_file}")
-                infobot_model.load_state_dict(state_dict)
-                infobot_model.to(model.device) # Move to GPU after loading
+                # [MEMORY OPT] Extract only bottleneck and action_head weights
+                # Base VLA weights are already loaded, don't need to reload them
+                bottleneck_state_dict = {}
+                for key, value in full_state_dict.items():
+                    if key.startswith('bottleneck.'):
+                        bottleneck_state_dict[key] = value
+                
+                logger.info(f"[INFOBOT] Extracted {len(bottleneck_state_dict)} bottleneck params")
+                
+                # Load only the bottleneck weights
+                missing_keys, unexpected_keys = infobot_model.load_state_dict(
+                    bottleneck_state_dict, 
+                    strict=False  # Don't require all keys to match
+                )
+                
+                if missing_keys:
+                    logger.warning(f"[INFOBOT] Missing keys when loading bottleneck: {missing_keys}")
+                if unexpected_keys:
+                    logger.warning(f"[INFOBOT] Unexpected keys when loading bottleneck: {unexpected_keys}")
+                
+                # Move to GPU
+                infobot_model = infobot_model.to(model.device)
                 infobot_model.eval()
                 
                 logger.info(f"[INFOBOT] ✓ Loaded InfoBot-VLA from: {infobot_checkpoint_file}")
+                
+                # Free memory from full checkpoint
+                del checkpoint, full_state_dict, bottleneck_state_dict
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
             else:
                 logger.warning(
                     f"[INFOBOT WARNING] ⚠️ InfoBot checkpoint not found in {checkpoint_path}. "
