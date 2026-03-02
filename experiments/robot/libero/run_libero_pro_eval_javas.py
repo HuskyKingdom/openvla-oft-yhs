@@ -498,9 +498,14 @@ def initialize_model(cfg: GenerateConfig):
             cfg.use_eos_detection = False
 
     # Get OpenVLA processor if needed
+    # [INFOBOT] Use vla_path for processor since InfoBot checkpoint has no config.json
     processor = None
     if cfg.model_family == "openvla":
+        original_checkpoint = cfg.pretrained_checkpoint
+        if cfg.use_infobot:
+            cfg.pretrained_checkpoint = cfg.vla_path
         processor = get_processor(cfg)
+        cfg.pretrained_checkpoint = original_checkpoint
         check_unnorm_key(cfg, model)
 
     return model, action_head, proprio_projector, noisy_action_projector, processor, eos_head
