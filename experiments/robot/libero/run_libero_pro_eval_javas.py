@@ -281,6 +281,25 @@ def initialize_model(cfg: GenerateConfig):
         import experiments.robot.openvla_utils as vla_utils
         vla_utils._load_dataset_stats = original_load_stats
         
+        # [CRITICAL FIX] Apply LoRA configuration to match training
+        # The InfoBot checkpoint was trained with LoRA adapters, so we need to apply
+        # the same LoRA config before loading the checkpoint
+        logger.info(f"[INFOBOT] Applying LoRA configuration (rank={cfg.lora_rank}) to base VLA")
+        from peft import LoraConfig, get_peft_model
+        
+        lora_config = LoraConfig(
+            r=cfg.lora_rank,
+            lora_alpha=min(cfg.lora_rank, 16),  # Same as training: min(lora_rank, 16)
+            lora_dropout=0.0,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            use_rslora=True,  # Same as training
+            bias="none",
+        )
+        
+        # Apply LoRA to the language model
+        model.language_model = get_peft_model(model.language_model, lora_config)
+        logger.info(f"[INFOBOT] LoRA applied to language model")
+        
         # Load dataset statistics from InfoBot checkpoint (not from base VLA)
         import os
         if os.path.isfile(os.path.join(original_checkpoint, "dataset_statistics.json")):
