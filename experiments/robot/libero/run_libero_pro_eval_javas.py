@@ -268,9 +268,17 @@ def initialize_model(cfg: GenerateConfig):
     # Load model
     model = get_model(cfg)
     
-    # Restore original checkpoint path
+    # [INFOBOT] Restore original checkpoint path and load dataset stats from checkpoint
     if cfg.use_infobot:
         cfg.pretrained_checkpoint = original_checkpoint
+        # Load dataset statistics from InfoBot checkpoint (not from base VLA)
+        from experiments.robot.openvla_utils import _load_dataset_stats
+        import os
+        if os.path.isfile(os.path.join(original_checkpoint, "dataset_statistics.json")):
+            logger.info(f"[INFOBOT] Loading dataset statistics from: {original_checkpoint}")
+            _load_dataset_stats(model, original_checkpoint)
+        else:
+            logger.warning(f"[INFOBOT WARNING] No dataset_statistics.json found in {original_checkpoint}")
     
     # [INFOBOT] Wrap with InfoBot-VLA if enabled
     infobot_model = None
