@@ -360,7 +360,11 @@ def initialize_model(cfg: GenerateConfig):
             import traceback
             logger.error(traceback.format_exc())
             infobot_model = None
-            cfg.use_infobot = False
+            # [INFOBOT] If InfoBot was explicitly requested but failed, raise error
+            # instead of silently falling back to avoid confusion
+            raise RuntimeError(f"InfoBot initialization failed: {e}. "
+                               f"If running on GPU with limited memory, consider using "
+                               f"--load_in_8bit True or --load_in_4bit True") from e
 
     # Load proprio projector if needed
     # [INFOBOT] Skip loading from separate file - included in InfoBot checkpoint
