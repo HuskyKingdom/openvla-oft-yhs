@@ -288,6 +288,20 @@ def initialize_model(cfg: GenerateConfig):
             vla_utils._load_dataset_stats(model, original_checkpoint)
         else:
             logger.warning(f"[INFOBOT WARNING] No dataset_statistics.json found in {original_checkpoint}")
+            # Try to download from HuggingFace for the base model
+            try:
+                from huggingface_hub import hf_hub_download
+                dataset_statistics_path = hf_hub_download(
+                    repo_id=cfg.vla_path,
+                    filename="dataset_statistics.json",
+                )
+                if os.path.isfile(dataset_statistics_path):
+                    with open(dataset_statistics_path, "r") as f:
+                        norm_stats = json.load(f)
+                    model.base_vla.norm_stats = norm_stats
+                    logger.info(f"[INFOBOT] Loaded dataset statistics from HuggingFace: {cfg.vla_path}")
+            except Exception as e:
+                logger.warning(f"[INFOBOT WARNING] Could not load dataset_statistics from HuggingFace: {e}")
     
     # [INFOBOT] Wrap with InfoBot-VLA if enabled
     infobot_model = None
