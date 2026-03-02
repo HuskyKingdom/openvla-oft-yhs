@@ -542,7 +542,11 @@ def check_unnorm_key(cfg: GenerateConfig, model) -> None:
     if unnorm_key not in norm_stats and f"{unnorm_key}_no_noops" in norm_stats:
         unnorm_key = f"{unnorm_key}_no_noops"
 
-    assert unnorm_key in norm_stats, f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!"
+    if unnorm_key not in norm_stats:
+        available_keys = list(norm_stats.keys()) if isinstance(norm_stats, dict) else "N/A"
+        logger.error(f"[ERROR] Action un-norm key '{unnorm_key}' not found in VLA `norm_stats`!")
+        logger.error(f"[ERROR] Available keys: {available_keys}")
+        raise AssertionError(f"Action un-norm key {unnorm_key} not found in VLA `norm_stats`!")
 
     # Set the unnorm_key in cfg
     cfg.unnorm_key = unnorm_key
