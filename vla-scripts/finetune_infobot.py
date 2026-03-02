@@ -127,6 +127,7 @@ class InfoBotVLAConfig:
     save_latest_checkpoint_only: bool = False
     resume: bool = False
     resume_step: Optional[int] = None
+    resume_checkpoint_path: Optional[str] = None  # Path to checkpoint to resume from
     image_aug: bool = True
     
     # LoRA
@@ -493,6 +494,24 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
         gamma=0.1,
     )
     
+    # Resume from checkpoint if specified
+    start_step = 0
+    if cfg.resume and cfg.resume_checkpoint_path:
+        if distributed_state.is_main_process:
+            print(f"Resuming from checkpoint: {cfg.resume_checkpoint_path}")
+        start_step, loaded_config = load_infobot_checkpoint(
+            cfg.resume_checkpoint_path,
+            infobot_model,
+            base_vla,
+            mi_estimator,
+            optimizer,
+            scheduler,
+            device_id
+        )
+        if distributed_state.is_main_process:
+            print(f"Resumed training from step {start_step}")
+            print(f"Loaded config: {loaded_config}")
+    
     # Setup dataset
     action_tokenizer = ActionTokenizer(processor.tokenizer)
     
@@ -541,11 +560,18 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
         'curr_action_l1_loss': deque(maxlen=cfg.grad_accumulation_steps),
     }
     
-    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
+    with tqdm.tqdm(total=cfg.max_steps, initial=start_step, leave=False) as progress:
         infobot_model.train()
         optimizer.zero_grad()
         
         for batch_idx, batch in enumerate(dataloader):
+            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
+            log_step = gradient_step_idx
+            
+            # Skip steps if resuming
+            if log_step < start_step:
+                continue
+            
             # Forward pass
             loss, metrics = run_infobot_forward_pass(
                 infobot_model=infobot_model,
@@ -574,10 +600,7 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
                 if k in recent_metrics:
                     recent_metrics[k].append(v)
             
-            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
-            log_step = gradient_step_idx
-            
-            # Logging
+            # Logging (gradient_step_idx and log_step already defined above)
             if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
                 smoothened = {k: np.mean(v) if len(v) > 0 else 0.0 for k, v in recent_metrics.items()}
                 log_metrics_to_wandb(smoothened, "InfoBot Train", log_step, wandb)
@@ -605,10 +628,36 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
                     checkpoint_dir = run_dir if cfg.save_latest_checkpoint_only else Path(str(run_dir) + f"--{log_step}_chkpt")
                     os.makedirs(checkpoint_dir, exist_ok=True)
                     
-                    # Save InfoBot model state
-                    torch.save(infobot_model.module.state_dict(), checkpoint_dir / f"infobot--{log_step}_checkpoint.pt")
+                    # Save complete checkpoint with all components
+                    checkpoint = {
+                        # InfoBot model state
+                        'infobot_state_dict': infobot_model.module.state_dict(),
+                        # Base VLA (with LoRA) state
+                        'base_vla_state_dict': base_vla.module.state_dict() if isinstance(base_vla, DDP) else base_vla.state_dict(),
+                        # MI estimator state (if used)
+                        'mi_estimator_state_dict': mi_estimator.state_dict(),
+                        # Optimizer and scheduler states
+                        'optimizer_state_dict': optimizer.state_dict(),
+                        'scheduler_state_dict': scheduler.state_dict(),
+                        # Training config (serialized)
+                        'config': draccus.encode(cfg),
+                        # Training step
+                        'step': log_step,
+                        # Seed for reproducibility
+                        'seed': 42,
+                    }
                     
-                    print(f"✓ Saved checkpoint: {checkpoint_dir}")
+                    checkpoint_path = checkpoint_dir / f"infobot--{log_step}_checkpoint.pt"
+                    torch.save(checkpoint, checkpoint_path)
+                    
+                    # Also save config separately as JSON for easy inspection
+                    import json
+                    config_path = checkpoint_dir / "training_config.json"
+                    with open(config_path, 'w') as f:
+                        json.dump(draccus.encode(cfg), f, indent=2)
+                    
+                    print(f"✓ Saved checkpoint: {checkpoint_path}")
+                    print(f"✓ Saved config: {config_path}")
                 
                 dist.barrier()
             
@@ -616,6 +665,43 @@ def finetune_infobot(cfg: InfoBotVLAConfig) -> None:
             if log_step == cfg.max_steps:
                 print(f"Max step {cfg.max_steps} reached! Stopping...")
                 break
+
+def load_infobot_checkpoint(checkpoint_path: str, infobot_model, base_vla, mi_estimator, optimizer, scheduler, device_id):
+    """Load checkpoint and resume training.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        infobot_model: InfoBot model (DDP wrapped)
+        base_vla: Base VLA model (DDP wrapped)
+        mi_estimator: MI estimator
+        optimizer: Optimizer
+        scheduler: LR scheduler
+        device_id: GPU device ID
+    
+    Returns:
+        step: Resume from this step
+        config: Training config dict
+    """
+    print(f"Loading checkpoint from {checkpoint_path}")
+    checkpoint = torch.load(checkpoint_path, map_location=f"cuda:{device_id}")
+    
+    # Load model states
+    infobot_model.module.load_state_dict(checkpoint['infobot_state_dict'])
+    if isinstance(base_vla, DDP):
+        base_vla.module.load_state_dict(checkpoint['base_vla_state_dict'])
+    else:
+        base_vla.load_state_dict(checkpoint['base_vla_state_dict'])
+    mi_estimator.load_state_dict(checkpoint['mi_estimator_state_dict'])
+    
+    # Load optimizer and scheduler
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    
+    step = checkpoint.get('step', 0)
+    config = checkpoint.get('config', {})
+    
+    print(f"✓ Resumed from step {step}")
+    return step, config
 
 
 if __name__ == "__main__":

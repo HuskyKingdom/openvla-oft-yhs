@@ -229,6 +229,7 @@ class GenerateConfig:
     infobot_bottleneck_type: str = "cross_attn"      # Bottleneck type: cross_attn or lang_conditioned
     infobot_bottleneck_dim: int = 256                # Bottleneck dimension
     infobot_num_tokens: int = 8                      # Number of bottleneck tokens
+    vla_path: str = "openvla/openvla-7b"             # Base VLA model path (for InfoBot - since checkpoint has no config.json)
 
     # fmt: on
 
@@ -256,8 +257,20 @@ def validate_config(cfg: GenerateConfig) -> None:
 
 def initialize_model(cfg: GenerateConfig):
     """Initialize model and associated components."""
+    
+    # [INFOBOT] When using InfoBot, load base VLA from vla_path since checkpoint has no config.json
+    if cfg.use_infobot:
+        # Temporarily override pretrained_checkpoint to vla_path for base model loading
+        original_checkpoint = cfg.pretrained_checkpoint
+        cfg.pretrained_checkpoint = cfg.vla_path
+        logger.info(f"[INFOBOT] Loading base VLA from: {cfg.vla_path}")
+    
     # Load model
     model = get_model(cfg)
+    
+    # Restore original checkpoint path
+    if cfg.use_infobot:
+        cfg.pretrained_checkpoint = original_checkpoint
     
     # [INFOBOT] Wrap with InfoBot-VLA if enabled
     infobot_model = None
@@ -296,7 +309,16 @@ def initialize_model(cfg: GenerateConfig):
                     break
             
             if infobot_checkpoint_file is not None:
-                state_dict = torch.load(infobot_checkpoint_file, map_location=model.device, weights_only=True)
+                checkpoint = torch.load(infobot_checkpoint_file, map_location=model.device, weights_only=True)
+                
+                # InfoBot checkpoint format: dict with 'infobot_state_dict' key
+                if isinstance(checkpoint, dict) and 'infobot_state_dict' in checkpoint:
+                    state_dict = checkpoint['infobot_state_dict']
+                    logger.info(f"[INFOBOT] Loaded checkpoint with step={checkpoint.get('step', 'unknown')}")
+                else:
+                    # Fallback: assume it's a raw state_dict
+                    state_dict = checkpoint
+                
                 # Remove DDP 'module.' prefix if present
                 state_dict = remove_ddp_prefix_from_checkpoint(state_dict)
                 
