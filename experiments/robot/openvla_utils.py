@@ -327,14 +327,21 @@ def get_vla(cfg: Any) -> torch.nn.Module:
         check_model_logic_mismatch(cfg.pretrained_checkpoint)
 
     # Load the model using LOCAL registered class (not remote code)
+    # [8BIT FIX] Add device_map="auto" when using quantization to prevent .to(device) errors
+    load_kwargs = {
+        "torch_dtype": torch.bfloat16,
+        "load_in_8bit": cfg.load_in_8bit,
+        "load_in_4bit": cfg.load_in_4bit,
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": False,  # Use local registered OpenVLAForActionPrediction class
+    }
+    if cfg.load_in_8bit or cfg.load_in_4bit:
+        load_kwargs["device_map"] = "auto"
+    
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.pretrained_checkpoint,
         # attn_implementation="flash_attention_2",
-        torch_dtype=torch.bfloat16,
-        load_in_8bit=cfg.load_in_8bit,
-        load_in_4bit=cfg.load_in_4bit,
-        low_cpu_mem_usage=True,
-        trust_remote_code=False,  # Use local registered OpenVLAForActionPrediction class
+        **load_kwargs
     )
 
     # If using FiLM, wrap the vision backbone to allow for infusion of language inputs
