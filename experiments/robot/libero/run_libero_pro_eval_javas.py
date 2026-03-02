@@ -264,6 +264,11 @@ def initialize_model(cfg: GenerateConfig):
         original_checkpoint = cfg.pretrained_checkpoint
         cfg.pretrained_checkpoint = cfg.vla_path
         logger.info(f"[INFOBOT] Loading base VLA from: {cfg.vla_path}")
+        
+        # Monkey patch _load_dataset_stats to prevent 404 error from HF Hub
+        import experiments.robot.openvla_utils as vla_utils
+        original_load_stats = vla_utils._load_dataset_stats
+        vla_utils._load_dataset_stats = lambda v, p: logger.info(f"[INFOBOT] Skipping stats loading for base VLA")
     
     # Load model
     model = get_model(cfg)
@@ -271,12 +276,16 @@ def initialize_model(cfg: GenerateConfig):
     # [INFOBOT] Restore original checkpoint path and load dataset stats from checkpoint
     if cfg.use_infobot:
         cfg.pretrained_checkpoint = original_checkpoint
+        
+        # Restore original _load_dataset_stats
+        import experiments.robot.openvla_utils as vla_utils
+        vla_utils._load_dataset_stats = original_load_stats
+        
         # Load dataset statistics from InfoBot checkpoint (not from base VLA)
-        from experiments.robot.openvla_utils import _load_dataset_stats
         import os
         if os.path.isfile(os.path.join(original_checkpoint, "dataset_statistics.json")):
             logger.info(f"[INFOBOT] Loading dataset statistics from: {original_checkpoint}")
-            _load_dataset_stats(model, original_checkpoint)
+            vla_utils._load_dataset_stats(model, original_checkpoint)
         else:
             logger.warning(f"[INFOBOT WARNING] No dataset_statistics.json found in {original_checkpoint}")
     
