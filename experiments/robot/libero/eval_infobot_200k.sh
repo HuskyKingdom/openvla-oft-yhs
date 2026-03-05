@@ -42,7 +42,7 @@ echo "Start: $(date)"
 python experiments/robot/libero/run_libero_pro_eval_javas.py \
   $COMMON \
   --task_suite_name libero_spatial \
-  --unnorm_key libero_spatial \
+  --unnorm_key libero_spatial_no_noops \
   --run_id_note "${LABEL}_spatial"
 
 # 2. LIBERO-Object
@@ -52,7 +52,7 @@ echo "Start: $(date)"
 python experiments/robot/libero/run_libero_pro_eval_javas.py \
   $COMMON \
   --task_suite_name libero_object \
-  --unnorm_key libero_object \
+  --unnorm_key libero_object_no_noops \
   --run_id_note "${LABEL}_object"
 
 # 3. LIBERO-Goal
@@ -62,7 +62,7 @@ echo "Start: $(date)"
 python experiments/robot/libero/run_libero_pro_eval_javas.py \
   $COMMON \
   --task_suite_name libero_goal \
-  --unnorm_key libero_goal \
+  --unnorm_key libero_goal_no_noops \
   --run_id_note "${LABEL}_goal"
 
 # 4. LIBERO-10 (Long-horizon)
@@ -72,7 +72,7 @@ echo "Start: $(date)"
 python experiments/robot/libero/run_libero_pro_eval_javas.py \
   $COMMON \
   --task_suite_name libero_10 \
-  --unnorm_key libero_10 \
+  --unnorm_key libero_10_no_noops \
   --run_id_note "${LABEL}_10"
 
 echo ""
