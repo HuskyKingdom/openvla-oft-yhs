@@ -465,7 +465,16 @@ class InfoBotVLAModel(nn.Module):
         
         # Flag for returning bottleneck features during training
         self.return_bottleneck_features = False
-        
+
+    @property
+    def norm_stats(self):
+        """Delegate norm_stats to base_vla so external code can access normalization statistics."""
+        return self.base_vla.norm_stats
+
+    @norm_stats.setter
+    def norm_stats(self, value):
+        self.base_vla.norm_stats = value
+
     def forward(
         self,
         pixel_values: torch.Tensor,
