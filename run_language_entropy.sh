@@ -3,7 +3,7 @@ echo "Running Language Entropy Analysis (§4.3) ------------------------------"
 # Path to your APD substep decomposition JSON
 # e.g. generated during evaluation via SubstepManager, or exported from eval logs
 APD_PLANS_PATH="${1:-./APD_plans.json}"
-LLM_PATH="${2:-openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla--150000_chkpt/}"
+LLM_PATH="${2:-ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla--150000_chkpt/}"
 
 mkdir -p ckpts analysis_outputs/language_entropy
 
