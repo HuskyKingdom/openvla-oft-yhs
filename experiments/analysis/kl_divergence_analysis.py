@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Dict, Tuple
 
 import numpy as np
+import tqdm as tqdm_module
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -210,13 +211,18 @@ def analyse_checkpoint(
     # Collect samples across tasks
     per_task_results = {}
 
-    for task_id in range(len(tasks)):
+    task_pbar = tqdm_module.tqdm(range(len(tasks)), desc=f"[{label}] Tasks", unit="task")
+    for task_id in task_pbar:
         task = task_suite.get_task(task_id)
         env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg_args.env_img_res)
 
-        logger.info(f"[{label}] Task {task_id}: {task_description[:60]}...")
+        task_pbar.set_postfix({"task": task_description[:40]})
+        logger.info(f"[{label}] Task {task_id}/{len(tasks)}: {task_description[:70]}")
 
+        logger.info(f"[{label}]   Loading initial states for task {task_id}...")
         initial_states = task_suite.get_task_init_states(task_id)
+        logger.info(f"[{label}]   Loaded {len(initial_states)} initial states.")
+
         l1_distances: List[float] = []
         # per-dim buckets for KL
         with_lang_actions: List[np.ndarray] = []   # (N, 7)
@@ -225,13 +231,20 @@ def analyse_checkpoint(
         samples_collected = 0
         episode_idx = 0
 
+        sample_pbar = tqdm_module.tqdm(
+            total=cfg_args.num_samples_per_task,
+            desc=f"  Samples (task {task_id})",
+            unit="sample",
+            leave=False,
+        )
+
         while samples_collected < cfg_args.num_samples_per_task:
             env.reset()
             init_state = initial_states[episode_idx % len(initial_states)]
             obs = env.set_init_state(init_state)
 
             # Collect up to num_samples_per_task frames per episode
-            for _ in range(cfg_args.num_open_loop_steps * 4):
+            for step_i in range(cfg_args.num_open_loop_steps * 4):
                 if samples_collected >= cfg_args.num_samples_per_task:
                     break
 
@@ -282,6 +295,8 @@ def analyse_checkpoint(
                     with_lang_actions.append(a_with)
                     null_lang_actions.append(a_null)
                     samples_collected += 1
+                    sample_pbar.update(1)
+                    sample_pbar.set_postfix({"ep": episode_idx, "step": step_i, "l1": f"{l1:.3f}"})
 
                     # Step environment with the "with-language" action
                     from experiments.robot.robot_utils import normalize_gripper_action, invert_gripper_action
@@ -298,6 +313,8 @@ def analyse_checkpoint(
             if episode_idx >= len(initial_states) * 3:
                 logger.warning(f"  Reached max episodes for task {task_id}, stopping early")
                 break
+
+        sample_pbar.close()
 
         if len(with_lang_actions) == 0:
             logger.warning(f"  No samples collected for task {task_id}")
