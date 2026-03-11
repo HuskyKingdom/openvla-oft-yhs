@@ -1,6 +1,6 @@
 #!/bin/bash
 echo "Running KL Divergence Analysis (§4.2) ------------------------------"
-CKPT_APD="ckpt/ckpoints/backup2"
+CKPT_APD="openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla--150000_chkpt/"
 CKPT_OFT="moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10"
 
 mkdir -p ckpts
