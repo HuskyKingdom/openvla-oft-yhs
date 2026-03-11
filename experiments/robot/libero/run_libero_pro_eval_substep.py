@@ -224,6 +224,9 @@ class GenerateConfig:
     use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
     eos_threshold: float = 0.03                       # Threshold for EOS detection (probability cutoff)
 
+    # Language Dropping experiment (§4.1)
+    null_instruction: bool = False                   # If True, forces instruction to "" at inference (for Language Dropping ablation)
+
     # fmt: on
 
 
@@ -823,6 +826,10 @@ def run_episode(
             if substep_manager is not None:
                 # Get current instruction from substep manager
                 current_instruction = substep_manager.get_current_instruction()
+            
+            # [§4.1 Language Dropping] Override instruction with empty string if null_instruction=True
+            if cfg.null_instruction:
+                current_instruction = ""
             
             # Query model to get action using current instruction
             # Enable EOS detection if configured
