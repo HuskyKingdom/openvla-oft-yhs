@@ -22,6 +22,14 @@ from libero.libero import benchmark
 
 import wandb
 
+_original_load = torch.load
+def _patched_load(*args, **kwargs):
+    kwargs.setdefault('weights_only', False)
+    return _original_load(*args, **kwargs)
+torch.load = _patched_load
+
+
+
 # Append current directory so that interpreter can find experiments.robot
 sys.path.append("../..")
 from experiments.robot.libero.libero_utils import (
@@ -350,6 +358,23 @@ def run_episode(
         replay_images.append(img)
 
         # If action queue is empty, requery model
+        # if len(action_queue) == 0:
+        #     # Query model to get action
+        #     actions = get_action(
+        #         cfg,
+        #         model,
+        #         observation,
+        #         task_description,
+        #         processor=processor,
+        #         action_head=action_head,
+        #         proprio_projector=proprio_projector,
+        #         noisy_action_projector=noisy_action_projector,
+        #         use_film=cfg.use_film,
+        #         h_head=head,
+        #     )
+        #     action_queue.extend(actions)
+        #     actions_accum.append(actions)
+        
         if len(action_queue) == 0:
             # Query model to get action
             actions = get_action(
@@ -362,7 +387,7 @@ def run_episode(
                 proprio_projector=proprio_projector,
                 noisy_action_projector=noisy_action_projector,
                 use_film=cfg.use_film,
-                h_head=head,
+                # h_head=head,
             )
             action_queue.extend(actions)
             actions_accum.append(actions)
