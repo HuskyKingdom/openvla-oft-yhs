@@ -625,7 +625,7 @@ def process_suite(rlds_data_dir: str,
     
     dataset = load_rlds_dataset(rlds_data_dir, suite_name)
     if dataset is None:
-        return {}
+        return {}, 0, 0, 0, 0 # <--- Fixed unpacking
     
     suite_results = {}
     episode_count = 0
