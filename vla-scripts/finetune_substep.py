@@ -282,7 +282,7 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-                eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
+                # eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
 
                 # Flatten for loss computation
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
@@ -605,7 +605,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
     # Load processor and VLA using locally registered classes (trust_remote_code=False),
     # which avoids loading potentially stale processing_prismatic.py from the checkpoint dir.
-    processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=False)
+    processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=True)
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.vla_path,
         torch_dtype=torch.bfloat16,
@@ -1116,6 +1116,5 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
 
 if __name__ == "__main__":
-    set_seed(42) # reproducibility
     finetune_substep()
 
