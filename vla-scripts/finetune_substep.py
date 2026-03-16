@@ -282,7 +282,7 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-                # eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
+                eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
 
                 # Flatten for loss computation
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
