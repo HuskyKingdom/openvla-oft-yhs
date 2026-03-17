@@ -162,7 +162,7 @@ INNER_CMD="set -ex; \
 cd \"$REPO_ROOT\"; \
 mkdir -p my_rl_pkgs; \
 export PYTHONPATH=\"$REPO_ROOT/my_rl_pkgs:\$PYTHONPATH\"; \
-pip install --target=\"$REPO_ROOT/my_rl_pkgs\" ray codetiming \"protobuf<5\" -U wandb; \
+pip install --target=\"$REPO_ROOT/my_rl_pkgs\" ray codetiming \"protobuf<5\" -U wandb open_clip_torch; \
 bash examples/overwrite_vla_ckpt_utils.sh \"$SFT_MODEL_PATH\"; \
 HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   data.task_suite_name='$DATASET_NAME' \
