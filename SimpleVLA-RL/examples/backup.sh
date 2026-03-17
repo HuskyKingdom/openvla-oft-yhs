@@ -1,23 +1,23 @@
 #!/bin/bash
-#SBATCH --job-name=oft-substep-rl-libero
+#SBATCH --job-name=apd-rl-libero
 #SBATCH --partition=mi3008xl
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=184
 #SBATCH --time=36:00:00
-#SBATCH --output=slurm/logs/oft_substep_rl_libero_%j.out
-#SBATCH --error=slurm/logs/oft_substep_rl_libero_%j.err
-# OpenVLA-OFT Substep-Aware RL (IG-RL) on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
-# Extends the base GRPO script with substep instruction switching + contrastive reward.
-# Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_substep_rl_libero.sh
-# Example: SFT_MODEL_PATH=checkpoints/openvla-oft-substep-sft APD_PLANS_PATH=../APD_plans.json sbatch examples/run_openvla_oft_substep_rl_libero.sh
+#SBATCH --output=slurm/logs/oft_rl_libero_%j.out
+#SBATCH --error=slurm/logs/oft_rl_libero_%j.err
+# OpenVLA-OFT GRPO on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
+# Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_rl_libero_apptainer.sh
+# Example: SFT_MODEL_PATH=checkpoints/openvla-oft-sft-full CKPT_PATH=checkpoints sbatch examples/run_openvla_oft_rl_libero_apptainer.sh
 
 set -ex
 
 # =============================================================================
 # 1. PATHS & CONTAINER
 # =============================================================================
+# Repo root: from Slurm submit dir when using sbatch, else from script path
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 APPTAINER_IMAGE="${APPTAINER_IMAGE:-$REPO_ROOT/simplevla-rl-rocm.sif}"
 
@@ -32,10 +32,11 @@ if [ ! -f "$APPTAINER_IMAGE" ]; then
 fi
 
 # =============================================================================
-# 2. TRAINING RUN CONFIG
+# 2. TRAINING RUN CONFIG (edit these or pass via env when sbatch)
 # =============================================================================
-PROJECT_NAME="${PROJECT_NAME:-SimpleVLA-RL-SubstepRL}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-substep-rl-libero}"
+PROJECT_NAME="${PROJECT_NAME:-SimpleVLA-RL}"
+# Experiment name: no spaces, or Hydra will parse as multiple overrides
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-grpo-libero}"
 SFT_MODEL_PATH="${SFT_MODEL_PATH:-YOUR SFT_MODEL_PATH}"
 CKPT_PATH="${CKPT_PATH:-THE PATH YOU WANT TO SAVE YOUR CKPT}"
 # Dataset: libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
@@ -70,29 +71,15 @@ ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.9}"
 REF_LOG_PROB_MICRO_BATCH_SIZE="${REF_LOG_PROB_MICRO_BATCH_SIZE:-32}"
 
 # =============================================================================
-# 5. SUBSTEP RL CONFIG (Hydra actor_rollout_ref.rollout.* & verifier.*)
-# =============================================================================
-# APD_plans.json path (from openvla-oft project, required when USE_SUBSTEP_RL=true)
-APD_PLANS_PATH="${APD_PLANS_PATH:-YOUR APD_PLANS_PATH}"
-USE_SUBSTEP_RL="${USE_SUBSTEP_RL:-True}"
-SIGCLIP_MODEL_PATH="${SIGCLIP_MODEL_PATH:-timm/ViT-B-16-SigLIP-256}"
-SUBSTEP_COMPLETION_THRESHOLD="${SUBSTEP_COMPLETION_THRESHOLD:-0.25}"
-CONTRASTIVE_SAMPLE_INTERVAL="${CONTRASTIVE_SAMPLE_INTERVAL:-16}"
-# Reward weights: R_total = VERIFIER_REWARD_COEF * R_task + CONTRASTIVE_REWARD_COEF * R_contrastive
-VERIFIER_REWARD_COEF="${VERIFIER_REWARD_COEF:-5}"
-CONTRASTIVE_REWARD_COEF="${CONTRASTIVE_REWARD_COEF:-2}"
-# KL penalty against reference (substep SFT) policy; set 0 to disable
-KL_COEF="${KL_COEF:-0.00}"
-
-# =============================================================================
-# 6. TRAINER SCHEDULE (Hydra trainer.*)
+# 5. TRAINER SCHEDULE (Hydra trainer.*)
 # =============================================================================
 TRAINER_SAVE_FREQ="${TRAINER_SAVE_FREQ:-25}"
 TRAINER_TEST_FREQ="${TRAINER_TEST_FREQ:-4}"
 TRAINER_TOTAL_EPOCHS="${TRAINER_TOTAL_EPOCHS:-100}"
 
 # =============================================================================
-# 7. RUNTIME ENVIRONMENT (NCCL, Ray, ROCm, caches, WandB)
+# 6. RUNTIME ENVIRONMENT (NCCL, Ray, ROCm, caches, WandB)
+#     These are passed into the container via apptainer --env in §10 (single source).
 # =============================================================================
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
@@ -124,6 +111,7 @@ if [ -z "${WANDB_API_KEY:-}" ] || [ "$WANDB_API_KEY" = "YOUR WANDB KEY" ]; then
 fi
 export WANDB_API_KEY="${WANDB_API_KEY:-}"
 
+# LD_LIBRARY_PATH: must match container %environment (simplevla-rl-rocm.def). Include libibverbs so driver libbnxt_re-rdmav34.so (if you copied it in in .def) is found at runtime.
 export LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/ompi/lib:/opt/ucx/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu/libibverbs"
 
 ROCM_ROOT="/opt/rocm"
@@ -131,32 +119,29 @@ HIP_VERSION_CONTAINER="${HIP_VERSION:-7.1.0}"
 HIP_PATH_CONTAINER="${ROCM_ROOT}"
 
 # =============================================================================
-# 8. VALIDATION
+# 7. VALIDATION (must set real paths before running)
 # =============================================================================
 if [[ "$SFT_MODEL_PATH" == *"YOUR"* ]] || [[ ! -d "$SFT_MODEL_PATH" ]]; then
-    echo "Error: Set a real SFT_MODEL_PATH (substep SFT checkpoint). Example: SFT_MODEL_PATH=checkpoints/openvla-oft-substep-sft"
+    echo "Error: Set a real SFT_MODEL_PATH (script or env). Example: SFT_MODEL_PATH=checkpoints/openvla-oft-sft-full"
     exit 1
 fi
 if [[ "$CKPT_PATH" == *"THE PATH"* ]]; then
     echo "Error: Set a real CKPT_PATH (e.g. checkpoints)."
     exit 1
 fi
-if [[ "$USE_SUBSTEP_RL" == "True" ]] && [[ "$APD_PLANS_PATH" == *"YOUR"* ]]; then
-    echo "Error: Set APD_PLANS_PATH when USE_SUBSTEP_RL=True. Example: APD_PLANS_PATH=../APD_plans.json"
-    exit 1
-fi
 
 # =============================================================================
-# 9. DERIVED
+# 8. DERIVED (used in INNER_CMD / Hydra overrides)
 # =============================================================================
+# Escape EXPERIMENT_NAME for double-quoted Hydra overrides (spaces would break parsing)
 EXPERIMENT_NAME_ESC=$(printf '%s' "$EXPERIMENT_NAME" | sed 's/"/\\"/g')
+# Checkpoint save dir: CKPT_PATH/PROJECT_NAME/EXPERIMENT_NAME
 DEFAULT_LOCAL_DIR="${CKPT_PATH}/${PROJECT_NAME}/${EXPERIMENT_NAME}"
 
-echo "Substep RL (Apptainer) — SFT: $SFT_MODEL_PATH  APD: $APD_PLANS_PATH  Experiment: $EXPERIMENT_NAME"
-echo "  R_task coef=$VERIFIER_REWARD_COEF  R_contrastive coef=$CONTRASTIVE_REWARD_COEF  KL=$KL_COEF"
+echo "GRPO (Apptainer) — SFT: $SFT_MODEL_PATH  Experiment: $EXPERIMENT_NAME"
 
 # =============================================================================
-# 10. INNER_CMD: command run inside the container
+# 9. INNER_CMD: command run inside the container (env from §10 --env only)
 # =============================================================================
 INNER_CMD="set -ex; \
 cd \"$REPO_ROOT\"; \
@@ -213,16 +198,9 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
   actor_rollout_ref.rollout.name=hf \
   actor_rollout_ref.rollout.gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION \
-  actor_rollout_ref.rollout.use_substep_rl=$USE_SUBSTEP_RL \
-  actor_rollout_ref.rollout.apd_plans_path=\"$APD_PLANS_PATH\" \
-  actor_rollout_ref.rollout.sigclip_model_path='$SIGCLIP_MODEL_PATH' \
-  actor_rollout_ref.rollout.substep_completion_threshold=$SUBSTEP_COMPLETION_THRESHOLD \
-  actor_rollout_ref.rollout.contrastive_sample_interval=$CONTRASTIVE_SAMPLE_INTERVAL \
   actor_rollout_ref.ref.log_prob_micro_batch_size=$REF_LOG_PROB_MICRO_BATCH_SIZE \
   actor_rollout_ref.ref.fsdp_config.param_offload=True \
-  algorithm.kl_ctrl.kl_coef=$KL_COEF \
-  verifier.reward_coef=$VERIFIER_REWARD_COEF \
-  verifier.contrastive_reward_coef=$CONTRASTIVE_REWARD_COEF \
+  algorithm.kl_ctrl.kl_coef=0.00 \
   trainer.logger=\"[console,wandb]\" \
   trainer.project_name='$PROJECT_NAME' \
   trainer.experiment_name=\"$EXPERIMENT_NAME_ESC\" \
@@ -241,7 +219,8 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   trainer.val_before_train=True"
 
 # =============================================================================
-# 11. RUN CONTAINER
+# 10. RUN CONTAINER (env from §6 — single source, no duplicate in INNER_CMD)
+#     --cleanenv: avoid inheriting host env (e.g. LD_LIBRARY_PATH with .singularity.d/libs → GLIBC_2.38/libdrm error).
 # =============================================================================
 apptainer run \
   --cleanenv \
