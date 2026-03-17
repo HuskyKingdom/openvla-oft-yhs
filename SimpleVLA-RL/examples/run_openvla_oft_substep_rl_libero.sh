@@ -1,102 +1,271 @@
-set -x
+#!/bin/bash
+#SBATCH --job-name=oft-substep-rl-libero
+#SBATCH --partition=staff
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=184
+#SBATCH --time=36:00:00
+#SBATCH --output=slurm/logs/oft_substep_rl_libero_%j.out
+#SBATCH --error=slurm/logs/oft_substep_rl_libero_%j.err
+# OpenVLA-OFT Substep-Aware RL (IG-RL) on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
+# Extends the base GRPO script with substep instruction switching + contrastive reward.
+# Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_substep_rl_libero.sh
+# Example: SFT_MODEL_PATH=checkpoints/openvla-oft-substep-sft APD_PLANS_PATH=../APD_plans.json sbatch examples/run_openvla_oft_substep_rl_libero.sh
 
-export NCCL_DEBUG=WARN 
-export WANDB_API_KEY='YOUR WANDB KEY'
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export TOKENIZERS_PARALLELISM=true
-export CUDA_LAUNCH_BLOCKING=1
-export TORCH_USE_CUDA_DSA=1
-export ROBOT_PLATFORM=LIBERO
-PROJECT_NAME='SimpleVLA-RL-SubstepRL'
-EXPERIMENT_NAME='MODIFY_YOURSELF e.g. substep_rl_libero10_contrastive2'
-# Path to your substep-SFT checkpoint
-SFT_MODEL_PATH="YOUR SUBSTEP_SFT_MODEL_PATH"
-CKPT_PATH="THE PATH YOU WANT TO SAVE YOUR CKPT"
-# DATASET_NAME can be libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
-DATASET_NAME="libero_10"
-VLA_NAME="openvla-oft"
-NUM_GPUS=8
-NUM_NODES=1 
-ALIGN_PATH="YOUR PATH TO SimpleVLA-RL/align.json"
-# Path to APD plans JSON (from openvla-oft project)
-APD_PLANS_PATH="YOUR PATH TO APD_plans.json"
-# Contrastive reward weight (set to 0 to disable contrastive, e.g. for Phase 0 baseline)
-CONTRASTIVE_REWARD_COEF=2
-bash examples/overwrite_vla_ckpt_utils.sh $SFT_MODEL_PATH 
+set -ex
 
+# =============================================================================
+# 1. PATHS & CONTAINER
+# =============================================================================
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+APPTAINER_IMAGE="${APPTAINER_IMAGE:-$REPO_ROOT/simplevla-rl-rocm.sif}"
+
+if [ ! -d "$REPO_ROOT/examples" ] || [ ! -f "$REPO_ROOT/verl/trainer/main_ppo.py" ]; then
+    echo "Error: repo root not found: $REPO_ROOT. Run sbatch from SimpleVLA-RL root."
+    exit 1
+fi
+if [ ! -f "$APPTAINER_IMAGE" ]; then
+    echo "Error: Apptainer image not found: $APPTAINER_IMAGE"
+    echo "Set APPTAINER_IMAGE or build: apptainer build simplevla-rl-rocm.sif simplevla-rl-rocm.def"
+    exit 1
+fi
+
+# =============================================================================
+# 2. TRAINING RUN CONFIG
+# =============================================================================
+PROJECT_NAME="${PROJECT_NAME:-SimpleVLA-RL-SubstepRL}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-substep-rl-libero}"
+SFT_MODEL_PATH="${SFT_MODEL_PATH:-YOUR SFT_MODEL_PATH}"
+CKPT_PATH="${CKPT_PATH:-THE PATH YOU WANT TO SAVE YOUR CKPT}"
+# Dataset: libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
+DATASET_NAME="${DATASET_NAME:-libero_10}"
+VLA_NAME="${VLA_NAME:-openvla-oft}"
+NUM_GPUS="${NUM_GPUS:-8}"
+NUM_NODES="${NUM_NODES:-1}"
+ALIGN_PATH="${ALIGN_PATH:-$REPO_ROOT/align.json}"
+
+# =============================================================================
+# 3. DATA CONFIG (Hydra data.*)
+# =============================================================================
+DATA_NUM_TRIALS_PER_TASK="${DATA_NUM_TRIALS_PER_TASK:-50}"
+DATA_N_SAMPLES="${DATA_N_SAMPLES:-8}"
+DATA_TRAIN_BATCH_SIZE="${DATA_TRAIN_BATCH_SIZE:-64}"
+DATA_VAL_BATCH_SIZE="${DATA_VAL_BATCH_SIZE:-496}"
+DATA_MAX_PROMPT_LENGTH="${DATA_MAX_PROMPT_LENGTH:-256}"
+DATA_MAX_RESPONSE_LENGTH="${DATA_MAX_RESPONSE_LENGTH:-128}"
+
+# =============================================================================
+# 4. ACTOR / ROLLOUT / REF CONFIG (Hydra actor_rollout_ref.*)
+# =============================================================================
+ACTOR_LR="${ACTOR_LR:-5e-6}"
+ACTOR_PPO_MINI_BATCH_SIZE="${ACTOR_PPO_MINI_BATCH_SIZE:-128}"
+ACTOR_PPO_MICRO_BATCH_SIZE="${ACTOR_PPO_MICRO_BATCH_SIZE:-$NUM_GPUS}"
+ACTOR_TRAJ_MINI_BATCH_SIZE="${ACTOR_TRAJ_MINI_BATCH_SIZE:-16}"
+ROLLOUT_MICRO_BATCH_SIZE="${ROLLOUT_MICRO_BATCH_SIZE:-1}"
+ROLLOUT_VAL_MICRO_BATCH_SIZE="${ROLLOUT_VAL_MICRO_BATCH_SIZE:-8}"
+ROLLOUT_TEMPERATURE="${ROLLOUT_TEMPERATURE:-1.6}"
+ROLLOUT_LOG_PROB_MICRO_BATCH_SIZE="${ROLLOUT_LOG_PROB_MICRO_BATCH_SIZE:-32}"
+ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.9}"
+REF_LOG_PROB_MICRO_BATCH_SIZE="${REF_LOG_PROB_MICRO_BATCH_SIZE:-32}"
+
+# =============================================================================
+# 5. SUBSTEP RL CONFIG (Hydra actor_rollout_ref.rollout.* & verifier.*)
+# =============================================================================
+# APD_plans.json path (from openvla-oft project, required when USE_SUBSTEP_RL=true)
+APD_PLANS_PATH="${APD_PLANS_PATH:-YOUR APD_PLANS_PATH}"
+USE_SUBSTEP_RL="${USE_SUBSTEP_RL:-True}"
+SIGCLIP_MODEL_PATH="${SIGCLIP_MODEL_PATH:-timm/ViT-B-16-SigLIP-256}"
+SUBSTEP_COMPLETION_THRESHOLD="${SUBSTEP_COMPLETION_THRESHOLD:-0.25}"
+CONTRASTIVE_SAMPLE_INTERVAL="${CONTRASTIVE_SAMPLE_INTERVAL:-16}"
+# Reward weights: R_total = VERIFIER_REWARD_COEF * R_task + CONTRASTIVE_REWARD_COEF * R_contrastive
+VERIFIER_REWARD_COEF="${VERIFIER_REWARD_COEF:-5}"
+CONTRASTIVE_REWARD_COEF="${CONTRASTIVE_REWARD_COEF:-2}"
+# KL penalty against reference (substep SFT) policy; set 0 to disable
+KL_COEF="${KL_COEF:-0.00}"
+
+# =============================================================================
+# 6. TRAINER SCHEDULE (Hydra trainer.*)
+# =============================================================================
+TRAINER_SAVE_FREQ="${TRAINER_SAVE_FREQ:-25}"
+TRAINER_TEST_FREQ="${TRAINER_TEST_FREQ:-4}"
+TRAINER_TOTAL_EPOCHS="${TRAINER_TOTAL_EPOCHS:-100}"
+
+# =============================================================================
+# 7. RUNTIME ENVIRONMENT (NCCL, Ray, ROCm, caches, WandB)
+# =============================================================================
+export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-true}"
+export CUDA_LAUNCH_BLOCKING="${CUDA_LAUNCH_BLOCKING:-1}"
+export TORCH_USE_CUDA_DSA="${TORCH_USE_CUDA_DSA:-1}"
+export ROBOT_PLATFORM="${ROBOT_PLATFORM:-LIBERO}"
+export MUJOCO_GL="${MUJOCO_GL:-osmesa}"
+export PYOPENGL_PLATFORM="${PYOPENGL_PLATFORM:-osmesa}"
+export EGL_PLATFORM="${EGL_PLATFORM:-surfaceless}"
+export HIP_VISIBLE_DEVICES="${ROCR_VISIBLE_DEVICES:-0,1,2,3,4,5,6,7}"
+export TORCH_NCCL_BLOCKING_WAIT="${TORCH_NCCL_BLOCKING_WAIT:-1}"
+export NCCL_TIMEOUT="${NCCL_TIMEOUT:-1800}"
+export RAY_object_store_memory="${RAY_object_store_memory:-20000000000}"
+export RAY_memory_usage_threshold="${RAY_memory_usage_threshold:-0.98}"
+
+export NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-/tmp/numba_cache}"
+mkdir -p "$NUMBA_CACHE_DIR"
+export HF_CACHE_DIR="${HF_CACHE_DIR:-$REPO_ROOT/.cache/huggingface}"
+mkdir -p "$HF_CACHE_DIR"
+export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$REPO_ROOT/.cache/triton}"
+mkdir -p "$TRITON_CACHE_DIR"
+
+# WandB: prefer env, else read from align.json
+if [ -z "${WANDB_API_KEY:-}" ] || [ "$WANDB_API_KEY" = "YOUR WANDB KEY" ]; then
+    if [ -f "$REPO_ROOT/align.json" ]; then
+        WANDB_API_KEY=$(python3 -c "import json; d=json.load(open('$REPO_ROOT/align.json')); print(d.get('env_vars',{}).get('WANDB_API_KEY',''))")
+    fi
+fi
+export WANDB_API_KEY="${WANDB_API_KEY:-}"
+
+export LD_LIBRARY_PATH="/usr/local/lib:/opt/rocm/lib:/opt/ompi/lib:/opt/ucx/lib:/usr/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu/libibverbs"
+
+ROCM_ROOT="/opt/rocm"
+HIP_VERSION_CONTAINER="${HIP_VERSION:-7.1.0}"
+HIP_PATH_CONTAINER="${ROCM_ROOT}"
+
+# =============================================================================
+# 8. VALIDATION
+# =============================================================================
+if [[ "$SFT_MODEL_PATH" == *"YOUR"* ]] || [[ ! -d "$SFT_MODEL_PATH" ]]; then
+    echo "Error: Set a real SFT_MODEL_PATH (substep SFT checkpoint). Example: SFT_MODEL_PATH=checkpoints/openvla-oft-substep-sft"
+    exit 1
+fi
+if [[ "$CKPT_PATH" == *"THE PATH"* ]]; then
+    echo "Error: Set a real CKPT_PATH (e.g. checkpoints)."
+    exit 1
+fi
+if [[ "$USE_SUBSTEP_RL" == "True" ]] && [[ "$APD_PLANS_PATH" == *"YOUR"* ]]; then
+    echo "Error: Set APD_PLANS_PATH when USE_SUBSTEP_RL=True. Example: APD_PLANS_PATH=../APD_plans.json"
+    exit 1
+fi
+
+# =============================================================================
+# 9. DERIVED
+# =============================================================================
+EXPERIMENT_NAME_ESC=$(printf '%s' "$EXPERIMENT_NAME" | sed 's/"/\\"/g')
+DEFAULT_LOCAL_DIR="${CKPT_PATH}/${PROJECT_NAME}/${EXPERIMENT_NAME}"
+
+echo "Substep RL (Apptainer) — SFT: $SFT_MODEL_PATH  APD: $APD_PLANS_PATH  Experiment: $EXPERIMENT_NAME"
+echo "  R_task coef=$VERIFIER_REWARD_COEF  R_contrastive coef=$CONTRASTIVE_REWARD_COEF  KL=$KL_COEF"
+
+# =============================================================================
+# 10. INNER_CMD: command run inside the container
+# =============================================================================
+INNER_CMD="set -ex; \
+cd \"$REPO_ROOT\"; \
+bash examples/overwrite_vla_ckpt_utils.sh \"$SFT_MODEL_PATH\"; \
 HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
-    data.task_suite_name=$DATASET_NAME \
-    data.num_trials_per_task=50 \
-    data.n_samples=8 \
-    data.filter_accuracy=True \
-    data.accuracy_lower_bound=0.1 \
-    data.accuracy_upper_bound=0.9 \
-    data.oversample_factor=1 \
-    data.train_batch_size=64 \
-    data.val_batch_size=496 \
-    data.max_prompt_length=256 \
-    data.max_response_length=128 \
-    actor_rollout_ref.model.path=$SFT_MODEL_PATH \
-    actor_rollout_ref.model.vla=$VLA_NAME \
-    actor_rollout_ref.model.action_token_len=7 \
-    actor_rollout_ref.model.action_chunks_len=8 \
-    actor_rollout_ref.actor.optim.lr=5e-6 \
-    actor_rollout_ref.actor.optim.warmup_style=constant \
-    actor_rollout_ref.actor.ppo_mini_batch_size=128 \
-    actor_rollout_ref.actor.ppo_micro_batch_size=$NUM_GPUS \
-    actor_rollout_ref.actor.use_dynamic_bsz=False \
-    actor_rollout_ref.actor.fsdp_config.param_offload=False \
-    actor_rollout_ref.actor.fsdp_config.grad_offload=True \
-    actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
-    actor_rollout_ref.actor.grad_clip=1 \
-    actor_rollout_ref.actor.clip_ratio_high=0.28 \
-    actor_rollout_ref.actor.clip_ratio_low=0.2 \
-    actor_rollout_ref.actor.num_images_in_input=1 \
-    actor_rollout_ref.actor.traj_mini_batch_size=16 \
-    actor_rollout_ref.model.enable_gradient_checkpointing=False \
-    actor_rollout_ref.model.use_remove_padding=False \
-    actor_rollout_ref.actor.entropy_coeff=0. \
-    actor_rollout_ref.rollout.num_images_in_input=1 \
-    actor_rollout_ref.rollout.use_proprio=False \
-    actor_rollout_ref.rollout.val_micro_batch_size=8 \
-    actor_rollout_ref.rollout.temperature=1.6 \
-    actor_rollout_ref.rollout.experiment_name=$EXPERIMENT_NAME \
-    actor_rollout_ref.rollout.micro_batch_size=1 \
-    actor_rollout_ref.rollout.unnorm_key=$DATASET_NAME \
-    actor_rollout_ref.rollout.model_family=openvla \
-    actor_rollout_ref.rollout.task_suite_name=$DATASET_NAME \
-    actor_rollout_ref.rollout.num_steps_wait=10 \
-    actor_rollout_ref.rollout.pretrained_checkpoint=$SFT_MODEL_PATH \
-    actor_rollout_ref.rollout.center_crop=True \
-    actor_rollout_ref.rollout.max_prompt_length=512 \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size=32 \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-    actor_rollout_ref.rollout.name=hf \
-    actor_rollout_ref.rollout.gpu_memory_utilization=0.9 \
-    actor_rollout_ref.rollout.use_substep_rl=True \
-    actor_rollout_ref.rollout.apd_plans_path=$APD_PLANS_PATH \
-    actor_rollout_ref.rollout.sigclip_model_path="timm/ViT-B-16-SigLIP-256" \
-    actor_rollout_ref.rollout.substep_completion_threshold=0.25 \
-    actor_rollout_ref.rollout.contrastive_sample_interval=16 \
-    actor_rollout_ref.ref.log_prob_micro_batch_size=32 \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
-    algorithm.kl_ctrl.kl_coef=0.01 \
-    verifier.reward_coef=5 \
-    verifier.contrastive_reward_coef=$CONTRASTIVE_REWARD_COEF \
-    trainer.logger=['console','wandb'] \
-    trainer.project_name=$PROJECT_NAME \
-    trainer.experiment_name=$EXPERIMENT_NAME \
-    trainer.default_local_dir=$CKPT_PATH/$PROJECT_NAME/$EXPERIMENT_NAME \
-    trainer.n_gpus_per_node=$NUM_GPUS \
-    trainer.nnodes=$NUM_NODES \
-    trainer.save_freq=25 \
-    trainer.test_freq=4 \
-    trainer.total_epochs=100 \
-    trainer.val_only=False \
-    algorithm.adv_estimator=grpo \
-    algorithm.adv_params.verifier_gamma=1.0 \
-    algorithm.adv_params.reward_model_gamma=1.0 \
-    trainer.runtime_env=$ALIGN_PATH \
-    trainer.wandb_mode=online \
-    trainer.val_before_train=True \
+  data.task_suite_name='$DATASET_NAME' \
+  data.num_trials_per_task=$DATA_NUM_TRIALS_PER_TASK \
+  data.n_samples=$DATA_N_SAMPLES \
+  data.filter_accuracy=True \
+  data.accuracy_lower_bound=0.1 \
+  data.accuracy_upper_bound=0.9 \
+  data.oversample_factor=1 \
+  data.train_batch_size=$DATA_TRAIN_BATCH_SIZE \
+  data.val_batch_size=$DATA_VAL_BATCH_SIZE \
+  data.max_prompt_length=$DATA_MAX_PROMPT_LENGTH \
+  data.max_response_length=$DATA_MAX_RESPONSE_LENGTH \
+  actor_rollout_ref.model.path=\"$SFT_MODEL_PATH\" \
+  actor_rollout_ref.model.vla='$VLA_NAME' \
+  actor_rollout_ref.model.action_token_len=7 \
+  actor_rollout_ref.model.action_chunks_len=8 \
+  actor_rollout_ref.actor.optim.lr=$ACTOR_LR \
+  actor_rollout_ref.actor.optim.warmup_style=constant \
+  actor_rollout_ref.actor.ppo_mini_batch_size=$ACTOR_PPO_MINI_BATCH_SIZE \
+  actor_rollout_ref.actor.ppo_micro_batch_size=$ACTOR_PPO_MICRO_BATCH_SIZE \
+  actor_rollout_ref.actor.use_dynamic_bsz=False \
+  actor_rollout_ref.actor.fsdp_config.param_offload=False \
+  actor_rollout_ref.actor.fsdp_config.grad_offload=True \
+  actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
+  actor_rollout_ref.actor.grad_clip=1 \
+  actor_rollout_ref.actor.clip_ratio_high=0.28 \
+  actor_rollout_ref.actor.clip_ratio_low=0.2 \
+  actor_rollout_ref.actor.num_images_in_input=1 \
+  actor_rollout_ref.actor.traj_mini_batch_size=$ACTOR_TRAJ_MINI_BATCH_SIZE \
+  actor_rollout_ref.model.enable_gradient_checkpointing=False \
+  actor_rollout_ref.model.use_remove_padding=False \
+  actor_rollout_ref.actor.entropy_coeff=0. \
+  actor_rollout_ref.rollout.num_images_in_input=1 \
+  actor_rollout_ref.rollout.use_proprio=False \
+  actor_rollout_ref.rollout.val_micro_batch_size=$ROLLOUT_VAL_MICRO_BATCH_SIZE \
+  actor_rollout_ref.rollout.temperature=$ROLLOUT_TEMPERATURE \
+  actor_rollout_ref.rollout.experiment_name=\"$EXPERIMENT_NAME_ESC\" \
+  actor_rollout_ref.rollout.micro_batch_size=$ROLLOUT_MICRO_BATCH_SIZE \
+  actor_rollout_ref.rollout.unnorm_key='$DATASET_NAME' \
+  actor_rollout_ref.rollout.model_family=openvla \
+  actor_rollout_ref.rollout.task_suite_name='$DATASET_NAME' \
+  actor_rollout_ref.rollout.num_steps_wait=10 \
+  actor_rollout_ref.rollout.pretrained_checkpoint=\"$SFT_MODEL_PATH\" \
+  actor_rollout_ref.rollout.center_crop=True \
+  actor_rollout_ref.rollout.max_prompt_length=512 \
+  actor_rollout_ref.rollout.log_prob_micro_batch_size=$ROLLOUT_LOG_PROB_MICRO_BATCH_SIZE \
+  actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+  actor_rollout_ref.rollout.name=hf \
+  actor_rollout_ref.rollout.gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION \
+  actor_rollout_ref.rollout.use_substep_rl=$USE_SUBSTEP_RL \
+  actor_rollout_ref.rollout.apd_plans_path=\"$APD_PLANS_PATH\" \
+  actor_rollout_ref.rollout.sigclip_model_path='$SIGCLIP_MODEL_PATH' \
+  actor_rollout_ref.rollout.substep_completion_threshold=$SUBSTEP_COMPLETION_THRESHOLD \
+  actor_rollout_ref.rollout.contrastive_sample_interval=$CONTRASTIVE_SAMPLE_INTERVAL \
+  actor_rollout_ref.ref.log_prob_micro_batch_size=$REF_LOG_PROB_MICRO_BATCH_SIZE \
+  actor_rollout_ref.ref.fsdp_config.param_offload=True \
+  algorithm.kl_ctrl.kl_coef=$KL_COEF \
+  verifier.reward_coef=$VERIFIER_REWARD_COEF \
+  verifier.contrastive_reward_coef=$CONTRASTIVE_REWARD_COEF \
+  trainer.logger=\"[console,wandb]\" \
+  trainer.project_name='$PROJECT_NAME' \
+  trainer.experiment_name=\"$EXPERIMENT_NAME_ESC\" \
+  trainer.default_local_dir=\"$DEFAULT_LOCAL_DIR\" \
+  trainer.n_gpus_per_node=$NUM_GPUS \
+  trainer.nnodes=$NUM_NODES \
+  trainer.save_freq=$TRAINER_SAVE_FREQ \
+  trainer.test_freq=$TRAINER_TEST_FREQ \
+  trainer.total_epochs=$TRAINER_TOTAL_EPOCHS \
+  trainer.val_only=False \
+  algorithm.adv_estimator=grpo \
+  algorithm.adv_params.verifier_gamma=1.0 \
+  algorithm.adv_params.reward_model_gamma=1.0 \
+  trainer.runtime_env=\"$ALIGN_PATH\" \
+  trainer.wandb_mode=online \
+  trainer.val_before_train=True"
 
+# =============================================================================
+# 11. RUN CONTAINER
+# =============================================================================
+apptainer run \
+  --cleanenv \
+  --writable-tmpfs \
+  --env "ROBOT_PLATFORM=$ROBOT_PLATFORM" \
+  --env "MUJOCO_GL=$MUJOCO_GL" \
+  --env "PYOPENGL_PLATFORM=$PYOPENGL_PLATFORM" \
+  --env "EGL_PLATFORM=$EGL_PLATFORM" \
+  --env "HIP_VISIBLE_DEVICES=$HIP_VISIBLE_DEVICES" \
+  --env "NCCL_DEBUG=$NCCL_DEBUG" \
+  --env "TOKENIZERS_PARALLELISM=$TOKENIZERS_PARALLELISM" \
+  --env "TORCH_NCCL_BLOCKING_WAIT=$TORCH_NCCL_BLOCKING_WAIT" \
+  --env "NCCL_TIMEOUT=$NCCL_TIMEOUT" \
+  --env "RAY_object_store_memory=$RAY_object_store_memory" \
+  --env "RAY_memory_usage_threshold=$RAY_memory_usage_threshold" \
+  --env "PYTORCH_CUDA_ALLOC_CONF=$PYTORCH_CUDA_ALLOC_CONF" \
+  --env "CUDA_LAUNCH_BLOCKING=$CUDA_LAUNCH_BLOCKING" \
+  --env "TORCH_USE_CUDA_DSA=$TORCH_USE_CUDA_DSA" \
+  --env "NUMBA_CACHE_DIR=$NUMBA_CACHE_DIR" \
+  --env "TRANSFORMERS_CACHE=$HF_CACHE_DIR" \
+  --env "HF_HOME=$HF_CACHE_DIR" \
+  --env "TRITON_CACHE_DIR=$TRITON_CACHE_DIR" \
+  --env "HIP_VERSION=$HIP_VERSION_CONTAINER" \
+  --env "HIP_PATH=$HIP_PATH_CONTAINER" \
+  --env "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" \
+  --env "WANDB_API_KEY=$WANDB_API_KEY" \
+  --bind "$REPO_ROOT:$REPO_ROOT" \
+  --bind "$NUMBA_CACHE_DIR:$NUMBA_CACHE_DIR" \
+  "$APPTAINER_IMAGE" \
+  bash -c "$INNER_CMD"
