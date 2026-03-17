@@ -1,4 +1,5 @@
-#!/bin/bash
+
+.#!/bin/bash
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
