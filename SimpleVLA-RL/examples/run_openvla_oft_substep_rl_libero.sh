@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=oft-substep-rl-libero
-#SBATCH --partition=staff
+#SBATCH --partition=mi3008xl
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
