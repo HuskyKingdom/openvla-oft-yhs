@@ -282,7 +282,7 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
-                eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
+                # eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
 
                 # Flatten for loss computation
                 eos_logits_flat = eos_logits.squeeze(-1).reshape(-1)  # (B * NUM_ACTIONS_CHUNK,)
@@ -1053,10 +1053,26 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                             print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
                                   f"(clipped to {cfg.max_grad_norm})")
                 
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-                progress.update()
+                # [NaN GUARD] Check gradients for NaN/Inf before optimizer step.
+                # This catches the case where loss was finite but backward() produced NaN gradients,
+                # which would otherwise silently corrupt model parameters.
+                grad_finite = all(
+                    torch.isfinite(p.grad).all()
+                    for p in trainable_params
+                    if p.grad is not None
+                )
+                if not grad_finite:
+                    if distributed_state.is_main_process:
+                        print(f"[Grad NaN] Step {gradient_step_idx} (log_step={log_step}): "
+                              f"gradients contain NaN/Inf, skipping optimizer step")
+                        wandb.log({"VLA Train/Grad NaN Skipped": 1}, step=log_step)
+                    optimizer.zero_grad()
+                    progress.update()
+                else:
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
+                    progress.update()
 
             # Save model checkpoint: either keep latest checkpoint only or all checkpoints
             if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
