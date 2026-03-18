@@ -3,8 +3,8 @@ echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
 # PRETRAINED_CHECKPOINT="ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0002+lora-r32+infobot-cross_attn-beta0.1--image_aug--substep--infobot_v2_stable--200000_chkpt"
-PRETRAINED_CHECKPOINT="Haozhan72/openvla-oft-libero10-traj1-rl"
-TASK_LABEL_PREFIX="simplevla"
+PRETRAINED_CHECKPOINT="Haozhan72/Openvla-oft-SFT-libero10-trajall"
+TASK_LABEL_PREFIX="simplevla_sft"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
 USE_PROPRIO=False
