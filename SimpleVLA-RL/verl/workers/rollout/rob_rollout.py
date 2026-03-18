@@ -945,7 +945,7 @@ class RobHFRollout(BaseRollout):
 
                 for idx in range(batch_size):
                     if task_records[idx]['active']:
-                        num_elements = actions[idx].numel()
+                        num_elements = torch.as_tensor(actions[idx]).numel()
                         diff = torch.norm(
                             actions[idx].float() - wrong_actions[idx].float()
                         ).item()
