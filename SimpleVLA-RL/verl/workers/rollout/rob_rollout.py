@@ -947,7 +947,7 @@ class RobHFRollout(BaseRollout):
                     if task_records[idx]['active']:
                         num_elements = torch.as_tensor(actions[idx]).numel()
                         diff = torch.norm(
-                            actions[idx].float() - wrong_actions[idx].float()
+                            torch.as_tensor(actions[idx]).float() - torch.as_tensor(wrong_actions[idx]).float()
                         ).item()
                         normalized_diff = diff / (num_elements ** 0.5)
                         task_records[idx]['contrastive_score'] += min(normalized_diff, 1.0)

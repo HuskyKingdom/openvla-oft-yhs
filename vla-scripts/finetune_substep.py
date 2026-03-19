@@ -1038,8 +1038,24 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                # [NaN GUARD] Check gradients BEFORE clip_grad_norm_ to avoid
-                # NaN total_norm polluting all gradients via the scaling factor.
+                # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
+                # Clip gradients of all trainable parameters
+                if cfg.max_grad_norm > 0:
+                    total_norm = torch.nn.utils.clip_grad_norm_(
+                        trainable_params, 
+                        max_norm=cfg.max_grad_norm
+                    )
+                    # Log gradient norm for monitoring
+                    if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
+                        wandb.log({"VLA Train/Grad Norm": total_norm.item()}, step=log_step)
+                        # Warn if gradient norm is very large (before clipping)
+                        if total_norm.item() > cfg.max_grad_norm * 10:
+                            print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
+                                  f"(clipped to {cfg.max_grad_norm})")
+                
+                # [NaN GUARD] Check gradients for NaN/Inf before optimizer step.
+                # This catches the case where loss was finite but backward() produced NaN gradients,
+                # which would otherwise silently corrupt model parameters.
                 grad_finite = all(
                     torch.isfinite(p.grad).all()
                     for p in trainable_params
@@ -1053,18 +1069,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     optimizer.zero_grad()
                     progress.update()
                 else:
-                    # Gradient clipping (safe now — all grads are finite)
-                    if cfg.max_grad_norm > 0:
-                        total_norm = torch.nn.utils.clip_grad_norm_(
-                            trainable_params,
-                            max_norm=cfg.max_grad_norm
-                        )
-                        if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
-                            wandb.log({"VLA Train/Grad Norm": total_norm.item()}, step=log_step)
-                            if total_norm.item() > cfg.max_grad_norm * 10:
-                                print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
-                                      f"(clipped to {cfg.max_grad_norm})")
-
                     optimizer.step()
                     scheduler.step()
                     optimizer.zero_grad()
