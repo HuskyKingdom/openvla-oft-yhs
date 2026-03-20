@@ -203,6 +203,20 @@ def run_forward_pass(
     else:
         # Get last layer hidden states
         last_hidden_states = output.hidden_states[-1]  # (B, seq_len, D)
+
+        # [SAFETY] Early NaN detection on VLA hidden states (bfloat16 overflow)
+        if not torch.isfinite(last_hidden_states).all():
+            hidden_nan_count = (~torch.isfinite(last_hidden_states)).sum().item()
+            total_elems = last_hidden_states.numel()
+            print(f"⚠️  [Hidden States NaN] {hidden_nan_count}/{total_elems} NaN/Inf in VLA hidden states")
+            zero_loss = torch.tensor(0.0, device=device_id, requires_grad=True)
+            nan_metrics = {
+                'loss_value': 0.0, 'action_loss': 0.0, 'eos_loss': 0.0, 'total_loss': 0.0,
+                'hidden_states_nan': 1.0, 'hidden_states_max_abs': float('inf'),
+                'curr_action_l1_loss': 0.0, 'next_actions_l1_loss': 0.0,
+            }
+            return zero_loss, nan_metrics
+
         # Get hidden states for text portion of prompt+response (after the vision patches)
         text_hidden_states = last_hidden_states[:, num_patches:-1]
         # Get hidden states for action portion of response
@@ -213,11 +227,35 @@ def run_forward_pass(
             .to(torch.bfloat16)
         )  # (B, NUM_ACTIONS_CHUNK * ACTION_DIM, D)
 
+        # [SAFETY] Clamp hidden states to prevent overflow in downstream LayerNorm/Linear
+        hs_max_abs = actions_hidden_states.abs().max().item()
+        metrics["hidden_states_max_abs"] = hs_max_abs
+        metrics["hidden_states_nan"] = 0.0
+        HIDDEN_STATES_CLAMP = 65504.0
+        if hs_max_abs > HIDDEN_STATES_CLAMP:
+            print(f"⚠️  [Hidden States Clamp] max_abs={hs_max_abs:.1f}, clamping to ±{HIDDEN_STATES_CLAMP}")
+            actions_hidden_states = actions_hidden_states.clamp(-HIDDEN_STATES_CLAMP, HIDDEN_STATES_CLAMP)
+
         if use_l1_regression:
             # Predict action
             predicted_actions = action_head.module.predict_action(actions_hidden_states)
-            # Get full L1 loss
-            loss = torch.nn.L1Loss()(ground_truth_actions, predicted_actions)
+
+            # [SAFETY] Check predicted actions for NaN (overflow inside action head)
+            if not torch.isfinite(predicted_actions).all():
+                pred_nan = (~torch.isfinite(predicted_actions)).sum().item()
+                print(f"⚠️  [Action Head NaN] {pred_nan} NaN/Inf in predicted actions (hs_max={hs_max_abs:.1f})")
+                zero_loss = torch.tensor(0.0, device=device_id, requires_grad=True)
+                nan_metrics = {
+                    'loss_value': 0.0, 'action_loss': 0.0, 'eos_loss': 0.0, 'total_loss': 0.0,
+                    'hidden_states_nan': 1.0, 'hidden_states_max_abs': hs_max_abs,
+                    'curr_action_l1_loss': 0.0, 'next_actions_l1_loss': 0.0,
+                }
+                return zero_loss, nan_metrics
+
+            # Get full L1 loss (compute in float32 for numerical stability)
+            loss = torch.nn.L1Loss()(
+                ground_truth_actions.float(), predicted_actions.float()
+            )
 
         if use_diffusion:
             # Predict noise
@@ -282,6 +320,8 @@ def run_forward_pass(
                 # Forward through EOS head (保持梯度！)
                 # actions_hidden_states: (B, NUM_ACTIONS_CHUNK * ACTION_DIM, hidden_dim) - 有梯度连接到VLA
                 eos_logits = eos_head.module.forward(actions_hidden_states)  # (B, NUM_ACTIONS_CHUNK, 1)
+
+                # [SAFETY] Clamp logits to prevent extreme BCE loss values
                 # eos_logits = torch.clamp(eos_logits, min=-20.0, max=20.0)
 
                 # Flatten for loss computation
@@ -401,6 +441,80 @@ def run_forward_pass(
     
     # Return both the total loss tensor (with gradients) and the metrics dictionary (with detached values)
     return total_loss, metrics
+
+
+def monitor_model_parameters(vla, action_head, eos_head, log_step, wandb_instance):
+    """
+    Periodically monitor model parameter magnitudes for early NaN/overflow detection.
+
+    Logs LoRA weight stats, action head stats, EOS head stats, and warns if values
+    approach bfloat16 instability thresholds.
+    """
+    stats = {}
+    WARN_THRESHOLD_LORA = 50.0
+    WARN_THRESHOLD_HEAD = 100.0
+
+    with torch.no_grad():
+        # --- LoRA weight monitoring ---
+        lora_max_abs = 0.0
+        lora_abs_sum = 0.0
+        lora_numel = 0
+        for name, param in vla.named_parameters():
+            if "lora" in name.lower() and param.requires_grad:
+                p_abs = param.data.float().abs()
+                lora_max_abs = max(lora_max_abs, p_abs.max().item())
+                lora_abs_sum += p_abs.sum().item()
+                lora_numel += p_abs.numel()
+        if lora_numel > 0:
+            stats["Param Monitor/lora_weight_max_abs"] = lora_max_abs
+            stats["Param Monitor/lora_weight_mean_abs"] = lora_abs_sum / lora_numel
+            if lora_max_abs > WARN_THRESHOLD_LORA:
+                print(f"⚠️  [Param Monitor] Step {log_step}: LoRA max_abs={lora_max_abs:.4f} "
+                      f"(threshold={WARN_THRESHOLD_LORA})")
+
+        # --- Action head monitoring ---
+        if action_head is not None:
+            ah_max_abs = 0.0
+            ah_abs_sum = 0.0
+            ah_numel = 0
+            for name, param in action_head.named_parameters():
+                p_abs = param.data.float().abs()
+                ah_max_abs = max(ah_max_abs, p_abs.max().item())
+                ah_abs_sum += p_abs.sum().item()
+                ah_numel += p_abs.numel()
+            if ah_numel > 0:
+                stats["Param Monitor/action_head_max_abs"] = ah_max_abs
+                stats["Param Monitor/action_head_mean_abs"] = ah_abs_sum / ah_numel
+                if ah_max_abs > WARN_THRESHOLD_HEAD:
+                    print(f"⚠️  [Param Monitor] Step {log_step}: Action head max_abs={ah_max_abs:.4f}")
+
+        # --- EOS head monitoring ---
+        if eos_head is not None:
+            eh_max_abs = 0.0
+            eh_abs_sum = 0.0
+            eh_numel = 0
+            for name, param in eos_head.named_parameters():
+                p_abs = param.data.float().abs()
+                eh_max_abs = max(eh_max_abs, p_abs.max().item())
+                eh_abs_sum += p_abs.sum().item()
+                eh_numel += p_abs.numel()
+            if eh_numel > 0:
+                stats["Param Monitor/eos_head_max_abs"] = eh_max_abs
+                stats["Param Monitor/eos_head_mean_abs"] = eh_abs_sum / eh_numel
+
+        # --- Check for NaN/Inf in any parameter ---
+        has_nan = False
+        for name, param in vla.named_parameters():
+            if param.requires_grad and not torch.isfinite(param.data).all():
+                print(f"🔴 [Param NaN] Step {log_step}: NaN/Inf in {name}")
+                has_nan = True
+                break
+        stats["Param Monitor/has_nan_params"] = 1.0 if has_nan else 0.0
+
+    if wandb_instance is not None:
+        wandb_instance.log(stats, step=log_step)
+
+    return stats
 
 
 @dataclass
@@ -842,6 +956,9 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         "eos_ratio": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_pos_weight": deque(maxlen=cfg.grad_accumulation_steps),
         "eos_neg_weight": deque(maxlen=cfg.grad_accumulation_steps),
+        # Hidden states & NaN monitoring
+        "hidden_states_max_abs": deque(maxlen=cfg.grad_accumulation_steps),
+        "hidden_states_nan": deque(maxlen=cfg.grad_accumulation_steps),
     }
 
     # [EOS DEBUG] Sample batches to check EOS distribution before training
@@ -1018,6 +1135,24 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     print(f"  Metrics: Acc={avg_eos_acc:.3f}, Recall={avg_eos_recall:.3f}, Prec={avg_eos_precision:.3f}")
                     print(f"  ✓ 每个batch都更新，梯度流向VLA主干")
                     print(f"{'='*80}\n")
+
+                # [PARAM MONITOR] Log hidden states stats and run periodic parameter check
+                hs_max = smoothened_metrics.get('hidden_states_max_abs', 0)
+                hs_nan = smoothened_metrics.get('hidden_states_nan', 0)
+                wandb.log({
+                    "VLA Train/Hidden States Max Abs": hs_max,
+                    "VLA Train/Hidden States NaN Rate": hs_nan,
+                }, step=log_step)
+
+                # Full parameter monitoring every 100 steps (lightweight scan)
+                if log_step % 100 == 0:
+                    monitor_model_parameters(
+                        vla=vla,
+                        action_head=action_head if (cfg.use_l1_regression or cfg.use_diffusion) else None,
+                        eos_head=eos_head if cfg.use_eos_classification else None,
+                        log_step=log_step,
+                        wandb_instance=wandb,
+                    )
 
             # [If applicable] Linearly warm up learning rate from 10% to 100% of original
             if cfg.lr_warmup_steps > 0:
