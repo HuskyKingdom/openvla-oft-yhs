@@ -549,6 +549,7 @@ class FinetuneSubstepConfig:
     num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
     max_steps: int = 200_000                         # Max number of training steps
+    weight_decay: float = 0.1                          # Weight decay for AdamW (controls LoRA weight growth, prevents hidden states drift)
     max_grad_norm: float = 0.8                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
@@ -859,7 +860,7 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
     if cfg.use_eos_classification:
         trainable_params += [param for param in eos_head.parameters() if param.requires_grad]
     print(f"# total trainable params: {sum(p.numel() for p in trainable_params)}")
-    optimizer = AdamW(trainable_params, lr=cfg.learning_rate)
+    optimizer = AdamW(trainable_params, lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
 
     # Record original learning rate
     original_lr = optimizer.param_groups[0]["lr"]
