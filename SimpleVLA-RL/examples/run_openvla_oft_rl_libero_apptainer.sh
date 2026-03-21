@@ -100,7 +100,8 @@ export NUMBA_CACHE_DIR="${NUMBA_CACHE_DIR:-/tmp/numba_cache}"
 mkdir -p "$NUMBA_CACHE_DIR"
 export HF_CACHE_DIR="${HF_CACHE_DIR:-$REPO_ROOT/.cache/huggingface}"
 mkdir -p "$HF_CACHE_DIR"
-export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$REPO_ROOT/.cache/triton}"
+# export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$REPO_ROOT/.cache/triton}"
+export TRITON_CACHE_DIR="/tmp/triton_cache_yhs"
 mkdir -p "$TRITON_CACHE_DIR"
 
 # WandB: prefer env, else read from align.json
