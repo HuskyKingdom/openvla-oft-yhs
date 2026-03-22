@@ -731,13 +731,13 @@ class RobHFRollout(BaseRollout):
                 "responses": vla_output["responses"],
                 "input_ids": vla_output["input_ids"],
                 "attention_mask": vla_output["attention_mask"],
-                "pixel_values": vla_output["pixel_values"],
+                "pixel_values": vla_output["pixel_values"].detach().cpu().to(torch.bfloat16),
                 "action": actions,
                 "step": step
             }
             if vla_output.get("proprio") is not None:
                 step_data["proprio"] = vla_output["proprio"]
-                
+
             vla_history.append(step_data)
             
             # Execute actions in parallel
@@ -911,7 +911,7 @@ class RobHFRollout(BaseRollout):
                 "responses": vla_output["responses"],
                 "input_ids": vla_output["input_ids"],
                 "attention_mask": vla_output["attention_mask"],
-                "pixel_values": vla_output["pixel_values"],
+                "pixel_values": vla_output["pixel_values"].detach().cpu().to(torch.bfloat16),
                 "action": actions,
                 "step": step
             }

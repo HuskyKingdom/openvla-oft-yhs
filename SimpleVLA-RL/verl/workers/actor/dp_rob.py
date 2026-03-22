@@ -385,6 +385,7 @@ class RobDataParallelPPOActor(BasePPOActor):
 
         log_probs_lst = []
         for micro_batch in micro_batches:
+            micro_batch = micro_batch.cuda()
             with torch.no_grad():
                 _, log_probs = self._forward_micro_batch(micro_batch, temperature=temperature)
             log_probs_lst.append(log_probs)
