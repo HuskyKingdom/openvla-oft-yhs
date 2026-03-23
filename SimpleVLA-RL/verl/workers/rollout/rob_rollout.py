@@ -731,10 +731,11 @@ class RobHFRollout(BaseRollout):
                 "responses": vla_output["responses"],
                 "input_ids": vla_output["input_ids"],
                 "attention_mask": vla_output["attention_mask"],
-                "pixel_values": vla_output["pixel_values"].detach().cpu().to(torch.bfloat16),
                 "action": actions,
                 "step": step
             }
+            if not is_valid:
+                step_data["pixel_values"] = vla_output["pixel_values"].detach().cpu().to(torch.bfloat16)
             if vla_output.get("proprio") is not None:
                 step_data["proprio"] = vla_output["proprio"]
 
@@ -911,10 +912,11 @@ class RobHFRollout(BaseRollout):
                 "responses": vla_output["responses"],
                 "input_ids": vla_output["input_ids"],
                 "attention_mask": vla_output["attention_mask"],
-                "pixel_values": vla_output["pixel_values"].detach().cpu().to(torch.bfloat16),
                 "action": actions,
                 "step": step
             }
+            if not is_valid:
+                step_data["pixel_values"] = vla_output["pixel_values"].detach().cpu().to(torch.bfloat16)
             vla_history.append(step_data)
             
             # Send actions to env workers (non-blocking)
@@ -1002,18 +1004,14 @@ class RobHFRollout(BaseRollout):
     
     def _prepare_output_batch(self, vla_history, task_records, batch_size):
         """Prepare the output batch from VLA history"""
-        batch = {
-            'responses': [],
-            'input_ids': [],
-            'attention_mask': [],
-            'pixel_values': []
-        }
-        
-        key_names = ["responses", "input_ids", "attention_mask", "pixel_values"]
+        key_names = ["responses", "input_ids", "attention_mask"]
+        if "pixel_values" in vla_history[0]:
+            key_names.append("pixel_values")
         if self.config.use_proprio and "robotwin" in self.config.task_suite_name:
-            batch["proprio"] = []
             key_names.append("proprio")
-        
+
+        batch = {k: [] for k in key_names}
+
         for k in key_names:
             for h in vla_history:
                 batch[k].append(h[k])
