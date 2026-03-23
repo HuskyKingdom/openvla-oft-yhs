@@ -2,12 +2,12 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0002+lora-r32+infobot-cross_attn-beta0.1--image_aug--substep--infobot_v2_stable--200000_chkpt"
-TASK_LABEL_PREFIX="substep"
+PRETRAINED_CHECKPOINT="/home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla_scalling--150000_chkpt"
+TASK_LABEL_PREFIX="apd_scalled"
 USE_EOS_DETECTION=True
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
 USE_PROPRIO=True
-USE_L1_REGRESSION=False
+USE_L1_REGRESSION=True
 USE_SUBSTEP_DECOMPOSITION=True
 
 
