@@ -70,6 +70,7 @@ from codetiming import Timer
 # For Libero multiprocessing
 import multiprocessing
 from multiprocessing import get_context as mp_get_context
+from verl.workers.rollout.libero_env_worker import env_worker as _libero_env_worker
 
 __all__ = ['RobHFRollout']
 
@@ -839,7 +840,7 @@ class RobHFRollout(BaseRollout):
             input_q = _spawn_ctx.Queue()
             output_q = _spawn_ctx.Queue()
             p = _spawn_ctx.Process(
-                target=env_worker,
+                target=_libero_env_worker,
                 args=(task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
             )
             p.start()
