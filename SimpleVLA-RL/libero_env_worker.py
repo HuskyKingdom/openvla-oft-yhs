@@ -60,6 +60,15 @@ def _invert_gripper_action(action: np.ndarray) -> np.ndarray:
 def env_worker(task_name, task_id, trial_id, config,
                input_queue, output_queue, is_valid, global_steps, max_steps):
     """Worker process for Libero environments (spawn-safe, no heavy imports)."""
+    # PyTorch 2.6+ changed torch.load default to weights_only=True, which breaks
+    # libero's get_task_init_states() (stores numpy arrays). Patch before import.
+    import torch
+    _orig_load = torch.load
+    def _patched_load(*args, **kwargs):
+        kwargs.setdefault('weights_only', False)
+        return _orig_load(*args, **kwargs)
+    torch.load = _patched_load
+
     from libero.libero import benchmark
 
     benchmark_dict = benchmark.get_benchmark_dict()
