@@ -70,7 +70,7 @@ from codetiming import Timer
 # For Libero multiprocessing
 import multiprocessing
 from multiprocessing import get_context as mp_get_context
-from verl.workers.rollout.libero_env_worker import env_worker as _libero_env_worker
+from libero_env_worker import env_worker as _libero_env_worker
 
 __all__ = ['RobHFRollout']
 
