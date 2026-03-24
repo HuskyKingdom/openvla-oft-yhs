@@ -69,7 +69,7 @@ from codetiming import Timer
 
 # For Libero multiprocessing
 import multiprocessing
-from multiprocessing import Process, Queue
+from multiprocessing import get_context as mp_get_context
 
 __all__ = ['RobHFRollout']
 
@@ -830,14 +830,15 @@ class RobHFRollout(BaseRollout):
         processes = []
         input_queues = []
         output_queues = []
-        
+        _spawn_ctx = mp_get_context('spawn')
+
         for idx in range(batch_size):
             task_name = task_suite_name[idx]
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
-            input_q = Queue()
-            output_q = Queue()
-            p = Process(
+            input_q = _spawn_ctx.Queue()
+            output_q = _spawn_ctx.Queue()
+            p = _spawn_ctx.Process(
                 target=env_worker,
                 args=(task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
             )
