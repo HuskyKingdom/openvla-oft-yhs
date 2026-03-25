@@ -828,6 +828,37 @@ class RobHFRollout(BaseRollout):
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
         
+        # Pre-load task metadata and initial states in the parent process.
+        # This avoids importing torch (and libero.benchmark) inside each spawned
+        # subprocess, which was costing ~5 GB per subprocess × 62 subprocesses
+        # per worker = ~310 GB per worker → node OOM.
+        from libero.libero import benchmark as _libero_benchmark, get_libero_path as _get_libero_path
+        _benchmark_dict = _libero_benchmark.get_benchmark_dict()
+        _task_suite_cache = {}
+        _init_states_cache = {}
+        task_bddl_files = []
+        task_descriptions_pre = []
+        initial_states_pre = []
+
+        for idx in range(batch_size):
+            _task_name = task_suite_name[idx]
+            _t_id = task_id[idx][0].item()
+            _tr_id = trial_id[idx][0].item()
+            _cache_key = (_task_name, _t_id)
+            if _cache_key not in _task_suite_cache:
+                _task_suite_cache[_cache_key] = _benchmark_dict[_task_name]()
+            _ts = _task_suite_cache[_cache_key]
+            _task = _ts.get_task(_t_id)
+            if _cache_key not in _init_states_cache:
+                _init_states_cache[_cache_key] = _ts.get_task_init_states(_t_id)
+            _initial_state = _init_states_cache[_cache_key][_tr_id]
+            _bddl_file = os.path.join(
+                _get_libero_path("bddl_files"), _task.problem_folder, _task.bddl_file
+            )
+            task_bddl_files.append(_bddl_file)
+            task_descriptions_pre.append(_task.language)
+            initial_states_pre.append(_initial_state)
+
         processes = []
         input_queues = []
         output_queues = []
@@ -841,7 +872,8 @@ class RobHFRollout(BaseRollout):
             output_q = _spawn_ctx.Queue()
             p = _spawn_ctx.Process(
                 target=_libero_env_worker,
-                args=(task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
+                args=(task_bddl_files[idx], task_descriptions_pre[idx], initial_states_pre[idx],
+                      task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
             )
             p.start()
             processes.append(p)

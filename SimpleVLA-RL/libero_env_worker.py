@@ -4,32 +4,14 @@ Standalone LIBERO environment worker for multiprocessing with spawn start method
 This module intentionally imports ONLY lightweight dependencies (libero, numpy, gc)
 so that spawned subprocesses do not inherit or re-import heavy libraries such as
 transformers, tensorflow, or PyTorch.
+
+Task metadata (bddl_file, task_description, initial_state) are pre-loaded by the
+parent process and passed as arguments, so this worker never needs to import torch
+or libero.benchmark.
 """
 import gc
 import os
 import numpy as np
-
-
-# ---------------------------------------------------------------------------
-# Minimal helpers inlined from verl/utils/libero_utils.py
-# (only the functions actually used by env_worker; no tensorflow dependency)
-# ---------------------------------------------------------------------------
-
-def _get_libero_env(task, model_family, resolution=256):
-    from libero.libero import get_libero_path
-    from libero.libero.envs import OffScreenRenderEnv
-    task_description = task.language
-    task_bddl_file = os.path.join(
-        get_libero_path("bddl_files"), task.problem_folder, task.bddl_file
-    )
-    env_args = {
-        "bddl_file_name": task_bddl_file,
-        "camera_heights": resolution,
-        "camera_widths": resolution,
-    }
-    env = OffScreenRenderEnv(**env_args)
-    env.seed(0)
-    return env, task_description
 
 
 def _get_libero_dummy_action(model_family: str):
@@ -57,32 +39,33 @@ def _invert_gripper_action(action: np.ndarray) -> np.ndarray:
 # env_worker: the target function for each spawned LIBERO subprocess
 # ---------------------------------------------------------------------------
 
-def env_worker(task_name, task_id, trial_id, config,
+def env_worker(task_bddl_file, task_description, initial_state,
+               task_name, task_id, trial_id, config,
                input_queue, output_queue, is_valid, global_steps, max_steps):
-    """Worker process for Libero environments (spawn-safe, no heavy imports)."""
-    # PyTorch 2.6+ changed torch.load default to weights_only=True, which breaks
-    # libero's get_task_init_states() (stores numpy arrays). Patch before import.
-    import torch
-    _orig_load = torch.load
-    def _patched_load(*args, **kwargs):
-        kwargs.setdefault('weights_only', False)
-        return _orig_load(*args, **kwargs)
-    torch.load = _patched_load
+    """Worker process for Libero environments (spawn-safe, no torch needed).
 
-    from libero.libero import benchmark
+    Parameters
+    ----------
+    task_bddl_file    : str   – absolute path to the BDDL file (pre-computed by parent)
+    task_description  : str   – language instruction (pre-computed by parent)
+    initial_state     : array – initial robot/object state (pre-loaded by parent via torch.load)
+    task_name         : str   – suite name (for task_file_name logging)
+    task_id           : int
+    trial_id          : int
+    """
+    from libero.libero.envs import OffScreenRenderEnv
 
-    benchmark_dict = benchmark.get_benchmark_dict()
-    task_suite = benchmark_dict[task_name]()
-    task = task_suite.get_task(task_id)
-    initial_states = task_suite.get_task_init_states(task_id)
-    initial_state = initial_states[trial_id]
+    env_args = {
+        "bddl_file_name": task_bddl_file,
+        "camera_heights": 256,
+        "camera_widths": 256,
+    }
 
     env = None
     while True:
         try:
-            env, task_description = _get_libero_env(
-                task, config.model_family, resolution=256
-            )
+            env = OffScreenRenderEnv(**env_args)
+            env.seed(0)
             break
         except Exception:
             print("*** env initialization failed ***")
