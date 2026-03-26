@@ -177,10 +177,10 @@ class RobActorRolloutRefWorker(Worker):
         }
         if self.config.rollout.use_proprio:
             override_config_kwargs["use_proprio"] = True
-            override_config_kwargs["proprio_dim"] = self.config.model.action_token_len
+            override_config_kwargs["proprio_dim"] = getattr(self.config.model, 'proprio_dim', self.config.model.action_token_len)
         else:
             override_config_kwargs["use_proprio"] = False
-            override_config_kwargs["proprio_dim"] = self.config.model.action_token_len
+            override_config_kwargs["proprio_dim"] = getattr(self.config.model, 'proprio_dim', self.config.model.action_token_len)
 
         override_config_kwargs.update(override_model_config)
         update_model_config(actor_model_config, override_config_kwargs=override_config_kwargs)

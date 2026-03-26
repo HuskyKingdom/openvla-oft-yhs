@@ -182,6 +182,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   actor_rollout_ref.model.vla='$VLA_NAME' \
   actor_rollout_ref.model.action_token_len=7 \
   actor_rollout_ref.model.action_chunks_len=8 \
+  actor_rollout_ref.model.proprio_dim=8 \
   actor_rollout_ref.actor.optim.lr=$ACTOR_LR \
   actor_rollout_ref.actor.optim.warmup_style=constant \
   actor_rollout_ref.actor.ppo_mini_batch_size=$ACTOR_PPO_MINI_BATCH_SIZE \
