@@ -59,6 +59,8 @@ def env_worker(task_bddl_file, task_description, initial_state,
         "bddl_file_name": task_bddl_file,
         "camera_heights": 256,
         "camera_widths": 256,
+        "robot_eye_in_hand_camera_heights": 256,
+        "robot_eye_in_hand_camera_widths": 256,
     }
 
     env = None
