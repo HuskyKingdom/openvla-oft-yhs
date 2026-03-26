@@ -543,7 +543,7 @@ class RobHFRollout(BaseRollout):
     def process_input(self, inputs: list, task_descriptions: list):
         """Unified input processing for both Robotwin and Libero"""
         batchdata = {"input_ids": [], "attention_mask": [], "pixel_values": []}
-        if self.config.use_proprio and "robotwin" in self.config.task_suite_name:
+        if self.config.use_proprio:
             batchdata["proprio"] = []
         
         for i in range(len(inputs)):
@@ -597,12 +597,17 @@ class RobHFRollout(BaseRollout):
             batchdata["attention_mask"].append(attention_mask)
             batchdata["pixel_values"].append(pixel_values)
             
-            # Process proprioception for Robotwin
-            if self.config.use_proprio and "robotwin" in self.config.task_suite_name:
-                proprio = input_data["state"]
-                proprio_norm_stats = self.module.norm_stats[self.config.unnorm_key]["proprio"]
-                proprio = normalize_proprio(proprio, proprio_norm_stats)
-                batchdata["proprio"].append(torch.from_numpy(proprio))
+            # Process proprioception
+            if self.config.use_proprio:
+                if "robotwin" in self.config.task_suite_name:
+                    proprio = input_data["state"]
+                    proprio_norm_stats = self.module.norm_stats[self.config.unnorm_key]["proprio"]
+                    proprio = normalize_proprio(proprio, proprio_norm_stats)
+                    batchdata["proprio"].append(torch.from_numpy(proprio))
+                elif "state" in input_data:
+                    # Libero: pass raw state directly to proprio_projector
+                    proprio = input_data["state"].astype(np.float32)
+                    batchdata["proprio"].append(torch.from_numpy(proprio))
         
         device = torch.device('cuda')
         
@@ -1041,7 +1046,7 @@ class RobHFRollout(BaseRollout):
         key_names = ["responses", "input_ids", "attention_mask"]
         if "pixel_values" in vla_history[0]:
             key_names.append("pixel_values")
-        if self.config.use_proprio and "robotwin" in self.config.task_suite_name:
+        if self.config.use_proprio and "proprio" in vla_history[0]:
             key_names.append("proprio")
 
         batch = {k: [] for k in key_names}

@@ -39,7 +39,7 @@ EXPERIMENT_NAME="${EXPERIMENT_NAME:-substep-rl-libero}"
 SFT_MODEL_PATH="${SFT_MODEL_PATH:-YOUR SFT_MODEL_PATH}"
 CKPT_PATH="${CKPT_PATH:-THE PATH YOU WANT TO SAVE YOUR CKPT}"
 # Dataset: libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
-DATASET_NAME="${DATASET_NAME:-libero_10}"
+DATASET_NAME="${DATASET_NAME:-libero_spatial}"
 VLA_NAME="${VLA_NAME:-openvla-oft}"
 NUM_GPUS="${NUM_GPUS:-8}"
 NUM_NODES="${NUM_NODES:-1}"
