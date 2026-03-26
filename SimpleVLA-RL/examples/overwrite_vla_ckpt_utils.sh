@@ -44,3 +44,24 @@ for file in "${FILES[@]}"; do
 done
 
 echo "File overwrite completed!"
+
+# Also patch the HuggingFace transformers_modules cache so the loaded model
+# uses the updated code (HF caches remote-code files separately from weights).
+CKPT_NAME=$(basename "$CKPT_PATH")
+HF_MODULES_CACHE="${SCRIPT_DIR}/.cache/huggingface/modules/transformers_modules"
+if [ -d "$HF_MODULES_CACHE" ]; then
+    for CACHE_DIR in "$HF_MODULES_CACHE"/*/; do
+        CACHE_NAME=$(basename "$CACHE_DIR")
+        # Match by checkpoint name substring (handles both exact and hash-suffixed dirs)
+        if [[ "$CACHE_NAME" == *"$CKPT_NAME"* ]]; then
+            echo "Found HF modules cache: $CACHE_DIR"
+            for file in "${FILES[@]}"; do
+                if [ -f "$file" ]; then
+                    filename=$(basename "$file")
+                    cp -f "$file" "$CACHE_DIR/"
+                    echo "✓ Patched cache: $CACHE_DIR$filename"
+                fi
+            done
+        fi
+    done
+fi

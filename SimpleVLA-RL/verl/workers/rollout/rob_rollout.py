@@ -628,7 +628,7 @@ class RobHFRollout(BaseRollout):
             
             batchdata["pixel_values"] = torch.cat(batchdata["pixel_values"], dim=0).to(device)
             
-            if self.config.use_proprio and "robotwin" in self.config.task_suite_name:
+            if self.config.use_proprio and "proprio" in batchdata and len(batchdata["proprio"]) > 0:
                 batchdata["proprio"] = torch.stack(batchdata["proprio"], dim=0).to(device)
                 
             assert torch.all(batchdata["attention_mask"].ne(0) == batchdata["input_ids"].ne(self.processor.tokenizer.pad_token_id))
