@@ -1,4 +1,4 @@
-export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--substep--substep_vla_scalling--150000_chkpt"
+export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/landmarked_ckpoints/openvla-7b-libero-150k-scalled-apd"
 export CKPT_PATH="./exp_out"          
 export APD_PLANS_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/APD_plans_scaled.json"
 export CONTRASTIVE_REWARD_COEF=2
