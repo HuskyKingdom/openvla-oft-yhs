@@ -1243,7 +1243,7 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         # Add proprioceptive features if provided
         use_proprio = self.proprio_projector is not None and proprio is not None
         if use_proprio:
-            proprio = torch.Tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
+            proprio = torch.as_tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
             projected_patch_embeddings = self._process_proprio_features(
                 projected_patch_embeddings, proprio, self.proprio_projector
             )
@@ -1815,7 +1815,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Add proprioceptive features if provided
         use_proprio = proprio_projector is not None and proprio is not None
         if use_proprio:
-            proprio = torch.Tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
+            proprio = torch.as_tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
             projected_patch_embeddings = self._process_proprio_features(
                 projected_patch_embeddings, proprio, proprio_projector
             )
@@ -1952,7 +1952,7 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
         # Add proprioceptive features if provided
         use_proprio = self.proprio_projector is not None and proprio is not None
         if use_proprio:
-            proprio = torch.Tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
+            proprio = torch.as_tensor(proprio).to(projected_patch_embeddings.device, dtype=projected_patch_embeddings.dtype)
             projected_patch_embeddings = self._process_proprio_features(
                 projected_patch_embeddings, proprio, self.proprio_projector
             )
