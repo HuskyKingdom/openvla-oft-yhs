@@ -119,7 +119,7 @@ class RobDataParallelPPOActor(BasePPOActor):
         assert all(micro_batch[key].size(1) == traj_len for key in ['responses', 'input_ids', 'attention_mask', 'pixel_values'])
         assert all(micro_batch[key].size(2) == tot_pad_len for key in [ 'input_ids', 'attention_mask'])
         if self.config.use_proprio:
-            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len and micro_batch["proprio"].size(2) == self.config.action_token_len
+            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len
             
         response_length = micro_batch['responses'].size(-1) # 7*8
         
@@ -266,7 +266,7 @@ class RobDataParallelPPOActor(BasePPOActor):
         assert all(micro_batch[key].size(2) == tot_pad_len for key in [ 'input_ids', 'attention_mask'])
             
         if self.config.use_proprio:
-            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len and micro_batch["proprio"].size(2) == self.config.action_token_len
+            assert micro_batch["proprio"].size(0) == batch_size and micro_batch["proprio"].size(1) == traj_len
             
         response_length = micro_batch['responses'].size(-1)
         #assert response_length == 7*8
