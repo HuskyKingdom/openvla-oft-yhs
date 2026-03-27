@@ -1350,7 +1350,11 @@ def get_vla_action(
 
 
     # Return action chunk as list of actions
-    actions_list = [action[i] for i in range(len(action))]
+    # Vanilla OpenVLA returns a single action of shape [7]; OFT returns [chunk_size, 7]
+    if isinstance(action, np.ndarray) and action.ndim == 1:
+        actions_list = [action]
+    else:
+        actions_list = [action[i] for i in range(len(action))]
     
     if return_eos_info:
         # Return actions with EOS detection info
