@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(conda env:*)",
+      "Bash(pip list:*)",
+      "Bash(find /home/yuhang/.miniconda3 -path */libero* -name *.py)",
+      "Bash(ls /home/yuhang/.miniconda3/envs/genesis/lib/python*/site-packages/)",
+      "Bash(ls /home/yuhang/.miniconda3/envs/main/lib/python*/site-packages/)",
+      "Bash(find /home/yuhang/.miniconda3/envs/main -path *libero* -name *.py)"
+    ]
+  }
+}
