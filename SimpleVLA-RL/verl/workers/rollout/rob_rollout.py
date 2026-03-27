@@ -956,6 +956,8 @@ class RobHFRollout(BaseRollout):
             }
             if not is_valid:
                 step_data["pixel_values"] = vla_output["pixel_values"].detach().cpu().to(torch.bfloat16)
+            if "proprio" in vla_output:
+                step_data["proprio"] = vla_output["proprio"]
             vla_history.append(step_data)
             
             # Send actions to env workers (non-blocking)
