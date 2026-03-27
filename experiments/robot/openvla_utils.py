@@ -1108,25 +1108,30 @@ def get_vla_action(
 
         # Generate action
         if action_head is None:
-            # Standard VLA output (single-image inputs, discrete actions)
-            if return_eos_info:
-                result = vla.predict_action(
-                    **inputs, 
-                    unnorm_key=cfg.unnorm_key, 
-                    do_sample=False, 
-                    return_eos_info=True,
-                    eos_head=eos_head,
-                    eos_threshold=eos_threshold,
+            # Vanilla OpenVLA 路径：使用 autoregressive generation（与原版 OpenVLA 完全一致）
+            # OFT 的 predict_action 会在输入后追加 NUM_ACTIONS_CHUNK*ACTION_DIM 个 placeholder token，
+            # 做一次并行 forward pass，这与 vanilla OpenVLA 的 autoregressive 训练方式根本不兼容。
+            #
+            # 此处完整复现原版 OpenVLA 的推理逻辑（参考 SimpleVLA-RL/verl/utils/vla_utils/openvla/modeling_prismatic.py）
+
+            # 原版在 predict_action 里会检查并插入 token 29871（LLaMA 的空格 token），
+            # 确保和训练时的输入格式一致。
+            vanilla_input_ids = inputs["input_ids"]
+            if not torch.all(vanilla_input_ids[:, -1] == 29871):
+                vanilla_input_ids = torch.cat(
+                    (vanilla_input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(vanilla_input_ids.device)),
+                    dim=1,
                 )
-                if len(result) == 6:
-                    action, _, _, _, has_eos, eos_position = result
-                else:
-                    # Fallback for old return format
-                    action, _, _, _ = result[:4]
-                    has_eos, eos_position = False, None
-            else:
-                action, _, _, _ = vla.predict_action(**inputs, unnorm_key=cfg.unnorm_key, do_sample=False)
-                has_eos, eos_position = False, None
+            vanilla_inputs = {**inputs, "input_ids": vanilla_input_ids}
+
+            action_dim = vla.get_action_dim(cfg.unnorm_key)
+            generated_ids = vla.generate(**vanilla_inputs, max_new_tokens=action_dim, do_sample=False)
+            predicted_action_token_ids = generated_ids[0, -action_dim:].cpu().numpy()
+            discretized_actions = vla.vocab_size - predicted_action_token_ids
+            discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
+            normalized_actions = vla.bin_centers[discretized_actions]
+            action = vla._unnormalize_actions(normalized_actions, cfg.unnorm_key)
+            has_eos, eos_position = False, None
         else:
             # Custom action head for continuous actions
             if cfg.h_decoding:
