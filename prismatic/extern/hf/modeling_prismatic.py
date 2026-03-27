@@ -808,6 +808,7 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
         noisy_action_projector=None,
         diffusion_timestep_embeddings=None,
         use_film: bool = False,
+        zero_action_embeddings: bool = True,
     ) -> Union[Tuple, PrismaticCausalLMOutputWithPast]:
         """Run a forward pass through the VLM, returning a PrismaticCausalLMOutputWithPast instance."""
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -914,11 +915,14 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
                 input_embeddings = self._replace_input_embeddings(
                     input_embeddings, all_actions_mask, noisy_action_features
                 )
-            else:
-                # Replace the embeddings of the action tokens with zeros
+            elif zero_action_embeddings:
+                # L1 regression / OFT parallel mode: zero out action token embeddings so the model
+                # predicts all chunk actions in parallel from context only (not from each other).
                 # (Later on, the positional embeddings will be added to them)
                 all_actions_mask = all_actions_mask.unsqueeze(-1)  # (B, seq_len, 1)
                 input_embeddings = input_embeddings * ~all_actions_mask
+            # else: autoregressive discrete-token mode — keep action embeddings intact so each
+            # action token conditions on all previous tokens (standard causal LM behaviour).
 
             # Build multimodal embeddings & attention mask
             multimodal_embeddings, multimodal_attention_mask = self._build_multimodal_attention(
