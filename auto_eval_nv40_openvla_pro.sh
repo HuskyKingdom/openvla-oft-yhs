@@ -10,7 +10,7 @@ TASK_LABEL_PREFIX="openvla"
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval.py"
 USE_PROPRIO=False
 USE_L1_REGRESSION=False
-SAVE_VIDEO=True
+SAVE_VIDEO=False
 NUM_IMAGES_IN_INPUT=1
 
 
