@@ -867,8 +867,15 @@ class PrismaticForConditionalGeneration(PrismaticPreTrainedModel):
             # Get input embeddings (from language model embeddings)
             input_embeddings = self.get_input_embeddings()(input_ids)  # (B, seq_len, D)
 
-            # Extract action masks
-            all_actions_mask = self._process_action_masks(labels)
+            # Extract action masks.
+            # When labels is None (e.g. during vanilla OpenVLA autoregressive generation via .generate()),
+            # there are no action tokens in the input, so the mask is all-False.
+            if labels is not None:
+                all_actions_mask = self._process_action_masks(labels)
+            else:
+                all_actions_mask = torch.zeros(
+                    input_embeddings.shape[:2], dtype=torch.bool, device=input_embeddings.device
+                )
 
             # Extract the language portion of the input embeddings (i.e. remove the action tokens portion)
             language_embeddings = input_embeddings[~all_actions_mask].reshape(
