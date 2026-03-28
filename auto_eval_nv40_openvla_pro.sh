@@ -19,28 +19,28 @@ echo "Evaluating SUBSTEP ------------------------------"
 
 
 # lan
-sed -i 's/use_environment: true/use_environment: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
-sed -i 's/use_language: false/use_language: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
+# sed -i 's/use_environment: true/use_environment: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
+# sed -i 's/use_language: false/use_language: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
-python $EVAL_SCRIPT \
-  --pretrained_checkpoint $CKPT_OBJECT \
-  --task_suite_name libero_object --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+# python $EVAL_SCRIPT \
+#   --pretrained_checkpoint $CKPT_OBJECT \
+#   --task_suite_name libero_object --save_video $SAVE_VIDEO \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
-python $EVAL_SCRIPT \
-  --pretrained_checkpoint $CKPT_GOAL \
-  --task_suite_name libero_goal --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+# python $EVAL_SCRIPT \
+#   --pretrained_checkpoint $CKPT_GOAL \
+#   --task_suite_name libero_goal --save_video $SAVE_VIDEO \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
-python $EVAL_SCRIPT \
-  --pretrained_checkpoint $CKPT_SPATIAL \
-  --task_suite_name libero_spatial --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+# python $EVAL_SCRIPT \
+#   --pretrained_checkpoint $CKPT_SPATIAL \
+#   --task_suite_name libero_spatial --save_video $SAVE_VIDEO \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
-python $EVAL_SCRIPT \
-  --pretrained_checkpoint $CKPT_10 \
-  --task_suite_name libero_10 --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+# python $EVAL_SCRIPT \
+#   --pretrained_checkpoint $CKPT_10 \
+#   --task_suite_name libero_10 --save_video $SAVE_VIDEO \
+#   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 # object
