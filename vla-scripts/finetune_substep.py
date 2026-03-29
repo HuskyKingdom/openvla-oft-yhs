@@ -774,6 +774,9 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             {"llm_dim": vla.module.llm_dim, "proprio_dim": PROPRIO_DIM},
         )
 
+    # Initialize action_head to None (only assigned if using L1 regression or diffusion)
+    action_head = None
+
     # If applicable, instantiate continuous action head for L1 regression
     if cfg.use_l1_regression:
         action_head = init_module(
