@@ -2,7 +2,7 @@
 SubstepManager: Manages instruction decomposition and substep switching during evaluation.
 
 This module provides functionality to:
-1. Decompose high-level instructions into substeps using LLM
+1. Decompose high-level instructions into substeps using LLM (Qwen3-8B)
 2. Judge substep completion using SigCLIP vision-language matching
 3. Manage substep state transitions during episode execution
 """
@@ -97,12 +97,12 @@ IMPORTANT FOR "expected_effect":
 
 GOOD EXAMPLES:
 [
-  {{"step": 1, "action_type": "move", "subgoal": "Position the robotic arm at the center of the table", "expected_effect": "gripper positioned at the center of the table"}},
-  {{"step": 2, "action_type": "move", "subgoal": "Extend the arm toward the black bowl", "expected_effect": "gripper enclosing the black bowl securely"}},
-  {{"step": 3, "action_type": "pick", "subgoal": "Lift the black bowl off the table surface", "expected_effect": "black bowl raised above the table surface"}},
-  {{"step": 4, "action_type": "move", "subgoal": "Translate the gripper above the plate", "expected_effect": "gripper aligned above the plate surface"}},
-  {{"step": 5, "action_type": "place", "subgoal": "Lower the black bowl onto the plate", "expected_effect": "black bowl resting on the plate surface"}},
-  {{"step": 6, "action_type": "return", "subgoal": "Return the manipulator to the home configuration", "expected_effect": "robot back at neutral home pose"}}
+  {{"step": 1, "subgoal": "Move gripper above the black bowl", "expected_effect": "robot gripper visible above black bowl center"}},
+  {{"step": 2, "subgoal": "Lower gripper to grasp the bowl", "expected_effect": "gripper fingers surrounding black bowl edges"}},
+  {{"step": 3, "subgoal": "Close gripper to pick up the bowl", "expected_effect": "gripper closed with black bowl between fingers"}},
+  {{"step": 4, "subgoal": "Lift the black bowl upward", "expected_effect": "black bowl lifted above table surface in gripper"}},
+  {{"step": 5, "subgoal": "Move gripper above the plate", "expected_effect": "gripper holding bowl positioned above plate center"}},
+  {{"step": 6, "subgoal": "Lower and release the bowl on the plate", "expected_effect": "black bowl resting on white plate surface"}}
 ]
 
 BAD EXAMPLES (TOO ABSTRACT):
@@ -134,8 +134,7 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
             text = self.llm_tokenizer.apply_chat_template(
                 messages,
                 tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,  # Disable Qwen3 thinking mode for clean JSON output
+                add_generation_prompt=True
             )
             
             model_inputs = self.llm_tokenizer([text], return_tensors="pt").to(self.device)
@@ -148,7 +147,6 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
                     temperature=0.1,  # Low temperature for more deterministic output
                     top_p=0.95,
                     do_sample=False,  # Use greedy decoding for consistency
-                    thinking_budget=0,  # Disable Qwen3 thinking mode (no <think> tokens)
                 )
             
             # Decode output
