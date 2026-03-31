@@ -18,6 +18,9 @@ USE_BDDL_LANGUAGE=True
 
 echo "Evaluating SUBSTEP ------------------------------"
 
+# Reset all evaluation config flags to false before starting
+bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
+
 
 # lan
 # sed -i 's/use_environment: true/use_environment: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
