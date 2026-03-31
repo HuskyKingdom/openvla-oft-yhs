@@ -1179,7 +1179,7 @@ def run_task(
             log_message("[SUBSTEP] Loading LLM for instruction decomposition...", log_file)
             llm_model = AutoModelForCausalLM.from_pretrained(
                 cfg.llm_model_path,
-                load_in_4bit=True,  # 4-bit quantization: ~0.75GB vs ~3GB, preserves GPU for VLA
+                torch_dtype=torch.bfloat16,
                 device_map="auto",
                 trust_remote_code=True,
             )
