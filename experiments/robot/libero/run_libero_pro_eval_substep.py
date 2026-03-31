@@ -7,6 +7,7 @@ Evaluates a trained policy in a LIBERO simulation benchmark task suite.
 import json
 import logging
 import os
+import re
 import sys
 import yaml
 from collections import deque
@@ -228,7 +229,28 @@ class GenerateConfig:
     # Language Dropping experiment (§4.1)
     null_instruction: bool = False                   # If True, forces instruction to "" at inference (for Language Dropping ablation)
 
+    # Task description source
+    use_bddl_language: bool = False                  # If True, reads task description from bddl file content (:language field) instead of filename
+
     # fmt: on
+
+
+def extract_task_from_bddl(bddl_file_path):
+    """Extract task language descriptions from bddl file content (:language field)."""
+    language_pattern = re.compile(r"\(:language\s*(.*?)\)", re.IGNORECASE | re.DOTALL)
+    tasks = []
+    bddl_dir = Path(bddl_file_path)
+    for bddl_file in sorted(bddl_dir.glob("*.bddl")):
+        with bddl_file.open("r", encoding="utf-8") as f:
+            content = f.read()
+        matches = language_pattern.findall(content)
+        if matches:
+            for lang_text in matches:
+                tasks.append(lang_text.strip())
+        else:
+            task = content.split(":language")[1].split(")")[0].strip()
+            tasks.append(task)
+    return tasks
 
 
 def validate_config(cfg: GenerateConfig) -> None:
@@ -966,6 +988,7 @@ def run_task(
     total_successes=0,
     log_file=None,
     eos_head=None,
+    task_description_override=None,
 ):
     """Run evaluation for a single task."""
     # Initialize LLM and SigCLIP models for substep decomposition if enabled
@@ -1038,6 +1061,8 @@ def run_task(
 
     # Initialize environment and get task description
     env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
+    if task_description_override is not None:
+        task_description = task_description_override
 
     # Start episodes
     task_episodes, task_successes = 0, 0
@@ -1266,6 +1291,16 @@ def eval_libero(cfg: GenerateConfig) -> float:
 
     log_message(f"Task suite: {cfg.task_suite_name}", log_file)
 
+    # Extract task descriptions from bddl file content if requested
+    bddl_task_descriptions = None
+    if cfg.use_bddl_language:
+        bddl_dir = str(Path(task_suite.get_task_bddl_file_path(0)).parent)
+        bddl_task_descriptions = extract_task_from_bddl(bddl_dir)
+        log_message(f"Using bddl content language from: {bddl_dir}", log_file)
+        assert len(bddl_task_descriptions) == num_tasks, (
+            f"bddl descriptions count ({len(bddl_task_descriptions)}) != num_tasks ({num_tasks})"
+        )
+
     # Start evaluation
     total_episodes, total_successes = 0, 0
     for task_id in tqdm.tqdm(range(num_tasks)):
@@ -1283,6 +1318,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
             total_successes,
             log_file,
             eos_head,  # Pass EOS head from model initialization
+            task_description_override=bddl_task_descriptions[task_id] if bddl_task_descriptions else None,
         )
 
     # Calculate final success rate
