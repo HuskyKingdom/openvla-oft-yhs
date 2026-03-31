@@ -135,7 +135,6 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
                 messages,
                 tokenize=False,
                 add_generation_prompt=True,
-                enable_thinking=False,  # Disable Qwen3 thinking mode for clean JSON output
             )
             
             model_inputs = self.llm_tokenizer([text], return_tensors="pt").to(self.device)
@@ -148,7 +147,6 @@ Generate the step-by-step plan as a JSON array with CONCRETE VISUAL observations
                     temperature=0.1,  # Low temperature for more deterministic output
                     top_p=0.95,
                     do_sample=False,  # Use greedy decoding for consistency
-                    thinking_budget=0,  # Disable Qwen3 thinking mode (no <think> tokens)
                 )
             
             # Decode output

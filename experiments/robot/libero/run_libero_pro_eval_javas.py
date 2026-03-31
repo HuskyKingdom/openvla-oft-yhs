@@ -215,7 +215,7 @@ class GenerateConfig:
     
     # Substep decomposition parameters
     use_substep_decomposition: bool = False          # Enable substep-based instruction decomposition
-    llm_model_path: str = "Qwen/Qwen3-0.6B" # Path to LLM for instruction decomposition
+    llm_model_path: str = "Qwen/Qwen2.5-1.5B-Instruct" # Path to LLM for instruction decomposition
     sigclip_model_path: str = "timm/ViT-B-16-SigLIP-256"  # Path to SigLIP-2 model for substep completion
     substep_completion_threshold: float = 0.25       # Vision-language similarity threshold for substep completion
     substep_log_dir: str = "./experiments/logs/substeps"  # Directory for substep-specific logs
@@ -1179,7 +1179,7 @@ def run_task(
             log_message("[SUBSTEP] Loading LLM for instruction decomposition...", log_file)
             llm_model = AutoModelForCausalLM.from_pretrained(
                 cfg.llm_model_path,
-                torch_dtype=torch.bfloat16,
+                load_in_4bit=True,  # 4-bit quantization: ~0.75GB vs ~3GB, preserves GPU for VLA
                 device_map="auto",
                 trust_remote_code=True,
             )
