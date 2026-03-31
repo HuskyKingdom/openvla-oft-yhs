@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 import tensorflow as tf
 
-from prismatic.vla.datasets.rlds.oxe.transforms import libero_dataset_transform
+from prismatic.vla.datasets.rlds.oxe.transforms import libero_dataset_transform, so101_dataset_transform
 
 
 # Global episode counter for tracking episodes across dataset iterations
@@ -137,6 +137,15 @@ def libero_dataset_transform_with_file_path(trajectory: Dict[str, Any]) -> Dict[
     return trajectory
 
 
+def so101_dataset_transform_with_episode_id(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    """SO101 transform with episode ID tracking."""
+    trajectory = so101_dataset_transform(trajectory)
+    episode_id = get_and_increment_episode_id()
+    traj_len = tf.shape(trajectory["action"])[0]
+    trajectory["episode_id"] = tf.repeat(tf.constant(episode_id, dtype=tf.int32), traj_len)
+    return trajectory
+
+
 # Registry for substep-aware transforms
 OXE_STANDARDIZATION_TRANSFORMS_WITH_EPISODE_ID = {
     # LIBERO datasets with episode tracking
@@ -145,5 +154,7 @@ OXE_STANDARDIZATION_TRANSFORMS_WITH_EPISODE_ID = {
     "libero_goal_no_noops": libero_dataset_transform_with_episode_id,
     "libero_10_no_noops": libero_dataset_transform_with_episode_id,
     "libero_4_task_suites_no_noops": libero_dataset_transform_with_episode_id,
+    # SO101 datasets with episode tracking
+    "so101_poker_yellow": so101_dataset_transform_with_episode_id,
 }
 

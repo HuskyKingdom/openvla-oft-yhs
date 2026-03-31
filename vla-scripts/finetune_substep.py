@@ -560,6 +560,7 @@ class FinetuneSubstepConfig:
                                                      #   (If False, saves all checkpoints)
     resume: bool = False                             # If True, resumes from checkpoint
     resume_step: Optional[int] = None                # (When `resume==True`) Step number that we are resuming from
+    gradient_checkpointing: bool = False             # If True, enables gradient checkpointing (saves VRAM ~30%, ~20% slower backward)
     image_aug: bool = True                           # If True, trains with image augmentations (HIGHLY RECOMMENDED)
     diffusion_sample_freq: int = 50                  # (When `use_diffusion==True`) Frequency for sampling in steps
 
@@ -675,9 +676,23 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
     torch.cuda.set_device(device_id)
     torch.cuda.empty_cache()
 
-    # Initialize wandb logging
+    # Initialize wandb logging — resume the same run if a saved run ID exists
     if distributed_state.is_main_process:
-        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{run_id}")
+        wandb_resume_id = None
+        if cfg.resume and cfg.resume_step is not None:
+            wandb_id_path = Path(cfg.vla_path) / "wandb_run_id.txt"
+            if wandb_id_path.exists():
+                wandb_resume_id = wandb_id_path.read_text().strip()
+                print(f"Resuming WandB run ID: {wandb_resume_id}")
+            else:
+                print(f"[WARNING] wandb_run_id.txt not found at {wandb_id_path}; starting a new WandB run")
+        wandb.init(
+            entity=cfg.wandb_entity,
+            project=cfg.wandb_project,
+            name=f"ft+{run_id}",
+            id=wandb_resume_id,
+            resume="allow",
+        )
 
     # Print detected constants
     print(
@@ -731,6 +746,14 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
     # Set number of images in VLA input
     vla.vision_backbone.set_num_images_in_input(cfg.num_images_in_input)
+
+    # [Optional] Enable gradient checkpointing BEFORE LoRA wrapping.
+    # enable_input_require_grads() is required so that LoRA parameter gradients flow
+    # back through the checkpointed segments.
+    if cfg.gradient_checkpointing:
+        vla.gradient_checkpointing_enable()
+        vla.enable_input_require_grads()
+        print("Gradient checkpointing enabled (saves ~30% VRAM, ~20% slower backward)")
 
     # LoRA setup
     if cfg.use_lora:
@@ -872,6 +895,26 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         milestones=[cfg.num_steps_before_decay],  # Number of steps after which LR will change
         gamma=0.1,  # Multiplicative factor of learning rate decay
     )
+
+    # Restore optimizer and scheduler states when resuming so LR schedule and
+    # momentum buffers continue from where training left off.
+    if cfg.resume and cfg.resume_step is not None:
+        optimizer_path = Path(cfg.vla_path) / "optimizer_state.pt"
+        scheduler_path = Path(cfg.vla_path) / "scheduler_state.pt"
+        if optimizer_path.exists():
+            optimizer.load_state_dict(
+                torch.load(optimizer_path, weights_only=True, map_location=f"cuda:{device_id}")
+            )
+            print(f"Resumed optimizer state from {optimizer_path}")
+        else:
+            print(f"[WARNING] optimizer_state.pt not found at {optimizer_path}; starting with fresh optimizer state")
+        if scheduler_path.exists():
+            scheduler.load_state_dict(
+                torch.load(scheduler_path, weights_only=False, map_location="cpu")
+            )
+            print(f"Resumed scheduler state from {scheduler_path}")
+        else:
+            print(f"[WARNING] scheduler_state.pt not found at {scheduler_path}; starting with fresh scheduler state")
 
     # Create Action Tokenizer
     action_tokenizer = ActionTokenizer(processor.tokenizer)
@@ -1047,7 +1090,8 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
         print(f"{'='*80}\n")
     
     # Start training
-    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
+    resume_offset = cfg.resume_step if (cfg.resume and cfg.resume_step is not None) else 0
+    with tqdm.tqdm(total=cfg.max_steps, initial=resume_offset, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
         for batch_idx, batch in enumerate(dataloader):
@@ -1239,8 +1283,19 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
                     eos_head_path = checkpoint_dir / f"eos_head--{checkpoint_name_suffix}"
                     torch.save(eos_head.state_dict(), eos_head_path)
                     print(f"✓ Saved EOS head checkpoint: {eos_head_path}")
-                
-                # Wait for EOS head to be saved
+
+                # Save optimizer state, scheduler state, and WandB run ID for future resumption
+                if distributed_state.is_main_process:
+                    if cfg.save_latest_checkpoint_only:
+                        resume_ckpt_dir = run_dir
+                    else:
+                        resume_ckpt_dir = Path(str(run_dir) + f"--{log_step}_chkpt")
+                    torch.save(optimizer.state_dict(), resume_ckpt_dir / "optimizer_state.pt")
+                    torch.save(scheduler.state_dict(), resume_ckpt_dir / "scheduler_state.pt")
+                    (resume_ckpt_dir / "wandb_run_id.txt").write_text(wandb.run.id)
+                    print(f"✓ Saved optimizer/scheduler state and WandB run ID ({wandb.run.id}) at step {log_step}")
+
+                # Wait for all checkpoint files to be written
                 dist.barrier()
 
             # Test model on validation set

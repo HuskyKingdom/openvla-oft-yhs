@@ -1,0 +1,62 @@
+[
+  {
+    "suite": "so101_poker_yellow",
+    "instruction": {
+      "raw": "Pick up the poker box and put it in the white box, then pick up the yellow box and put it in the white box",
+      "plan": [
+        {
+          "action_type": "move",
+          "description": "Move gripper above the poker box",
+          "object": "poker_box",
+          "cycle": 1
+        },
+        {
+          "action_type": "pick",
+          "description": "Pick up the poker box",
+          "object": "poker_box",
+          "cycle": 1
+        },
+        {
+          "action_type": "move",
+          "description": "Move the poker box to the white box",
+          "object": "poker_box",
+          "target": "white_box",
+          "cycle": 1
+        },
+        {
+          "action_type": "place",
+          "description": "Place the poker box in the white box",
+          "object": "poker_box",
+          "target": "white_box",
+          "cycle": 1
+        },
+        {
+          "action_type": "move",
+          "description": "Move gripper above the yellow box",
+          "object": "yellow_box",
+          "cycle": 2
+        },
+        {
+          "action_type": "pick",
+          "description": "Pick up the yellow box",
+          "object": "yellow_box",
+          "cycle": 2
+        },
+        {
+          "action_type": "move",
+          "description": "Move the yellow box to the white box",
+          "object": "yellow_box",
+          "target": "white_box",
+          "cycle": 2
+        },
+        {
+          "action_type": "place",
+          "description": "Place the yellow box in the white box",
+          "object": "yellow_box",
+          "target": "white_box",
+          "cycle": 2
+        }
+      ]
+    }
+  }
+]

@@ -842,7 +842,11 @@ def libero_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def aloha_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
-    # Don't need to do anything because dataset is already in the correct format
+    return trajectory
+
+
+def so101_dataset_transform(trajectory: Dict[str, Any]) -> Dict[str, Any]:
+    """SO101 data is already in the correct RLDS format from convert_lerobot_to_rlds.py."""
     return trajectory
 
 
@@ -925,6 +929,8 @@ OXE_STANDARDIZATION_TRANSFORMS = {
     "libero_goal_no_noops": libero_dataset_transform,
     "libero_10_no_noops": libero_dataset_transform,
     "libero_4_task_suites_no_noops": libero_dataset_transform,
+    ### SO101 fine-tuning datasets
+    "so101_poker_yellow": so101_dataset_transform,
     ### ALOHA fine-tuning datasets
     "aloha1_fold_shorts_20_demos": aloha_dataset_transform,
     "aloha1_fold_shirt_30_demos": aloha_dataset_transform,

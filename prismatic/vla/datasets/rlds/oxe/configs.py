@@ -677,6 +677,15 @@ OXE_DATASET_CONFIGS = {
         "state_encoding": StateEncoding.POS_EULER,
         "action_encoding": ActionEncoding.EEF_POS,
     },
+    ### SO101 fine-tuning datasets
+    "so101_poker_yellow": {
+        "image_obs_keys": {"primary": "image_primary", "secondary": None, "wrist": "image_wrist"},
+        "depth_obs_keys": {"primary": None, "secondary": None, "wrist": None},
+        "state_obs_keys": ["proprio"],
+        "state_encoding": StateEncoding.JOINT,
+        "action_encoding": ActionEncoding.EEF_POS,
+        "action_dim": 6,
+    },
     ### ALOHA fine-tuning datasets
     "aloha1_fold_shorts_20_demos": {
         "image_obs_keys": {"primary": "image", "secondary": None, "left_wrist": "left_wrist_image", "right_wrist": "right_wrist_image"},

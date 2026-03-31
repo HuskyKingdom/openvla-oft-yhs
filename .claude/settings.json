@@ -8,5 +8,8 @@
       "Bash(ls /home/yuhang/.miniconda3/envs/main/lib/python*/site-packages/)",
       "Bash(find /home/yuhang/.miniconda3/envs/main -path *libero* -name *.py)"
     ]
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   }
 }

@@ -66,10 +66,12 @@ def make_oxe_dataset_kwargs_with_episode_id(
         )
 
     # [Contract] For EEF_POS & EEF_R6 actions, only the last action dimension (gripper) is absolute!
-    # Normalize all action dimensions *except* the gripper
+    # Normalize all action dimensions *except* the gripper.
+    # Action dimension is inferred from dataset_kwargs if provided, else defaults to 7 for EEF_POS.
     if dataset_kwargs["action_encoding"] is ActionEncoding.EEF_POS:
-        dataset_kwargs["absolute_action_mask"] = [False] * 6 + [True]
-        dataset_kwargs["action_normalization_mask"] = [True] * 6 + [False]
+        n_act = dataset_kwargs.get("action_dim", 7)
+        dataset_kwargs["absolute_action_mask"] = [False] * (n_act - 1) + [True]
+        dataset_kwargs["action_normalization_mask"] = [True] * (n_act - 1) + [False]
     elif dataset_kwargs["action_encoding"] is ActionEncoding.EEF_R6:
         dataset_kwargs["absolute_action_mask"] = [False] * 9 + [True]
         dataset_kwargs["action_normalization_mask"] = [True] * 9 + [False]
@@ -94,6 +96,7 @@ def make_oxe_dataset_kwargs_with_episode_id(
     # Eliminate Unnecessary Keys
     dataset_kwargs.pop("state_encoding")
     dataset_kwargs.pop("action_encoding")
+    dataset_kwargs.pop("action_dim", None)
     if not load_depth:
         dataset_kwargs.pop("depth_obs_keys")
     if not load_proprio:
