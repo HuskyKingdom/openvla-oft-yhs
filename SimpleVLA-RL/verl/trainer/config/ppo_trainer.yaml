@@ -57,6 +57,7 @@ actor_rollout_ref:
     shuffle: True
     ulysses_sequence_parallel_size: 1 # sp size
     num_images_in_input: 1
+    use_autoregressive: false
     optim:
       lr: 1e-6
       lr_warmup_steps_ratio: 0.  # the total steps will be injected during runtime
@@ -102,6 +103,7 @@ actor_rollout_ref:
     num_images_in_input: 1
     # Substep RL settings
     use_substep_rl: false
+    use_autoregressive: false
     apd_plans_path: null
     sigclip_model_path: "timm/ViT-B-16-SigLIP-256"
     substep_completion_threshold: 0.25
