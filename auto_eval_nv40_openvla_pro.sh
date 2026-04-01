@@ -27,8 +27,8 @@ bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
 sed -i 's/use_environment: true/use_environment: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 sed -i 's/use_language: false/use_language: true/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
 
-python $CKPT_apd \
-  --pretrained_checkpoint $CKPT_OBJECT \
+python $EVAL_SCRIPT \
+  --pretrained_checkpoint $CKPT_apd \
   --task_suite_name libero_object --save_video $SAVE_VIDEO \
   --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_lan --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
 
