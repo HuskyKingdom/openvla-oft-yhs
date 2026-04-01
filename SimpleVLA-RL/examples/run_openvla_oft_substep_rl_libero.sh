@@ -241,7 +241,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   algorithm.adv_params.reward_model_gamma=1.0 \
   trainer.runtime_env=\"$ALIGN_PATH\" \
   trainer.wandb_mode=online \
-  trainer.val_before_train=False"
+  trainer.val_before_train=True"
 
 # =============================================================================
 # 11. RUN CONTAINER
