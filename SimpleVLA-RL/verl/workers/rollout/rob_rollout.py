@@ -1079,7 +1079,10 @@ class RobHFRollout(BaseRollout):
     @torch.no_grad()
     def _generate_one_step(self, prompts: dict):
         """Generate one step of actions"""
-        if self.config.vla == "openvla-oft":
+        use_ar = getattr(self.config, 'use_autoregressive', False)
+        if use_ar:
+            return self._generate_one_step_autoregressive(prompts)
+        elif self.config.vla == "openvla-oft":
             return self._generate_one_step_oft(prompts)
         elif self.config.vla == "openvla":
             return self._generate_one_step_openvla(prompts)
@@ -1138,63 +1141,171 @@ class RobHFRollout(BaseRollout):
         }
         if proprio is not None:
             batch["proprio"] = proprio
-        
+
         return batch
-    
-    def _generate_one_step_openvla(self, prompts: dict):
-        """Generate one step for OpenVLA"""
+
+    def _generate_one_step_autoregressive(self, prompts: dict):
+        """Autoregressive generation of full action chunk for OFT model loaded with use_l1_regression=False.
+
+        Uses forward_causal_lm (standard causal-LM forward without OFT placeholder/zeroing)
+        to autoregressively generate action_token_len * action_chunks_len tokens (e.g. 7*8=56).
+        Returns the same batch format as _generate_one_step_oft (responses as token IDs,
+        input_ids as prompt-only padded, actions as (batch, chunks, dim)).
+        """
         idx = prompts['input_ids']
         attention_mask = prompts['attention_mask']
         pixel_values = prompts["pixel_values"]
-        
-        eos_token_id = prompts['eos_token_id']
-        pad_token_id = prompts['pad_token_id']
-        
+
         batch_size = idx.size(0)
-        prompt_length = idx.size(1)
+        pad_token_id = self.processor.tokenizer.pad_token_id
         param_ctx = contextlib.nullcontext()
-        
+
         do_sample = prompts.get('do_sample', self.config.do_sample)
-        response_length = self.module.get_action_dim(self.config.unnorm_key)
-        top_p = prompts.get('top_p', self.config.get('top_p', 1.0))
-        top_k = prompts.get('top_k', self.config.get('top_k', 0))
-        if top_k is None:
-            top_k = 0
-        top_k = max(0, top_k)
-        
         temperature = prompts.get('temperature', self.config.temperature)
-        generation_config = GenerationConfig(temperature=temperature, top_p=top_p, top_k=top_k)
-        
+        response_length = self.config.action_token_len * self.config.action_chunks_len  # e.g. 7*8=56
+
+        from transformers import GenerationConfig
+        generation_config = GenerationConfig(temperature=temperature)
+
         if isinstance(self.module, FSDP):
             param_ctx = FSDP.summon_full_params(self.module, writeback=False, recurse=False)
-        
+
         with param_ctx:
             with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-                output = self.module.generate(
+                output = self.module.generate_autoregressive(
                     input_ids=idx,
                     pixel_values=pixel_values,
                     attention_mask=attention_mask,
                     do_sample=do_sample,
                     max_new_tokens=response_length,
-                    eos_token_id=eos_token_id,
+                    pad_token_id=pad_token_id,
+                    generation_config=generation_config,
+                    output_scores=False,
+                    return_dict_in_generate=True,
+                    use_cache=True,
+                )
+
+        seq = output.sequences
+        response = seq[:, idx.size(1):]
+
+        # Pad or truncate response to exactly response_length tokens
+        if response.size(1) < response_length:
+            pad = torch.full(
+                (batch_size, response_length - response.size(1)),
+                fill_value=pad_token_id, dtype=response.dtype, device=response.device,
+            )
+            response = torch.cat([response, pad], dim=1)
+        elif response.size(1) > response_length:
+            response = response[:, :response_length]
+
+        # Decode tokens → unnormalized actions (batch, chunks, dim)
+        predicted_action_token_ids = response.detach().cpu().numpy()
+        discretized_actions = self.module.vocab_size - predicted_action_token_ids
+        discretized_actions = np.clip(
+            discretized_actions - 1, a_min=0, a_max=self.module.bin_centers.shape[0] - 1
+        )
+        normalized_actions = self.module.bin_centers[discretized_actions]
+
+        action_norm_stats = self.module.get_action_stats(self.config.unnorm_key)
+        mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+        action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+        actions = np.where(
+            mask,
+            0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
+            normalized_actions,
+        )
+        actions = actions.reshape(batch_size, self.config.action_chunks_len, self.config.action_token_len)
+
+        # Return same format as _generate_one_step_oft:
+        # input_ids = prompt only (padded), responses = action token IDs
+        assert pad_token_id is not None
+        idx = verl_F.pad_sequence_to_length(
+            idx, max_seq_len=self.config.max_prompt_length,
+            pad_token_id=pad_token_id, left_pad=True,
+        )
+        attention_mask = verl_F.pad_sequence_to_length(
+            attention_mask, max_seq_len=self.config.max_prompt_length,
+            pad_token_id=0, left_pad=True,
+        )
+
+        batch = {
+            'responses': response,
+            'input_ids': idx,
+            'attention_mask': attention_mask,
+            "pixel_values": pixel_values,
+            "action": actions,
+        }
+        return batch
+
+    def _generate_one_step_openvla(self, prompts: dict):
+        """Generate one step for OpenVLA — autoregressive generation of full action chunk.
+
+        Generates action_token_len * action_chunks_len tokens (e.g. 7*8=56) autoregressively
+        using the standard causal-LM forward (no OFT placeholder/zeroing), then decodes
+        to unnormalized actions of shape (batch, action_chunks_len, action_token_len).
+        """
+        idx = prompts['input_ids']
+        attention_mask = prompts['attention_mask']
+        pixel_values = prompts["pixel_values"]
+
+        eos_token_id = prompts.get('eos_token_id', None)
+        pad_token_id = prompts.get('pad_token_id', self.processor.tokenizer.pad_token_id)
+
+        batch_size = idx.size(0)
+        prompt_length = idx.size(1)
+        param_ctx = contextlib.nullcontext()
+
+        do_sample = prompts.get('do_sample', self.config.do_sample)
+        # Generate full action chunk: action_token_len * action_chunks_len tokens (e.g. 7*8=56)
+        response_length = self.config.action_token_len * self.config.action_chunks_len
+        top_p = prompts.get('top_p', self.config.get('top_p', 1.0))
+        top_k = prompts.get('top_k', self.config.get('top_k', 0))
+        if top_k is None:
+            top_k = 0
+        top_k = max(0, top_k)
+
+        temperature = prompts.get('temperature', self.config.temperature)
+        generation_config = GenerationConfig(temperature=temperature, top_p=top_p, top_k=top_k)
+
+        if isinstance(self.module, FSDP):
+            param_ctx = FSDP.summon_full_params(self.module, writeback=False, recurse=False)
+
+        with param_ctx:
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                output = self.module.generate_autoregressive(
+                    input_ids=idx,
+                    pixel_values=pixel_values,
+                    attention_mask=attention_mask,
+                    do_sample=do_sample,
+                    max_new_tokens=response_length,
                     pad_token_id=pad_token_id,
                     generation_config=generation_config,
                     output_scores=False,
                     return_dict_in_generate=True,
                     use_cache=True
                 )
-        
+
         seq = output.sequences
-        prompt = seq[:, :prompt_length]
         response = seq[:, prompt_length:]
-        
-        response_attention_mask = get_eos_mask(
-            response_id=response,
-            eos_token=eos_token_id,
-            dtype=attention_mask.dtype
+
+        # Pad or truncate response to exactly response_length tokens
+        if response.size(1) < response_length:
+            pad = torch.full(
+                (batch_size, response_length - response.size(1)),
+                fill_value=pad_token_id,
+                dtype=response.dtype,
+                device=response.device,
+            )
+            response = torch.cat([response, pad], dim=1)
+        elif response.size(1) > response_length:
+            response = response[:, :response_length]
+
+        seq = torch.cat([idx, response], dim=1)
+        response_attention_mask = torch.ones(
+            (batch_size, response_length), dtype=attention_mask.dtype, device=attention_mask.device
         )
         attention_mask = torch.cat((attention_mask, response_attention_mask), dim=-1)
-        
+
         # Extract and unnormalize actions
         predicted_action_token_ids = response.detach().cpu().numpy()
         discretized_actions = self.module.vocab_size - predicted_action_token_ids
@@ -1204,7 +1315,7 @@ class RobHFRollout(BaseRollout):
             a_max=self.module.bin_centers.shape[0] - 1
         )
         normalized_actions = self.module.bin_centers[discretized_actions]
-        
+
         action_norm_stats = self.module.get_action_stats(self.config.unnorm_key)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
         action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
@@ -1213,15 +1324,10 @@ class RobHFRollout(BaseRollout):
             0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
             normalized_actions,
         )
-        
-        actions = np.expand_dims(actions, axis=1)
-        
-        prompt = verl_F.pad_sequence_to_length(
-            prompt,
-            max_seq_len=self.config.max_prompt_length,
-            pad_token_id=self.processor.tokenizer.pad_token_id,
-            left_pad=True
-        )
+
+        # Reshape to (batch, action_chunks_len, action_token_len) e.g. (batch, 8, 7)
+        actions = actions.reshape(batch_size, self.config.action_chunks_len, self.config.action_token_len)
+
         seq = verl_F.pad_sequence_to_length(
             seq,
             max_seq_len=self.config.max_prompt_length,
@@ -1234,16 +1340,15 @@ class RobHFRollout(BaseRollout):
             pad_token_id=0,
             left_pad=True
         )
-        
+
         batch = {
-            'prompts': prompt,
             'responses': response,
             'input_ids': seq,
             'attention_mask': attention_mask,
             "pixel_values": pixel_values,
             "action": actions,
         }
-        
+
         return batch
     
     def _obs_to_input(self, obs, is_robotwin=False, robotwin_version="1.0"):

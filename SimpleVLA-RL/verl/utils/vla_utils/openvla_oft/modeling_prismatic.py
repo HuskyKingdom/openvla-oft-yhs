@@ -1365,6 +1365,168 @@ class OpenVLAForActionPrediction(PrismaticForConditionalGeneration):
 
         # Compute vocab size for de-tokenization -- revert added "multiple of"
         self.vocab_size = self.config.text_config.vocab_size - self.config.pad_to_multiple_of
+
+    # =====================================================================
+    # Standard causal-LM forward (for autoregressive generation & log-prob)
+    # =====================================================================
+    def forward_causal_lm(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        pixel_values: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        **kwargs,
+    ) -> Union[Tuple, PrismaticCausalLMOutputWithPast]:
+        """Standard causal LM forward — no OFT placeholder insertion or action-embedding zeroing.
+
+        Handles three modes identical to vanilla OpenVLA:
+          1. Cached generation  (input_ids.shape[1]==1, past_key_values given)
+          2. Unimodal forward   (pixel_values is None)
+          3. Multimodal forward (pixel_values given, first step)
+        """
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        use_cache = use_cache and not self.training
+
+        projected_patch_embeddings = None
+
+        # --- cached generation (single new token) ---
+        if input_ids is not None and input_ids.shape[1] == 1 and past_key_values is not None:
+            language_model_output = self.language_model(
+                input_ids=input_ids,
+                attention_mask=None,
+                position_ids=None,
+                past_key_values=past_key_values,
+                inputs_embeds=None,
+                labels=None,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+
+        # --- multimodal forward (vision + language) ---
+        elif pixel_values is not None:
+            patch_features = self.vision_backbone(pixel_values)
+            projected_patch_embeddings = self.projector(patch_features)
+
+            projected_patch_attention_mask = None
+            if attention_mask is not None:
+                projected_patch_attention_mask = torch.full(
+                    (projected_patch_embeddings.shape[0], projected_patch_embeddings.shape[1]),
+                    fill_value=True,
+                    dtype=attention_mask.dtype,
+                    device=attention_mask.device,
+                )
+
+            input_embeddings = self.get_input_embeddings()(input_ids)
+            multimodal_embeddings = torch.cat(
+                [input_embeddings[:, :1, :], projected_patch_embeddings, input_embeddings[:, 1:, :]], dim=1
+            )
+            multimodal_attention_mask = None
+            if attention_mask is not None:
+                multimodal_attention_mask = torch.cat(
+                    [attention_mask[:, :1], projected_patch_attention_mask, attention_mask[:, 1:]], dim=1
+                )
+
+            multimodal_labels = None
+            if labels is not None:
+                projected_patch_labels = torch.full(
+                    (projected_patch_embeddings.shape[0], projected_patch_embeddings.shape[1]),
+                    fill_value=IGNORE_INDEX,
+                    dtype=labels.dtype,
+                    device=labels.device,
+                )
+                multimodal_labels = torch.cat([labels[:, :1], projected_patch_labels, labels[:, 1:]], dim=1)
+
+            language_model_output = self.language_model(
+                input_ids=None,
+                attention_mask=multimodal_attention_mask,
+                position_ids=None,
+                past_key_values=None,
+                inputs_embeds=multimodal_embeddings,
+                labels=multimodal_labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+
+        # --- unimodal / text-only forward ---
+        else:
+            language_model_output = self.language_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=None,
+                past_key_values=None,
+                inputs_embeds=None,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+
+        if not return_dict:
+            return language_model_output
+
+        return PrismaticCausalLMOutputWithPast(
+            loss=language_model_output.loss,
+            logits=language_model_output.logits,
+            past_key_values=language_model_output.past_key_values,
+            hidden_states=language_model_output.hidden_states,
+            attentions=language_model_output.attentions,
+            projector_features=projected_patch_embeddings,
+        )
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        pixel_values: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        **kwargs,
+    ) -> Dict[str, torch.Tensor]:
+        """Prepare model inputs for HuggingFace generate() — mirrors vanilla OpenVLA logic."""
+        if past_key_values is not None:
+            input_ids = input_ids[:, -1:]
+
+        if inputs_embeds is not None and past_key_values is None:
+            model_inputs = {"inputs_embeds": inputs_embeds}
+        else:
+            model_inputs = {"input_ids": input_ids}
+
+        model_inputs.update({
+            "attention_mask": attention_mask,
+            "pixel_values": pixel_values,
+            "past_key_values": past_key_values,
+            "use_cache": kwargs.get("use_cache"),
+        })
+        return model_inputs
+
+    def generate_autoregressive(self, **kwargs):
+        """Autoregressive generation using the standard causal-LM forward (no OFT zeroing).
+
+        Temporarily swaps self.forward → self.forward_causal_lm so that
+        HuggingFace generate() uses the correct forward path, then restores.
+        """
+        original_forward = self.forward
+        self.forward = self.forward_causal_lm
+        try:
+            output = self.generate(**kwargs)
+        finally:
+            self.forward = original_forward
+        return output
     
     def load_proprio_projector_weights(self, checkpoint_path_or_repo_id: str):
         """

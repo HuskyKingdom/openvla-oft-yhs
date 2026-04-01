@@ -143,113 +143,171 @@ class RobDataParallelPPOActor(BasePPOActor):
             input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
             attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
             
-            if self.config.vla == "openvla-oft":
+            use_ar = getattr(self.config, 'use_autoregressive', False)
+
+            if use_ar:
+                # Autoregressive: reconstruct full sequence (prompt + response)
+                full_ids = torch.cat([input_ids_unpad, responses], dim=1)
+                resp_attn = torch.ones(
+                    (responses.size(0), responses.size(1)),
+                    dtype=attention_mask_unpad.dtype, device=attention_mask_unpad.device,
+                )
+                full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
+
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=full_ids,
+                    attention_mask=full_attn,
+                    pixel_values=pixel_values,
+                    use_cache=False,
+                )
+                logits = output.logits
+                logits = logits[:, -response_length - 1:-1]  # (bsz, response_length, vocab)
+                logits = logits.div(temperature)
+
+                log_probs = logprobs_from_logits(logits, responses)
+                entropy = verl_F.entropy_from_logits(logits)
+
+                # Per-chunk masking
+                log_probs = log_probs.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+                entropy = entropy.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len * self.config.action_chunks_len)
+                log_probs, entropy = self.apply_mask_with_grad_control(log_probs, entropy, mask)
+
+                log_probs = log_probs.reshape((batch_size, traj_len * response_length))
+                entropy = entropy.reshape((batch_size, traj_len * response_length))
+
+            elif self.config.vla == "openvla-oft":
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                         attention_mask=attention_mask_unpad,
                                         pixel_values=pixel_values,
                                         proprio=proprio,
                                         )  # prevent model thinks we are generating
-                
+
                 assert self.actor_module.vocab_size == 32000
-                start_index = self.actor_module.vocab_size - 256 
+                start_index = self.actor_module.vocab_size - 256
                 logits = logits[..., -256-64:-64]  # Shape: [batch_size, seq_len, 256]
                 responses = responses - start_index
-                #assert (0<=responses<=255).all()
-            
-                logits = logits.div(temperature) 
-                
+
+                logits = logits.div(temperature)
+
                 log_probs = logprobs_from_logits(logits, responses)
                 entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
-            
-                assert len(log_probs.shape)==2 and len(entropy.shape)==2 
-                log_probs = log_probs.reshape((batch_size, traj_len*self.config.action_chunks_len,self.config.action_token_len) ) #*
+
+                assert len(log_probs.shape)==2 and len(entropy.shape)==2
+                log_probs = log_probs.reshape((batch_size, traj_len*self.config.action_chunks_len,self.config.action_token_len) )
                 entropy = entropy.reshape((batch_size, traj_len*self.config.action_chunks_len,self.config.action_token_len) )
 
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len) #, self.config.action_token_len
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len)
                 log_probs, entropy = self.apply_mask_with_grad_control(log_probs, entropy, mask)
-                
-                log_probs = log_probs.reshape((batch_size, traj_len*response_length))
-                entropy = entropy.reshape((batch_size, traj_len*response_length)) 
-                
-            elif self.config.vla == "openvla":
-                output = self.actor_module(input_ids=input_ids_unpad,
-                                    attention_mask=attention_mask_unpad,
-                                    pixel_values=pixel_values,
-                                    use_cache=False)  # prevent model thinks we are generating
-                logits = output.logits
-                
-                logits = logits[:, -response_length - 1:-1]  # (bsz, response_length)
-                logits = logits.div(temperature) 
-                
-                log_probs = logprobs_from_logits(logits, responses)
-                entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
-                #ADD
-                
-                log_probs = log_probs.reshape((batch_size, traj_len,) + log_probs.shape[1:])
-                entropy = entropy.reshape((batch_size, traj_len,) + entropy.shape[1:])
 
-                
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len)
-                log_probs, entropy = self.apply_mask_with_grad_control(log_probs, entropy, mask)
-                
                 log_probs = log_probs.reshape((batch_size, traj_len*response_length))
                 entropy = entropy.reshape((batch_size, traj_len*response_length))
-                
-                
+
+            elif self.config.vla == "openvla":
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=input_ids_unpad,
+                    attention_mask=attention_mask_unpad,
+                    pixel_values=pixel_values,
+                    use_cache=False,
+                )
+                logits = output.logits
+
+                logits = logits[:, -response_length - 1:-1]
+                logits = logits.div(temperature)
+
+                log_probs = logprobs_from_logits(logits, responses)
+                entropy = verl_F.entropy_from_logits(logits)
+
+                log_probs = log_probs.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+                entropy = entropy.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len * self.config.action_chunks_len)
+                log_probs, entropy = self.apply_mask_with_grad_control(log_probs, entropy, mask)
+
+                log_probs = log_probs.reshape((batch_size, traj_len*response_length))
+                entropy = entropy.reshape((batch_size, traj_len*response_length))
 
             return entropy, log_probs
     
     def _forward_micro_batch_update(self, input_ids, attention_mask, pixel_values, responses, temperature, proprio) -> Tuple[torch.Tensor, torch.Tensor]:
-       
-        
+
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-            if self.config.vla == "openvla-oft":
-                
+            use_ar = getattr(self.config, 'use_autoregressive', False)
+
+            if use_ar:
+                response_length = responses.size(-1)
+                input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
+                attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
+                # Reconstruct full sequence
+                full_ids = torch.cat([input_ids_unpad, responses], dim=1)
+                resp_attn = torch.ones(
+                    responses.shape, dtype=attention_mask_unpad.dtype, device=attention_mask_unpad.device,
+                )
+                full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
+
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=full_ids, attention_mask=full_attn,
+                    pixel_values=pixel_values, use_cache=False,
+                )
+                logits = output.logits
+                assert logits.requires_grad
+                logits = logits[:, -response_length - 1:-1]
+                logits = logits.div(temperature)
+
+                log_probs = logprobs_from_logits(logits, responses)
+                entropy = verl_F.entropy_from_logits(logits)
+
+                log_probs = log_probs.reshape((1, -1))
+                entropy = entropy.reshape((1, -1))
+                return entropy, log_probs
+
+            elif self.config.vla == "openvla-oft":
+
                 input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
                 attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
 
-                
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                                 attention_mask=attention_mask_unpad,
                                                 pixel_values=pixel_values,
                                                 proprio=proprio,
-                                                )  
-                
-                assert logits.requires_grad 
-                
+                                                )
+
+                assert logits.requires_grad
+
                 assert self.actor_module.vocab_size == 32000
-                start_index = self.actor_module.vocab_size - 256 
+                start_index = self.actor_module.vocab_size - 256
                 logits = logits[..., -256-64:-64]  # Shape: [batch_size, seq_len, 256]
                 responses = responses - start_index
-                
-                logits = logits.div(temperature) 
-                
+
+                logits = logits.div(temperature)
+
                 log_probs = logprobs_from_logits(logits, responses)
                 entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
-                
+
                 log_probs = log_probs.reshape((1, -1))
                 entropy = entropy.reshape((1, -1))
-                
+
                 return entropy, log_probs
-            
+
             elif self.config.vla == "openvla":
                 response_length = responses.size(-1)
                 input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
                 attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
-                output = self.actor_module(input_ids=input_ids_unpad,
-                                        attention_mask=attention_mask_unpad,
-                                        pixel_values=pixel_values,
-                                        use_cache=False)  # prevent model thinks we are generating
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=input_ids_unpad,
+                    attention_mask=attention_mask_unpad,
+                    pixel_values=pixel_values,
+                    use_cache=False,
+                )
                 logits = output.logits
-                #
-                
-                logits = logits[:, -response_length - 1:-1]  # (bsz, response_length)
-                logits = logits.div(temperature) 
-                
+
+                logits = logits[:, -response_length - 1:-1]
+                logits = logits.div(temperature)
+
                 log_probs = logprobs_from_logits(logits, responses)
-                entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
-                
-                
+                entropy = verl_F.entropy_from_logits(logits)
+
                 log_probs = log_probs.reshape((1, -1))
                 entropy = entropy.reshape((1, -1))
 
@@ -290,46 +348,73 @@ class RobDataParallelPPOActor(BasePPOActor):
             input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
             attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
 
-            if  self.config.vla == "openvla-oft":
-            
+            use_ar = getattr(self.config, 'use_autoregressive', False)
+            responses = micro_batch["responses"]
+            responses = responses.reshape((batch_size * traj_len,) + responses.shape[2:])
+
+            if use_ar:
+                # Autoregressive: reconstruct full sequence
+                full_ids = torch.cat([input_ids_unpad, responses], dim=1)
+                resp_attn = torch.ones(
+                    responses.shape, dtype=attention_mask_unpad.dtype, device=attention_mask_unpad.device,
+                )
+                full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
+
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=full_ids, attention_mask=full_attn,
+                    pixel_values=pixel_values, use_cache=False,
+                )
+                logits = output.logits
+                logits = logits[:, -response_length - 1:-1]
+                logits = logits.div(temperature)
+
+                entropy = verl_F.entropy_from_logits(logits)
+
+                entropy = entropy.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len * self.config.action_chunks_len)
+                _, entropy = self.apply_mask_with_grad_control(entropy, entropy, mask)
+                entropy = entropy.reshape((batch_size, traj_len * response_length))
+                return entropy
+
+            elif self.config.vla == "openvla-oft":
+
                 logits = self.actor_module(input_ids=input_ids_unpad,
                                                 attention_mask=attention_mask_unpad,
                                                 pixel_values=pixel_values,
                                                 proprio=proprio,
-                                                ) 
-            
+                                                )
+
                 assert self.actor_module.vocab_size == 32000
-                start_index = self.actor_module.vocab_size - 256 
+                start_index = self.actor_module.vocab_size - 256
                 logits = logits[..., -256-64:-64]  # Shape: [batch_size, seq_len, 256]
-            
-                logits = logits.div(temperature) 
-            
+
+                logits = logits.div(temperature)
+
                 entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
 
-                assert len(entropy.shape)==2 
-                entropy = entropy.reshape((batch_size, traj_len*self.config.action_chunks_len, self.config.action_token_len) ) 
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len) 
+                assert len(entropy.shape)==2
+                entropy = entropy.reshape((batch_size, traj_len*self.config.action_chunks_len, self.config.action_token_len))
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len*self.config.action_chunks_len)
                 _, entropy = self.apply_mask_with_grad_control(entropy, entropy, mask)
                 entropy = entropy.reshape((batch_size, traj_len*response_length))
                 return entropy
-            
-            elif self.config.vla == "openvla":
-                output = self.actor_module(input_ids=input_ids_unpad,
-                                        attention_mask=attention_mask_unpad,
-                                        pixel_values=pixel_values,
-                                        use_cache=False)  # prevent model thinks we are generating
-                logits = output.logits
-                #
-                
-                
-                logits = logits[:, -response_length - 1:-1]  # (bsz, response_length)
-                logits = logits.div(temperature) 
-                
-                entropy = verl_F.entropy_from_logits(logits)  # (bsz, response_length)
-                #ADD
 
-                entropy = entropy.reshape((batch_size, traj_len,) + entropy.shape[1:])
-                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len)
+            elif self.config.vla == "openvla":
+                output = self.actor_module.forward_causal_lm(
+                    input_ids=input_ids_unpad,
+                    attention_mask=attention_mask_unpad,
+                    pixel_values=pixel_values,
+                    use_cache=False,
+                )
+                logits = output.logits
+
+                logits = logits[:, -response_length - 1:-1]
+                logits = logits.div(temperature)
+
+                entropy = verl_F.entropy_from_logits(logits)
+
+                entropy = entropy.reshape((batch_size, traj_len * self.config.action_chunks_len, self.config.action_token_len))
+                mask = self.generate_traj_mask(micro_batch['finish_step'], traj_len * self.config.action_chunks_len)
                 _, entropy = self.apply_mask_with_grad_control(entropy, entropy, mask)
                 entropy = entropy.reshape((batch_size, traj_len*response_length))
                 return entropy
