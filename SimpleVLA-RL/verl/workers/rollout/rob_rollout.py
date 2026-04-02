@@ -1205,6 +1205,8 @@ class RobHFRollout(BaseRollout):
             discretized_actions - 1, a_min=0, a_max=self.module.bin_centers.shape[0] - 1
         )
         normalized_actions = self.module.bin_centers[discretized_actions]
+        # Reshape to (batch, chunks, dims) before unnormalization so (7,) stats broadcast correctly
+        normalized_actions = normalized_actions.reshape(batch_size, self.config.action_chunks_len, self.config.action_token_len)
 
         action_norm_stats = self.module.get_action_stats(self.config.unnorm_key)
         mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
@@ -1214,7 +1216,6 @@ class RobHFRollout(BaseRollout):
             0.5 * (normalized_actions + 1) * (action_high - action_low) + action_low,
             normalized_actions,
         )
-        actions = actions.reshape(batch_size, self.config.action_chunks_len, self.config.action_token_len)
 
         # Return same format as _generate_one_step_oft:
         # input_ids = prompt only (padded), responses = action token IDs
