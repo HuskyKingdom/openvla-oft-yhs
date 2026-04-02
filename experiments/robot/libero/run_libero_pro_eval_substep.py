@@ -224,7 +224,7 @@ class GenerateConfig:
 
     # Substep EOS detection
     use_eos_detection: bool = False                  # Enable EOS token detection for substep switching
-    eos_threshold: float = 0.06                       # Threshold for EOS detection (probability cutoff)
+    eos_threshold: float = 0.03                       # Threshold for EOS detection (probability cutoff)
 
     # Language Dropping experiment (§4.1)
     null_instruction: bool = False                   # If True, forces instruction to "" at inference (for Language Dropping ablation)
