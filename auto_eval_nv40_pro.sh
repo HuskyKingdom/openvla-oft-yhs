@@ -3,13 +3,13 @@ echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
 PRETRAINED_CHECKPOINT="moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10"
-TASK_LABEL_PREFIX="oft_ori"
+TASK_LABEL_PREFIX="oft_ori_bddl"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
 USE_PROPRIO=True
 USE_L1_REGRESSION=True
 USE_SUBSTEP_DECOMPOSITION=False
-USE_BDDL_LANGUAGE=False
+USE_BDDL_LANGUAGE=True
 
 
 
