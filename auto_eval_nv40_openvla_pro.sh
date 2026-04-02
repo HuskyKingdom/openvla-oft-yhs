@@ -57,22 +57,22 @@ sed -i 's/use_object: false/use_object: true/' experiments/robot/libero/LIBERO-P
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_OBJECT \
   --task_suite_name libero_object --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_GOAL \
   --task_suite_name libero_goal --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_SPATIAL \
   --task_suite_name libero_spatial --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_10 \
   --task_suite_name libero_10 --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_object --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 
 # swap
@@ -83,22 +83,22 @@ sed -i 's/use_swap: false/use_swap: true/' experiments/robot/libero/LIBERO-PRO/e
 python $EVAL_SCRIPT  \
   --pretrained_checkpoint $CKPT_OBJECT \
   --task_suite_name libero_object --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_GOAL \
   --task_suite_name libero_goal --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT  \
   --pretrained_checkpoint $CKPT_SPATIAL \
   --task_suite_name libero_spatial --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $CKPT_10 \
   --task_suite_name libero_10 --save_video $SAVE_VIDEO \
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language $USE_BDDL_LANGUAGE
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_swap --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT --use_bddl_language False
 
 
 # task
