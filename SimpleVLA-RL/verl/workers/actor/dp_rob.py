@@ -102,6 +102,17 @@ class RobDataParallelPPOActor(BasePPOActor):
 
         return log_probs_masked, entropy_masked
 
+    def _call_causal_lm(self, **kwargs):
+        """Call forward_causal_lm through the FSDP wrapper so parameter gathering hooks fire.
+        Swaps `forward` on the inner (non-FSDP) module, then calls self.actor_module(**kwargs)."""
+        inner = self.actor_module.module if isinstance(self.actor_module, FSDP) else self.actor_module
+        orig_fwd = inner.forward
+        inner.forward = inner.forward_causal_lm
+        try:
+            return self.actor_module(**kwargs)
+        finally:
+            inner.forward = orig_fwd
+
     def _forward_micro_batch(self, micro_batch, temperature) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         micro_batch:
@@ -154,7 +165,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 )
                 full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
 
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=full_ids,
                     attention_mask=full_attn,
                     pixel_values=pixel_values,
@@ -205,7 +216,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 entropy = entropy.reshape((batch_size, traj_len*response_length))
 
             elif self.config.vla == "openvla":
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=input_ids_unpad,
                     attention_mask=attention_mask_unpad,
                     pixel_values=pixel_values,
@@ -246,7 +257,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 )
                 full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
 
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=full_ids, attention_mask=full_attn,
                     pixel_values=pixel_values, use_cache=False,
                 )
@@ -294,7 +305,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 response_length = responses.size(-1)
                 input_ids_unpad, _ = self.process_tensor(input_ids, self.pad_token_id)
                 attention_mask_unpad, _ = self.process_tensor(attention_mask, 0)
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=input_ids_unpad,
                     attention_mask=attention_mask_unpad,
                     pixel_values=pixel_values,
@@ -360,7 +371,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 )
                 full_attn = torch.cat([attention_mask_unpad, resp_attn], dim=1)
 
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=full_ids, attention_mask=full_attn,
                     pixel_values=pixel_values, use_cache=False,
                 )
@@ -400,7 +411,7 @@ class RobDataParallelPPOActor(BasePPOActor):
                 return entropy
 
             elif self.config.vla == "openvla":
-                output = self.actor_module.forward_causal_lm(
+                output = self._call_causal_lm(
                     input_ids=input_ids_unpad,
                     attention_mask=attention_mask_unpad,
                     pixel_values=pixel_values,
