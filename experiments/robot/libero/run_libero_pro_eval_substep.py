@@ -235,21 +235,39 @@ class GenerateConfig:
     # fmt: on
 
 
-def extract_task_from_bddl(bddl_file_path):
-    """Extract task language descriptions from bddl file content (:language field)."""
+def extract_task_from_bddl(bddl_file_path, task_suite=None):
+    """Extract task language descriptions from bddl file content (:language field).
+
+    If task_suite is provided, files are read in benchmark task order (correct).
+    Otherwise falls back to sorted filename order (may mismatch benchmark order).
+    """
     language_pattern = re.compile(r"\(:language\s*(.*?)\)", re.IGNORECASE | re.DOTALL)
     tasks = []
     bddl_dir = Path(bddl_file_path)
-    for bddl_file in sorted(bddl_dir.glob("*.bddl")):
-        with bddl_file.open("r", encoding="utf-8") as f:
-            content = f.read()
-        matches = language_pattern.findall(content)
-        if matches:
-            for lang_text in matches:
-                tasks.append(lang_text.strip())
-        else:
-            task = content.split(":language")[1].split(")")[0].strip()
-            tasks.append(task)
+
+    if task_suite is not None:
+        # Read in benchmark task order to avoid index mismatch
+        for task_id in range(task_suite.n_tasks):
+            task = task_suite.get_task(task_id)
+            bddl_file = bddl_dir / task.bddl_file
+            with bddl_file.open("r", encoding="utf-8") as f:
+                content = f.read()
+            matches = language_pattern.findall(content)
+            if matches:
+                tasks.append(matches[0].strip())
+            else:
+                tasks.append(content.split(":language")[1].split(")")[0].strip())
+    else:
+        # Fallback: sorted order (original behavior, may mismatch benchmark task order)
+        for bddl_file in sorted(bddl_dir.glob("*.bddl")):
+            with bddl_file.open("r", encoding="utf-8") as f:
+                content = f.read()
+            matches = language_pattern.findall(content)
+            if matches:
+                for lang_text in matches:
+                    tasks.append(lang_text.strip())
+            else:
+                tasks.append(content.split(":language")[1].split(")")[0].strip())
     return tasks
 
 
@@ -1295,7 +1313,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     bddl_task_descriptions = None
     if cfg.use_bddl_language:
         bddl_dir = str(Path(task_suite.get_task_bddl_file_path(0)).parent)
-        bddl_task_descriptions = extract_task_from_bddl(bddl_dir)
+        bddl_task_descriptions = extract_task_from_bddl(bddl_dir, task_suite=task_suite)
         log_message(f"Using bddl content language from: {bddl_dir}", log_file)
         assert len(bddl_task_descriptions) == num_tasks, (
             f"bddl descriptions count ({len(bddl_task_descriptions)}) != num_tasks ({num_tasks})"
