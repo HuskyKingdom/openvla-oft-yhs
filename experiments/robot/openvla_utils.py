@@ -1031,6 +1031,7 @@ def get_vla_action(
     return_eos_info: bool = False,
     eos_head: Optional[torch.nn.Module] = None,
     eos_threshold: float = 0.5,
+    auto_regression: bool = False,
 ) -> Union[List[np.ndarray], Tuple[List[np.ndarray], bool, Optional[int]]]:
     """
     Generate action predictions with the VLA policy.
@@ -1049,6 +1050,9 @@ def get_vla_action(
         return_eos_info: Whether to return EOS detection info
         eos_head: Optional EOS classification head for substep boundary detection
         eos_threshold: Threshold for EOS detection (default: 0.5)
+        auto_regression: Only used when action_head is None (discrete token mode).
+                         True  → vla.generate() autoregressive (56 forward passes).
+                         False → predict_action parallel decode (1 forward pass).
 
     Returns:
         List[np.ndarray]: Predicted actions, or tuple (actions, has_eos, eos_position) if return_eos_info=True
@@ -1108,19 +1112,37 @@ def get_vla_action(
 
         # Generate action
         if action_head is None:
-            # 并行 decode：追加 56 个 placeholder token，1 次 forward pass 同时得到所有位置的
-            # categorical distribution，argmax → token IDs → bin_centers → unnorm。
-            # 走 _regression_or_discrete_prediction 中 action_head=None 的 discrete 分支。
-            result = vla.predict_action(
-                **inputs,
-                unnorm_key=cfg.unnorm_key,
-                do_sample=False,
-                proprio=proprio,
-                proprio_projector=proprio_projector,
-                action_head=None,
-                use_film=use_film,
-            )
-            action, hiddens, layer_actions, energy_pad_mask = result
+            if auto_regression:
+                # 自回归路径：vla.generate() 逐 token 生成，共 56 次 forward pass
+                vanilla_input_ids = inputs["input_ids"]
+                if not torch.all(vanilla_input_ids[:, -1] == 29871):
+                    vanilla_input_ids = torch.cat(
+                        (vanilla_input_ids, torch.unsqueeze(torch.Tensor([29871]).long(), dim=0).to(vanilla_input_ids.device)),
+                        dim=1,
+                    )
+                vanilla_inputs = {**inputs, "input_ids": vanilla_input_ids}
+                action_dim = vla.get_action_dim(cfg.unnorm_key)
+                generated_ids = vla.generate(**vanilla_inputs, max_new_tokens=action_dim, do_sample=False)
+                predicted_action_token_ids = generated_ids[0, -action_dim:].cpu().numpy()
+                discretized_actions = vla.vocab_size - predicted_action_token_ids
+                discretized_actions = np.clip(discretized_actions - 1, a_min=0, a_max=vla.bin_centers.shape[0] - 1)
+                normalized_actions = vla.bin_centers[discretized_actions]
+                action = vla._unnormalize_actions(normalized_actions, cfg.unnorm_key)
+                hiddens, layer_actions, energy_pad_mask = None, [], None
+            else:
+                # 并行 decode：追加 56 个 placeholder token，1 次 forward pass 同时得到所有位置的
+                # categorical distribution，argmax → token IDs → bin_centers → unnorm。
+                # 走 _regression_or_discrete_prediction 中 action_head=None 的 discrete 分支。
+                result = vla.predict_action(
+                    **inputs,
+                    unnorm_key=cfg.unnorm_key,
+                    do_sample=False,
+                    proprio=proprio,
+                    proprio_projector=proprio_projector,
+                    action_head=None,
+                    use_film=use_film,
+                )
+                action, hiddens, layer_actions, energy_pad_mask = result
             has_eos, eos_position = False, None
         else:
             # Custom action head for continuous actions

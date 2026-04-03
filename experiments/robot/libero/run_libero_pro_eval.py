@@ -150,6 +150,7 @@ class GenerateConfig:
     num_diffusion_steps_train: int = 50              # (When `diffusion==True`) Number of diffusion steps used for training
     num_diffusion_steps_inference: int = 50          # (When `diffusion==True`) Number of diffusion steps used for inference
     use_film: bool = False                           # If True, uses FiLM to infuse language inputs into visual features
+    auto_regression: bool = False                    # If True, use autoregressive vla.generate() (56 forward passes); False = parallel predict_action (1 forward pass)
     num_images_in_input: int = 2                     # Number of images in the VLA input (default: 1)
     use_proprio: bool = True                         # Whether to include proprio state in input
 
@@ -453,6 +454,7 @@ def run_episode(
                 noisy_action_projector=noisy_action_projector,
                 use_film=cfg.use_film,
                 h_head=head,
+                auto_regression=cfg.auto_regression,
             )
             action_queue.extend(actions)
             actions_accum.append(actions)

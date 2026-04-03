@@ -110,6 +110,7 @@ def get_action(
     return_eos_info: bool = False,
     eos_head: Optional[torch.nn.Module] = None,
     eos_threshold: float = 0.5,
+    auto_regression: bool = False,
 ) -> Union[List[np.ndarray], np.ndarray, Tuple]:
     """
     Query the model to get action predictions.
@@ -128,6 +129,8 @@ def get_action(
         return_eos_info: Whether to return EOS detection info
         eos_head: Optional EOS classification head for substep boundary detection
         eos_threshold: Threshold for EOS detection (default: 0.5)
+        auto_regression: If True and action_head is None, use autoregressive vla.generate()
+                         (56 forward passes). If False, use parallel predict_action (1 forward pass).
 
     Returns:
         Union[List[np.ndarray], np.ndarray]: Predicted actions, or tuple (actions, has_eos, eos_position) if return_eos_info=True
@@ -139,7 +142,7 @@ def get_action(
     if torch.cuda.is_available():
         torch.cuda.synchronize()
     start_time = time.time()
-    
+
     with torch.no_grad():
         if cfg.model_family == "openvla":
             result = get_vla_action(
@@ -156,6 +159,7 @@ def get_action(
                 return_eos_info=return_eos_info,
                 eos_head=eos_head,
                 eos_threshold=eos_threshold,
+                auto_regression=auto_regression,
             )
         else:
             raise ValueError(f"Unsupported model family: {cfg.model_family}")
