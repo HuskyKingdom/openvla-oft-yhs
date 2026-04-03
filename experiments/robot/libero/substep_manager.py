@@ -97,12 +97,12 @@ IMPORTANT FOR "expected_effect":
 
 GOOD EXAMPLES:
 [
-  {{"step": 1, "action_type": "move", "subgoal": "Position the robotic arm at the center of the table", "expected_effect": "gripper positioned at the center of the table"}},
-  {{"step": 2, "action_type": "move", "subgoal": "Extend the arm toward the black bowl", "expected_effect": "gripper enclosing the black bowl securely"}},
-  {{"step": 3, "action_type": "pick", "subgoal": "Lift the black bowl off the table surface", "expected_effect": "black bowl raised above the table surface"}},
-  {{"step": 4, "action_type": "move", "subgoal": "Translate the gripper above the plate", "expected_effect": "gripper aligned above the plate surface"}},
-  {{"step": 5, "action_type": "place", "subgoal": "Lower the black bowl onto the plate", "expected_effect": "black bowl resting on the plate surface"}},
-  {{"step": 6, "action_type": "return", "subgoal": "Return the manipulator to the home configuration", "expected_effect": "robot back at neutral home pose"}}
+  {{"step": 1, "subgoal": "Position the robotic arm at the center of the table", "expected_effect": "gripper positioned at the center of the table"}},
+  {{"step": 2,  "subgoal": "Extend the arm toward the black bowl", "expected_effect": "gripper enclosing the black bowl securely"}},
+  {{"step": 3,  "subgoal": "Lift the black bowl off the table surface", "expected_effect": "black bowl raised above the table surface"}},
+  {{"step": 4,  "subgoal": "Translate the gripper above the plate", "expected_effect": "gripper aligned above the plate surface"}},
+  {{"step": 5,  "subgoal": "Lower the black bowl onto the plate", "expected_effect": "black bowl resting on the plate surface"}},
+  {{"step": 6,  "subgoal": "Return the manipulator to the home configuration", "expected_effect": "robot back at neutral home pose"}}
 ]
 
 BAD EXAMPLES (TOO ABSTRACT):
