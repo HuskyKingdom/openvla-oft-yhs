@@ -8,7 +8,7 @@ export PROJECT_NAME="openvla-oft-rl"
 export NUM_GPUS=8
 export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 # Use autoregressive generation (for SFT models trained with use_l1_regression=False)
-export USE_AUTOREGRESSIVE="True"
+export USE_AUTOREGRESSIVE="False"
 
 # Lower batch size so training triggers with fewer filtered rollouts.
 # Current model has ~0% success rate, only ~6-12 prompts per epoch produce
