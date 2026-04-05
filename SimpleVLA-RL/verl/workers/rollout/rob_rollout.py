@@ -965,10 +965,12 @@ class RobHFRollout(BaseRollout):
                 input_queues[idx].put(actions[idx])
 
             # Contrastive forward pass every K env steps (while env is processing)
+            # NOTE: Do NOT gate on len(active_indices) > 0. Under FSDP, every
+            # worker must execute the same number of forward passes (all-gather).
+            # If one worker skips this branch while others enter it, deadlock.
             if (use_substep_this_batch
                     and step > 0
-                    and step % self.contrastive_interval == 0
-                    and len(active_indices) > 0):
+                    and step % self.contrastive_interval == 0):
                 wrong_descriptions = []
                 for idx in range(batch_size):
                     if (substep_trackers[idx] is not None
