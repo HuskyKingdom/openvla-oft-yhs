@@ -1,4 +1,4 @@
-export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/landmarked_ckpoints/apd_regressive_200k"
+export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/landmarked_ckpoints/apd_discrete_200k/"
 export CKPT_PATH="./exp_out"
 export APD_PLANS_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/APD_plans_scaled.json"
 export CONTRASTIVE_REWARD_COEF=2
