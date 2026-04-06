@@ -2,7 +2,7 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="/home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/landmarked_ckpoints/apd_discrete_200k"
+PRETRAINED_CHECKPOINT="/home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/landmarked_ckpoints/apd_discrete_160k"
 TASK_LABEL_PREFIX="apd_discrete"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"

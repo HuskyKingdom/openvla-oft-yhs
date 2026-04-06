@@ -906,11 +906,13 @@ class RobHFRollout(BaseRollout):
             if is_valid:
                 valid_video[init_data['task_file_name']].extend(init_data['valid_images'])
 
-        # Substep RL: only active during training rollouts
-        use_substep_this_batch = self.use_substep_rl and not is_valid
+        # Substep switching: active during both training and validation rollouts
+        # Contrastive forward pass: only during training (reward signal not needed for val)
+        use_substep_switching = self.use_substep_rl
+        use_contrastive_this_batch = self.use_substep_rl and not is_valid
         substep_trackers = [None] * batch_size
 
-        if use_substep_this_batch and self.apd_manager is not None:
+        if use_substep_switching and self.apd_manager is not None:
             from verl.utils.substep_reward import SubstepTracker
             for idx in range(batch_size):
                 plan = self.apd_manager.get_plan(
@@ -930,7 +932,7 @@ class RobHFRollout(BaseRollout):
             current_inputs = inputs
 
             # Use substep instructions if available, otherwise original descriptions
-            if use_substep_this_batch:
+            if use_substep_switching:
                 current_task_descriptions = []
                 for idx in range(batch_size):
                     if substep_trackers[idx] is not None:
@@ -968,7 +970,7 @@ class RobHFRollout(BaseRollout):
             # NOTE: Do NOT gate on len(active_indices) > 0. Under FSDP, every
             # worker must execute the same number of forward passes (all-gather).
             # If one worker skips this branch while others enter it, deadlock.
-            if (use_substep_this_batch
+            if (use_contrastive_this_batch
                     and step > 0
                     and step % self.contrastive_interval == 0):
                 wrong_descriptions = []
@@ -1011,7 +1013,7 @@ class RobHFRollout(BaseRollout):
                     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
 
             # Check substep completion using post-action observations
-            if use_substep_this_batch:
+            if use_substep_switching:
                 for idx in active_indices:
                     if substep_trackers[idx] is not None:
                         img = new_inputs[idx].get("full_image")
