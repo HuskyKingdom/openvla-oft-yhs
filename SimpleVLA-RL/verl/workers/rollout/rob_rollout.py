@@ -440,6 +440,7 @@ class RobHFRollout(BaseRollout):
             "libero_goal": 512,
             "libero_10": 512,
             "libero_90": 512,
+            "libero_4_task_suites": 512,
             "robotwin2_click_bell": 200,
             "robotwin2_move_can_pot": 200,
             "robotwin2_place_phone_stand": 200,
@@ -828,7 +829,7 @@ class RobHFRollout(BaseRollout):
         task_id = prompts.batch['task_id'].repeat_interleave(n_samples, dim=0)
         trial_id = prompts.batch['trial_id'].repeat_interleave(n_samples, dim=0)
         task_suite_name = np.repeat(prompts.non_tensor_batch['task_suite_name'], n_samples)
-        max_steps = self.max_steps[self.config.task_suite_name]
+        max_steps = self.max_steps.get(self.config.task_suite_name, 512)
         batch_size = task_id.size(0)
         is_valid = meta_info.get('n_samples') is None
         global_steps = meta_info.get('global_steps', 0) if is_valid else 0
