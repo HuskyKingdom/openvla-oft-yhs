@@ -2,7 +2,7 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--oft_plus--150000_chkpt"
+PRETRAINED_CHECKPOINT="moojink/openvla-7b-oft-finetuned-libero-spatial-object-goal-10"
 TASK_LABEL_PREFIX="oft_plus"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
