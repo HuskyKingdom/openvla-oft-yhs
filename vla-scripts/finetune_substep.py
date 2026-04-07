@@ -550,8 +550,7 @@ class FinetuneSubstepConfig:
     num_steps_before_decay: int = 100_000            # Number of steps before LR decays by 10x
     grad_accumulation_steps: int = 1                 # Number of gradient accumulation steps
     max_steps: int = 200_000                         # Max number of training steps
-    weight_decay: float = 0.1                          # Weight decay for AdamW (controls LoRA weight growth, prevents hidden states drift)
-    max_grad_norm: float = 0.8                       # Maximum gradient norm for clipping (防止梯度爆炸，特别是使用高pos_weight时)
+    weight_decay: float = 0.05                          # Weight decay for AdamW (controls LoRA weight growth, prevents hidden states drift)
     use_val_set: bool = False                        # If True, uses validation set and log validation metrics
     val_freq: int = 10_000                           # (When `use_val_set==True`) Validation set logging frequency in steps
     val_time_limit: int = 180                        # (When `use_val_set==True`) Time limit for computing validation metrics
@@ -822,9 +821,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
             else:
                 print(f"  Dynamic weights: computed per-batch")
         print(f"  Lambda EOS: {cfg.lambda_eos}")
-        print(f"  Gradient clipping: {'Enabled' if cfg.max_grad_norm > 0 else 'Disabled'}")
-        if cfg.max_grad_norm > 0:
-            print(f"    Max grad norm: {cfg.max_grad_norm}")
         print(f"  ✓ 真正的Fine-tuning（梯度回传到VLA主干）")
         print(f"{'='*80}\n")
         
@@ -1178,21 +1174,6 @@ def finetune_substep(cfg: FinetuneSubstepConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                # [CRITICAL] Gradient clipping to prevent explosion (especially with high pos_weight)
-                # Clip gradients of all trainable parameters
-                if cfg.max_grad_norm > 0:
-                    total_norm = torch.nn.utils.clip_grad_norm_(
-                        trainable_params, 
-                        max_norm=cfg.max_grad_norm
-                    )
-                    # Log gradient norm for monitoring
-                    if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
-                        wandb.log({"VLA Train/Grad Norm": total_norm.item()}, step=log_step)
-                        # Warn if gradient norm is very large (before clipping)
-                        if total_norm.item() > cfg.max_grad_norm * 10:
-                            print(f"⚠️  [Grad Norm Warning] Step {log_step}: grad_norm={total_norm.item():.2f} "
-                                  f"(clipped to {cfg.max_grad_norm})")
-                
                 # [NaN GUARD] Check gradients for NaN/Inf before optimizer step.
                 # This catches the case where loss was finite but backward() produced NaN gradients,
                 # which would otherwise silently corrupt model parameters.

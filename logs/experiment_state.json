@@ -1,0 +1,42 @@
+{
+  "phase": "WAITING_AMD_TRAIN",
+  "iteration": 1,
+  "amd_job_id": 15417,
+  "amd_job_name": "oft-substep-rl-libero",
+  "amd_ckpt_name": null,
+  "nv_eval_running": true,
+  "nv_eval_ckpt": "oft_plus--150000_chkpt",
+  "nv_eval_task_label_prefix": "oft_plus",
+  "last_updated": "2026-04-07T16:13:00",
+  "next_action_notes": "Wait for AMD job 15417 (4h52m elapsed, ~31h left). NV still evaluating oft_plus. AMD latest: step 6, contrastive=0.207, verifier=0.500, total=2.914. Val score at step 3: 0.125.",
+  "targets": {
+    "task_mode_min_sr": 0.45,
+    "sem_object_mode_min_sr": 0.85,
+    "suites": ["libero_spatial", "libero_object", "libero_goal", "libero_10"]
+  },
+  "rl_config": {
+    "contrastive_reward_coef": 2,
+    "verifier_reward_coef": 5,
+    "sft_base": "apd_discrete_160k",
+    "lora_rank": 32
+  },
+  "pending_nv_evals": [
+    {
+      "label": "apd_discrete",
+      "ckpt_path": "ckpt/apd_discrete_160k",
+      "model_type": "apd_discrete",
+      "missing_runs": [
+        {"suite": "libero_spatial", "mode": "swap",   "unnorm_key": "libero_spatial"},
+        {"suite": "libero_spatial", "mode": "object", "unnorm_key": "libero_spatial"},
+        {"suite": "libero_object",  "mode": "swap",   "unnorm_key": "libero_object"},
+        {"suite": "libero_object",  "mode": "object", "unnorm_key": "libero_object"},
+        {"suite": "libero_goal",    "mode": "swap",   "unnorm_key": "libero_goal"},
+        {"suite": "libero_goal",    "mode": "object", "unnorm_key": "libero_goal"},
+        {"suite": "libero_10",      "mode": "task",   "unnorm_key": "libero_10"},
+        {"suite": "libero_10",      "mode": "swap",   "unnorm_key": "libero_10"},
+        {"suite": "libero_10",      "mode": "object", "unnorm_key": "libero_10"}
+      ]
+    }
+  ],
+  "history": []
+}
