@@ -3,15 +3,15 @@ echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
 PRETRAINED_CHECKPOINT="/home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/landmarked_ckpoints/apd_discrete_160k"
-TASK_LABEL_PREFIX="apd_discrete"
+TASK_LABEL_PREFIX="oft_plus"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
-USE_PROPRIO=False
+USE_PROPRIO=True
 USE_L1_REGRESSION=False
-USE_SUBSTEP_DECOMPOSITION=True
+USE_SUBSTEP_DECOMPOSITION=False
 USE_BDDL_LANGUAGE=True
 AUTO_REGRESSION=False
-NUM_IMAGES_IN_INPUT=1
+NUM_IMAGES_IN_INPUT=2
 SUBSTEP_COMPLETION_THRESHOLD=0.05
 
 
