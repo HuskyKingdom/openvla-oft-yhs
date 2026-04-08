@@ -27,6 +27,9 @@ OFT_SUBSTEP_COMPLETION_THRESHOLD=0.07
 
 mkdir -p ckpts
 
+# Reset all evaluation config flags to false before starting
+bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
+
 
 # # ===========================================================================
 # # APD MODEL — NULL LANGUAGE (null_instruction True, language dropped)
