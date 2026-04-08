@@ -1,14 +1,34 @@
 {
   "phase": "WAITING_AMD_TRAIN",
   "iteration": 1,
-  "amd_job_id": 15417,
-  "amd_job_name": "oft-substep-rl-libero",
+  "amd_pending_trains": [
+    {
+      "job_id": 15486,
+      "job_name": "substep_vla_exp_scalled",
+      "type": "sft",
+      "priority": 1,
+      "model_type": "apd_scalled",
+      "ckpt_search_dir": "/work1/chunyilee/yuhang/openvla-oft-yhs/ckpoints/",
+      "task_label_prefix": "apd_scalled_tuned",
+      "notes": "APD_scalled tuned: weight_decay=0.01, no grad clip, no EOS training (commit 4529089)"
+    },
+    {
+      "job_id": 15417,
+      "job_name": "oft-substep-rl-libero",
+      "type": "rl",
+      "priority": 2,
+      "model_type": "apd_discrete",
+      "ckpt_search_dir": "/work1/chunyilee/yuhang/openvla-oft-yhs/SimpleVLA-RL/exp_out/",
+      "task_label_prefix": "rl_iter1",
+      "notes": "GRPO RL on apd_discrete_160k, contrastive_coef=2"
+    }
+  ],
   "amd_ckpt_name": null,
   "nv_eval_running": true,
   "nv_eval_ckpt": "oft_plus--150000_chkpt",
   "nv_eval_task_label_prefix": "oft_plus",
-  "last_updated": "2026-04-07T16:13:00",
-  "next_action_notes": "Wait for AMD job 15417 (4h52m elapsed, ~31h left). NV still evaluating oft_plus. AMD latest: step 6, contrastive=0.207, verifier=0.500, total=2.914. Val score at step 3: 0.125.",
+  "last_updated": "2026-04-07T23:54:00",
+  "next_action_notes": "Both AMD jobs running. RL #15417 step 14/100 ETA ~76h. SFT #15486 step 27681/150005 ETA ~23.5h. NV still evaluating oft_plus (1 process active).",
   "targets": {
     "task_mode_min_sr": 0.45,
     "sem_object_mode_min_sr": 0.85,
