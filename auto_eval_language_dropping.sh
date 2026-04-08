@@ -140,7 +140,7 @@ python $EVAL_SCRIPT \
   --num_trials_per_task $NUM_TRIALS_PER_TASK --evaluation_config_path $FILE_PATH --unnorm_key libero_spatial \
   --task_label oft_spatial_swap_nulllang --use_eos_detection $OFT_USE_EOS_DETECTION --use_proprio $OFT_USE_PROPRIO \
   --use_l1_regression $OFT_USE_L1_REGRESSION --use_bddl_language $OFT_USE_BDDL_LANGUAGE --auto_regression $OFT_AUTO_REGRESSION \
-  --num_images_in_input $OFT_NUM_IMAGES_IN_INPUT --null_instruction True \
+  --num_images_in_input $OFT_NUM_IMAGES_IN_INPUT --null_instruction False \
   2>&1 | tee ckpts/oft_spatial_swap_nulllang.txt
 
 python $EVAL_SCRIPT \
