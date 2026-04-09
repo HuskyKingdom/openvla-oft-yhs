@@ -337,7 +337,7 @@ def run_forward_pass(
             noisy_action_projector=noisy_action_projector if use_diffusion else None,
             diffusion_timestep_embeddings=diffusion_timestep_embeddings if use_diffusion else None,
             use_film=use_film,
-            zero_action_embeddings=(use_l1_regression or use_diffusion),
+            zero_action_embeddings=True,
         )
 
     # Get action masks needed for logging
@@ -884,6 +884,9 @@ def finetune(cfg: FinetuneConfig) -> None:
             device_id,
             {"llm_dim": vla.module.llm_dim, "proprio_dim": PROPRIO_DIM},
         )
+
+    # Default to None; overwritten below if use_l1_regression or use_diffusion
+    action_head = None
 
     # If applicable, instantiate continuous action head for L1 regression
     if cfg.use_l1_regression:

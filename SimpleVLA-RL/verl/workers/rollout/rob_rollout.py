@@ -466,21 +466,6 @@ class RobHFRollout(BaseRollout):
         self.processor = AutoProcessor.from_pretrained(config.pretrained_checkpoint, trust_remote_code=True)
         self.vla_preprocess()
 
-        # Substep RL initialization
-        self.use_substep_rl = getattr(config, 'use_substep_rl', False)
-        self.apd_manager = None
-        self.sigclip_model = None
-        if self.use_substep_rl:
-            from verl.utils.substep_reward import APDPlanManager, SigCLIPRewardModel
-            apd_path = config.apd_plans_path
-            sigclip_path = getattr(config, 'sigclip_model_path', 'timm/ViT-B-16-SigLIP-256')
-            self.substep_threshold = getattr(config, 'substep_completion_threshold', 0.25)
-            self.contrastive_interval = getattr(config, 'contrastive_sample_interval', 16)
-            self.apd_manager = APDPlanManager(apd_path)
-            self.sigclip_model = SigCLIPRewardModel(sigclip_path, device=torch.device('cuda'))
-            print(f"[RobHFRollout] Substep RL enabled: threshold={self.substep_threshold}, "
-                  f"contrastive_interval={self.contrastive_interval}")
-
         # Setup execution pool based on task suite
         if "robotwin" in self.config.task_suite_name:
             self.env_thread_pool = ThreadPoolExecutor(max_workers=16)
@@ -901,28 +886,9 @@ class RobHFRollout(BaseRollout):
                 "complete": init_data['complete'],
                 "finish_step": init_data['finish_step'],
                 "task_file_name": init_data['task_file_name'],
-                "contrastive_score": 0.0,
-                "contrastive_count": 0,
             })
             if is_valid:
                 valid_video[init_data['task_file_name']].extend(init_data['valid_images'])
-
-        # Substep switching: active during both training and validation rollouts
-        # Contrastive forward pass: only during training (reward signal not needed for val)
-        use_substep_switching = self.use_substep_rl
-        use_contrastive_this_batch = self.use_substep_rl and not is_valid
-        substep_trackers = [None] * batch_size
-
-        if use_substep_switching and self.apd_manager is not None:
-            from verl.utils.substep_reward import SubstepTracker
-            for idx in range(batch_size):
-                plan = self.apd_manager.get_plan(
-                    task_suite_name[idx], task_descriptions[idx]
-                )
-                if plan:
-                    substep_trackers[idx] = SubstepTracker(
-                        plan, self.sigclip_model, self.substep_threshold
-                    )
 
         step = 0
         vla_history = []
@@ -932,20 +898,7 @@ class RobHFRollout(BaseRollout):
             
             current_inputs = inputs
 
-            # Use substep instructions if available, otherwise original descriptions
-            if use_substep_switching:
-                current_task_descriptions = []
-                for idx in range(batch_size):
-                    if substep_trackers[idx] is not None:
-                        current_task_descriptions.append(
-                            substep_trackers[idx].get_current_instruction()
-                        )
-                    else:
-                        current_task_descriptions.append(task_descriptions[idx])
-            else:
-                current_task_descriptions = task_descriptions
-
-            vla_input = self.process_input(current_inputs, current_task_descriptions)
+            vla_input = self.process_input(current_inputs, task_descriptions)
             vla_input.update(meta_info)
             vla_output = self._generate_one_step(vla_input)
             actions = vla_output["action"]
@@ -967,40 +920,6 @@ class RobHFRollout(BaseRollout):
             for idx in active_indices:
                 input_queues[idx].put(actions[idx])
 
-            # Contrastive forward pass every K env steps (while env is processing)
-            # NOTE: Do NOT gate on len(active_indices) > 0. Under FSDP, every
-            # worker must execute the same number of forward passes (all-gather).
-            # If one worker skips this branch while others enter it, deadlock.
-            if (use_contrastive_this_batch
-                    and step > 0
-                    and step % self.contrastive_interval == 0):
-                wrong_descriptions = []
-                for idx in range(batch_size):
-                    if (substep_trackers[idx] is not None
-                            and task_records[idx]['active']):
-                        current_sub = substep_trackers[idx].get_current_instruction()
-                        wrong_sub = self.apd_manager.sample_wrong_substep(
-                            task_suite_name[idx], current_sub
-                        )
-                        wrong_descriptions.append(wrong_sub)
-                    else:
-                        wrong_descriptions.append(task_descriptions[idx])
-
-                wrong_input = self.process_input(current_inputs, wrong_descriptions)
-                wrong_input.update(meta_info)
-                wrong_output = self._generate_one_step(wrong_input)
-                wrong_actions = wrong_output["action"]
-
-                for idx in range(batch_size):
-                    if task_records[idx]['active']:
-                        num_elements = torch.as_tensor(actions[idx]).numel()
-                        diff = torch.norm(
-                            torch.as_tensor(actions[idx]).float() - torch.as_tensor(wrong_actions[idx]).float()
-                        ).item()
-                        normalized_diff = diff / (num_elements ** 0.5)
-                        task_records[idx]['contrastive_score'] += min(normalized_diff, 1.0)
-                        task_records[idx]['contrastive_count'] += 1
-
             # Collect env results
             new_inputs = inputs.copy()
             for idx in active_indices:
@@ -1012,14 +931,6 @@ class RobHFRollout(BaseRollout):
                 task_records[idx]['finish_step'] = result['finish_step']
                 if is_valid:
                     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
-
-            # Check substep completion using post-action observations
-            if use_substep_switching:
-                for idx in active_indices:
-                    if substep_trackers[idx] is not None:
-                        img = new_inputs[idx].get("full_image")
-                        if img is not None:
-                            substep_trackers[idx].check_and_advance(img)
 
             inputs = new_inputs
             step += self.config.action_chunks_len
@@ -1067,16 +978,6 @@ class RobHFRollout(BaseRollout):
         
         batch["complete"] = torch.tensor([bool(k["complete"]) for k in task_records], dtype=torch.bool, device=batch['responses'].device)
         batch["finish_step"] = torch.tensor([k["finish_step"] for k in task_records], dtype=torch.int64, device=batch['responses'].device)
-
-        # Add contrastive scores if available (from substep RL rollout)
-        if all('contrastive_count' in k for k in task_records):
-            avg_scores = [
-                k['contrastive_score'] / max(k['contrastive_count'], 1)
-                for k in task_records
-            ]
-            batch["contrastive_score"] = torch.tensor(
-                avg_scores, dtype=torch.float32, device=batch['responses'].device
-            )
 
         output_batch = TensorDict(batch, batch_size=batch_size)
         return DataProto(batch=output_batch)

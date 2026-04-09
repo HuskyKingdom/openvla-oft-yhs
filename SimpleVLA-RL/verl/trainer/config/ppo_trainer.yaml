@@ -102,13 +102,7 @@ actor_rollout_ref:
     center_crop: True
     max_prompt_length: 512
     num_images_in_input: 1
-    # Substep RL settings
-    use_substep_rl: false
     use_autoregressive: false
-    apd_plans_path: null
-    sigclip_model_path: "timm/ViT-B-16-SigLIP-256"
-    substep_completion_threshold: 0.25
-    contrastive_sample_interval: 16
     name: vllm
     temperature: 1.0
     top_k: -1 # 0 for hf rollout, -1 for vllm rollout
@@ -180,7 +174,6 @@ verifier:
 #  timeout: 5
 #  num_processes: 64
   reward_coef: 5
-  contrastive_reward_coef: 0  # weight for R_contrastive (set >0 to enable, e.g. 2)
 
 reward_model:
   enable: True

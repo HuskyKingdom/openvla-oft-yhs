@@ -84,17 +84,6 @@ class RobRewardManager():
             reward_metrics['verifier'] = reward_tensor_dict['gt_scores'].sum(dim=1).mean().item()
             reward_tensor += self.config.verifier.reward_coef * reward_tensor_dict['gt_scores']
 
-        # R_contrastive: instruction-grounding contrastive reward
-        contrastive_coef = getattr(self.config.verifier, 'contrastive_reward_coef', 0)
-        if 'contrastive_score' in data.batch and contrastive_coef != 0:
-            contrastive_reward = torch.zeros_like(reward_tensor)
-            contrastive_scores = data.batch['contrastive_score'].cpu().numpy().tolist()
-            for i in range(contrastive_reward.shape[0]):
-                contrastive_reward[i, valid_response_length[i]-1] += contrastive_scores[i]
-            reward_tensor_dict['contrastive_scores'] = contrastive_reward
-            reward_metrics['contrastive'] = contrastive_reward.sum(dim=1).mean().item()
-            reward_metrics['contrastive_raw_mean'] = float(np.mean(contrastive_scores))
-            reward_tensor += contrastive_coef * contrastive_reward
 
         reward_tensor_dict['all'] = reward_tensor
         reward_metrics['reward_all'] = reward_tensor.sum(dim=-1).mean(dim=0).item()
