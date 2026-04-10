@@ -1098,10 +1098,26 @@ def finetune(cfg: FinetuneConfig) -> None:
 
             # Optimizer and LR scheduler step
             if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-                progress.update()
+                # [NaN GUARD] Check gradients for NaN/Inf before optimizer step.
+                # This catches the case where loss was finite but backward() produced NaN gradients,
+                # which would otherwise silently corrupt model parameters.
+                grad_finite = all(
+                    torch.isfinite(p.grad).all()
+                    for p in trainable_params
+                    if p.grad is not None
+                )
+                if not grad_finite:
+                    if distributed_state.is_main_process:
+                        print(f"[Grad NaN] Step {gradient_step_idx} (log_step={log_step}): "
+                              f"gradients contain NaN/Inf, skipping optimizer step")
+                        wandb.log({"VLA Train/Grad NaN Skipped": 1}, step=log_step)
+                    optimizer.zero_grad()
+                    progress.update()
+                else:
+                    optimizer.step()
+                    scheduler.step()
+                    optimizer.zero_grad()
+                    progress.update()
 
             # Save model checkpoint: either keep latest checkpoint only or all checkpoints
             if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
