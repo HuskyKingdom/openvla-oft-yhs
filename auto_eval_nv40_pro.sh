@@ -13,7 +13,6 @@ USE_BDDL_LANGUAGE=True
 AUTO_REGRESSION=False
 NUM_IMAGES_IN_INPUT=1
 SUBSTEP_COMPLETION_THRESHOLD=0.03
-UNNORM_KEY=libero_4_task_suites_no_noops
 
 
 
@@ -29,26 +28,26 @@ sed -i 's/use_language: false/use_language: true/' experiments/robot/libero/LIBE
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_object --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_object_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD\
   --task_suite_name libero_goal --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_goal_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_spatial --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_spatial_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD\
   --task_suite_name libero_10 --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_10_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_lan --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 # task
@@ -58,22 +57,22 @@ sed -i 's/use_task: false/use_task: true/' experiments/robot/libero/LIBERO-PRO/e
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD\
   --task_suite_name libero_object --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_object_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_goal --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_goal_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD\
   --task_suite_name libero_spatial --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_spatial_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_10 --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_10_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_task --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language $USE_BDDL_LANGUAGE --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 # swap
@@ -83,22 +82,22 @@ sed -i 's/use_swap: false/use_swap: true/' experiments/robot/libero/LIBERO-PRO/e
 python $EVAL_SCRIPT  \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_object --e_decoding False --save_video False  --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_object_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_goal --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_goal_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT  \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_spatial --e_decoding False --save_video False  --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_spatial_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_10 --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_10_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_swap --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 
 # object
@@ -108,21 +107,21 @@ sed -i 's/use_object: false/use_object: true/' experiments/robot/libero/LIBERO-P
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_object --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_object_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_object --task_label ${TASK_LABEL_PREFIX}_object_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_goal --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_goal_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_goal --task_label ${TASK_LABEL_PREFIX}_goal_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_spatial --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_spatial_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_spatial --task_label ${TASK_LABEL_PREFIX}_spatial_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
   --task_suite_name libero_10 --e_decoding False --save_video False --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION\
-  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key $UNNORM_KEY --task_label ${TASK_LABEL_PREFIX}_10_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
+  --num_trials_per_task 50 --evaluation_config_path experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml  --unnorm_key libero_10 --task_label ${TASK_LABEL_PREFIX}_10_object --use_eos_detection $USE_EOS_DETECTION --use_proprio $USE_PROPRIO --use_l1_regression $USE_L1_REGRESSION --use_bddl_language False --auto_regression $AUTO_REGRESSION --num_images_in_input $NUM_IMAGES_IN_INPUT
 
 sed -i 's/use_object: true/use_object: false/' experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml
