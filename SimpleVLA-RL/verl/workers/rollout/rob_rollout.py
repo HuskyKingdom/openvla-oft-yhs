@@ -801,13 +801,7 @@ class RobHFRollout(BaseRollout):
         return self._prepare_output_batch(vla_history, task_records, batch_size)
     
     def _generate_minibatch_libero(self, prompts):
-        """Generate minibatch for Libero using multiprocessing.
-        
-        When use_substep_rl is enabled (training only):
-        - Uses APD substep instructions instead of episode-level descriptions
-        - Checks substep completion via SigCLIP similarity
-        - Computes contrastive reward by comparing actions under correct vs wrong instructions
-        """
+        """Generate minibatch for Libero using multiprocessing."""
         self.module.eval()
         meta_info = prompts.meta_info
         n_samples = meta_info.get('n_samples', 1)
