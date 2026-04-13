@@ -1,15 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=oft-plus-rl-libero
+#SBATCH --job-name=oft-rl-libero
 #SBATCH --partition=mi3008xl
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=184
 #SBATCH --time=36:00:00
-#SBATCH --output=slurm/logs/oft_plus_rl_libero_%j.out
-#SBATCH --error=slurm/logs/oft_plus_rl_libero_%j.err
-# OpenVLA-OFT+ RL (GRPO) on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
-# Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_plus_rl_libero.sh
+#SBATCH --output=slurm/logs/oft_rl_libero_%j.out
+#SBATCH --error=slurm/logs/oft_rl_libero_%j.err
+# OpenVLA-OFT RL (GRPO) on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
+# Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_substep_rl_libero.sh
 
 set -ex
 
@@ -32,8 +32,8 @@ fi
 # =============================================================================
 # 2. TRAINING RUN CONFIG
 # =============================================================================
-PROJECT_NAME="${PROJECT_NAME:-SimpleVLA-RL-SubstepRL}"
-EXPERIMENT_NAME="${EXPERIMENT_NAME:-oft-plus-rl-libero}"
+PROJECT_NAME="${PROJECT_NAME:-SimpleVLA-RL}"
+EXPERIMENT_NAME="${EXPERIMENT_NAME:-rl-libero}"
 SFT_MODEL_PATH="${SFT_MODEL_PATH:-YOUR SFT_MODEL_PATH}"
 CKPT_PATH="${CKPT_PATH:-THE PATH YOU WANT TO SAVE YOUR CKPT}"
 # Dataset: libero_10 (libero_Long), libero_90, libero_spatial, libero_object, libero_goal
@@ -72,7 +72,7 @@ REF_LOG_PROB_MICRO_BATCH_SIZE="${REF_LOG_PROB_MICRO_BATCH_SIZE:-32}"
 # =============================================================================
 # When True, use autoregressive generation (for SFT models trained with use_l1_regression=False)
 USE_AUTOREGRESSIVE="${USE_AUTOREGRESSIVE:-False}"
-# Reward weights: R_total = VERIFIER_REWARD_COEF * R_task
+# Reward weight: R_total = VERIFIER_REWARD_COEF * R_task
 VERIFIER_REWARD_COEF="${VERIFIER_REWARD_COEF:-5}"
 # KL penalty against reference policy; set 0 to disable
 KL_COEF="${KL_COEF:-0.00}"
@@ -128,7 +128,7 @@ HIP_PATH_CONTAINER="${ROCM_ROOT}"
 # 8. VALIDATION
 # =============================================================================
 if [[ "$SFT_MODEL_PATH" == *"YOUR"* ]] || [[ ! -d "$SFT_MODEL_PATH" ]]; then
-    echo "Error: Set a real SFT_MODEL_PATH (SFT checkpoint). Example: SFT_MODEL_PATH=checkpoints/openvla-oft-sft"
+    echo "Error: Set a real SFT_MODEL_PATH. Example: SFT_MODEL_PATH=checkpoints/openvla-oft-sft"
     exit 1
 fi
 if [[ "$CKPT_PATH" == *"THE PATH"* ]]; then
@@ -142,7 +142,7 @@ fi
 EXPERIMENT_NAME_ESC=$(printf '%s' "$EXPERIMENT_NAME" | sed 's/"/\\"/g')
 DEFAULT_LOCAL_DIR="${CKPT_PATH}/${PROJECT_NAME}/${EXPERIMENT_NAME}"
 
-echo "OFT+ RL (Apptainer) — SFT: $SFT_MODEL_PATH  Experiment: $EXPERIMENT_NAME"
+echo "RL (Apptainer) — SFT: $SFT_MODEL_PATH  Experiment: $EXPERIMENT_NAME"
 echo "  R_task coef=$VERIFIER_REWARD_COEF  KL=$KL_COEF"
 
 # =============================================================================
