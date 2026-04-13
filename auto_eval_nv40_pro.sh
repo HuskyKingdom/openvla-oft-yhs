@@ -2,8 +2,8 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="ckpt/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--oft_plus_discrete--150000_chkpt"
-TASK_LABEL_PREFIX="oft_plus_discrete"
+PRETRAINED_CHECKPOINT="ckpt/SimpleVLA-RL/exp_out/openvla-oft-rl/grpo-liberospatial-run1"
+TASK_LABEL_PREFIX="oft_plus_discrete_rl_step24"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
 USE_PROPRIO=False
