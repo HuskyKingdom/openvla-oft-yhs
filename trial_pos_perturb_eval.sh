@@ -19,7 +19,7 @@ SUBSTEP_COMPLETION_THRESHOLD=0.03
 NUM_TRIALS=1     # 1 episode
 SUITE=libero_10
 TASK_ID=0        # task index to evaluate (0-based); change to select a different task
-SAVE_VIDEO=False  # set to True to save videos
+SAVE_VIDEO=True  # set to True to save videos
 
 # ---------------------------------------------------------------------------
 # Round 1: WITHOUT pos perturbation  (use_language baseline)
