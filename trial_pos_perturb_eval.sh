@@ -16,8 +16,9 @@ AUTO_REGRESSION=False
 NUM_IMAGES_IN_INPUT=1
 SUBSTEP_COMPLETION_THRESHOLD=0.03
 
-NUM_TRIALS=1     # 1 episode per task, minimal smoke test
+NUM_TRIALS=1     # 1 episode
 SUITE=libero_10
+TASK_ID=0        # task index to evaluate (0-based); change to select a different task
 SAVE_VIDEO=False  # set to True to save videos
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,8 @@ LOG_NOPERTURB=$(python $EVAL_SCRIPT \
   --use_l1_regression $USE_L1_REGRESSION \
   --use_bddl_language $USE_BDDL_LANGUAGE \
   --auto_regression $AUTO_REGRESSION \
-  --num_images_in_input $NUM_IMAGES_IN_INPUT 2>&1)
+  --num_images_in_input $NUM_IMAGES_IN_INPUT \
+  --single_task_id $TASK_ID 2>&1)
 echo "$LOG_NOPERTURB"
 
 # ---------------------------------------------------------------------------
@@ -69,7 +71,8 @@ LOG_PERTURB=$(python $EVAL_SCRIPT \
   --use_l1_regression $USE_L1_REGRESSION \
   --use_bddl_language False \
   --auto_regression $AUTO_REGRESSION \
-  --num_images_in_input $NUM_IMAGES_IN_INPUT 2>&1)
+  --num_images_in_input $NUM_IMAGES_IN_INPUT \
+  --single_task_id $TASK_ID 2>&1)
 echo "$LOG_PERTURB"
 
 # Reset config flags at the end

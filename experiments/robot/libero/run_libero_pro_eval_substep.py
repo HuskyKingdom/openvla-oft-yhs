@@ -233,6 +233,9 @@ class GenerateConfig:
     # Task description source
     use_bddl_language: bool = False                  # If True, reads task description from bddl file content (:language field) instead of filename
 
+    # Single-task selection (for quick trials)
+    single_task_id: int = -1                         # If >= 0, only evaluate this task index (ignores all others)
+
     # fmt: on
 
 
@@ -1323,8 +1326,9 @@ def eval_libero(cfg: GenerateConfig) -> float:
         )
 
     # Start evaluation
+    task_ids = [cfg.single_task_id] if cfg.single_task_id >= 0 else range(num_tasks)
     total_episodes, total_successes = 0, 0
-    for task_id in tqdm.tqdm(range(num_tasks)):
+    for task_id in tqdm.tqdm(task_ids):
         total_episodes, total_successes = run_task(
             cfg,
             task_suite,
