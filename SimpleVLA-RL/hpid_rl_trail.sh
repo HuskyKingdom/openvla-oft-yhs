@@ -13,4 +13,4 @@ export DATA_TRAIN_BATCH_SIZE=8
 export ACTOR_PPO_MINI_BATCH_SIZE=32   # must be <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
 export ACTOR_TRAJ_MINI_BATCH_SIZE=8   # must be <= DATA_TRAIN_BATCH_SIZE
 
-sbatch examples/run_openvla_oft_substep_rl_libero.sh
+sbatch examples/run_openvla_oft_hpid.sh.sh

@@ -1,0 +1,84 @@
+#!/bin/bash
+# Quick trial: compare evaluations WITH vs WITHOUT position perturbation (use_environment).
+# Runs libero_10 only × 2 conditions, 1 trial per task (minimal smoke test).
+
+echo "=== Trial: Pos Perturbation Comparison ==================================="
+FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
+PRETRAINED_CHECKPOINT="ckpt/SimpleVLA-RL/exp_out/openvla-oft-rl/grpo-liberospatial-run1/actor/global_step_24"
+TASK_LABEL_PREFIX="trial_pos_perturb_rl_step24"
+USE_EOS_DETECTION=False
+EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
+USE_PROPRIO=False
+USE_L1_REGRESSION=False
+USE_SUBSTEP_DECOMPOSITION=False
+USE_BDDL_LANGUAGE=True
+AUTO_REGRESSION=False
+NUM_IMAGES_IN_INPUT=1
+SUBSTEP_COMPLETION_THRESHOLD=0.03
+
+NUM_TRIALS=1     # 1 episode per task, minimal smoke test
+SUITES=(libero_10)
+
+# ---------------------------------------------------------------------------
+# Round 1: WITHOUT pos perturbation  (use_language baseline)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Round 1: WITHOUT pos perturbation (use_language baseline) ------------"
+bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
+sed -i 's/use_language: false/use_language: true/' $FILE_PATH
+
+for SUITE in "${SUITES[@]}"; do
+    UNNORM_KEY="${SUITE}"
+    echo "[NO-PERTURB] Suite: $SUITE"
+    python $EVAL_SCRIPT \
+      --pretrained_checkpoint $PRETRAINED_CHECKPOINT \
+      --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
+      --task_suite_name $SUITE \
+      --e_decoding False --save_video False \
+      --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION \
+      --num_trials_per_task $NUM_TRIALS \
+      --evaluation_config_path $FILE_PATH \
+      --unnorm_key $UNNORM_KEY \
+      --task_label ${TASK_LABEL_PREFIX}_${SUITE}_noperturb_lan \
+      --use_eos_detection $USE_EOS_DETECTION \
+      --use_proprio $USE_PROPRIO \
+      --use_l1_regression $USE_L1_REGRESSION \
+      --use_bddl_language $USE_BDDL_LANGUAGE \
+      --auto_regression $AUTO_REGRESSION \
+      --num_images_in_input $NUM_IMAGES_IN_INPUT
+done
+
+# ---------------------------------------------------------------------------
+# Round 2: WITH pos perturbation  (use_environment)
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- Round 2: WITH pos perturbation (use_environment) ---------------------"
+bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
+sed -i 's/use_environment: false/use_environment: true/' $FILE_PATH
+
+for SUITE in "${SUITES[@]}"; do
+    UNNORM_KEY="${SUITE}"
+    echo "[POS-PERTURB] Suite: $SUITE"
+    python $EVAL_SCRIPT \
+      --pretrained_checkpoint $PRETRAINED_CHECKPOINT \
+      --substep_completion_threshold $SUBSTEP_COMPLETION_THRESHOLD \
+      --task_suite_name $SUITE \
+      --e_decoding False --save_video False \
+      --use_substep_decomposition $USE_SUBSTEP_DECOMPOSITION \
+      --num_trials_per_task $NUM_TRIALS \
+      --evaluation_config_path $FILE_PATH \
+      --unnorm_key $UNNORM_KEY \
+      --task_label ${TASK_LABEL_PREFIX}_${SUITE}_posperturb_env \
+      --use_eos_detection $USE_EOS_DETECTION \
+      --use_proprio $USE_PROPRIO \
+      --use_l1_regression $USE_L1_REGRESSION \
+      --use_bddl_language False \
+      --auto_regression $AUTO_REGRESSION \
+      --num_images_in_input $NUM_IMAGES_IN_INPUT
+done
+
+# Reset config flags at the end
+bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
+
+echo ""
+echo "=== Trial complete. Check experiments/logs/ for results. ================="
