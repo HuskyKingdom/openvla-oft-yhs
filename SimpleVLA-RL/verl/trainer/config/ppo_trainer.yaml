@@ -178,6 +178,8 @@ verifier:
 #  timeout: 5
 #  num_processes: 64
   reward_coef: 5
+  dist_reward_coef: 0.0    # weight for gripper-to-target distance reward (0 = disabled)
+  dist_reward_sigma: 0.05  # Gaussian kernel width in metres
 
 reward_model:
   enable: True

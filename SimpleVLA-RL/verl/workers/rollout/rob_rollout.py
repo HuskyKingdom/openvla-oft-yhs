@@ -918,6 +918,7 @@ class RobHFRollout(BaseRollout):
                 "complete": init_data['complete'],
                 "finish_step": init_data['finish_step'],
                 "task_file_name": init_data['task_file_name'],
+                "min_dist": init_data.get('min_dist', float('inf')),
             })
             if is_valid:
                 valid_video[init_data['task_file_name']].extend(init_data['valid_images'])
@@ -961,6 +962,7 @@ class RobHFRollout(BaseRollout):
                 task_records[idx]['active'] = result['active']
                 task_records[idx]['complete'] = result['complete']
                 task_records[idx]['finish_step'] = result['finish_step']
+                task_records[idx]['min_dist'] = result.get('min_dist', task_records[idx]['min_dist'])
                 if is_valid:
                     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
 
@@ -1010,6 +1012,11 @@ class RobHFRollout(BaseRollout):
         
         batch["complete"] = torch.tensor([bool(k["complete"]) for k in task_records], dtype=torch.bool, device=batch['responses'].device)
         batch["finish_step"] = torch.tensor([k["finish_step"] for k in task_records], dtype=torch.int64, device=batch['responses'].device)
+        # Cap inf at 10.0 m (effectively 0 reward) to avoid NaN in downstream kernels
+        batch["min_dist"] = torch.tensor(
+            [min(float(k.get("min_dist", 10.0)), 10.0) for k in task_records],
+            dtype=torch.float32, device=batch['responses'].device,
+        )
 
         output_batch = TensorDict(batch, batch_size=batch_size)
         return DataProto(batch=output_batch)

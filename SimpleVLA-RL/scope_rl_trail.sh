@@ -14,6 +14,11 @@ export SWAP_DISTANCE_END="0.40"       # metres; max allowed swap distance at cur
 export SWAP_CURRICULUM_STEPS="12500"      # training steps to reach max distance (0 = no curriculum)
 
 
+# Distance reward: Gaussian kernel on min gripper-to-target distance, mapped to [0,1]
+# Ensure dist_reward_coef * 1.0 << verifier reward (5.0), so success always dominates
+export DIST_REWARD_COEF="0.3"         # weight; 0.3 << 5.0 (success reward)
+export DIST_REWARD_SIGMA="0.05"       # Gaussian width in metres (~5 cm)
+
 export DATA_TRAIN_BATCH_SIZE=8
 export ACTOR_PPO_MINI_BATCH_SIZE=32   # must be <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
 export ACTOR_TRAJ_MINI_BATCH_SIZE=8   # must be <= DATA_TRAIN_BATCH_SIZE

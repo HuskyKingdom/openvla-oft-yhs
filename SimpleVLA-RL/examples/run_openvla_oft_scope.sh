@@ -80,6 +80,9 @@ SWAP_CURRICULUM_STEPS="${SWAP_CURRICULUM_STEPS:-0}"
 VERIFIER_REWARD_COEF="${VERIFIER_REWARD_COEF:-5}"
 # KL penalty against reference policy; set 0 to disable
 KL_COEF="${KL_COEF:-0.00}"
+# Distance reward: Gaussian kernel on min gripper-to-target distance (0 = disabled)
+DIST_REWARD_COEF="${DIST_REWARD_COEF:-0.0}"
+DIST_REWARD_SIGMA="${DIST_REWARD_SIGMA:-0.05}"
 
 # =============================================================================
 # 6. TRAINER SCHEDULE (Hydra trainer.*)
@@ -219,6 +222,8 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   actor_rollout_ref.ref.fsdp_config.param_offload=True \
   algorithm.kl_ctrl.kl_coef=$KL_COEF \
   verifier.reward_coef=$VERIFIER_REWARD_COEF \
+  verifier.dist_reward_coef=$DIST_REWARD_COEF \
+  verifier.dist_reward_sigma=$DIST_REWARD_SIGMA \
   trainer.logger=\"[console,wandb]\" \
   trainer.project_name='$PROJECT_NAME' \
   trainer.experiment_name=\"$EXPERIMENT_NAME_ESC\" \

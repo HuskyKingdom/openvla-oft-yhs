@@ -80,10 +80,23 @@ class RobRewardManager():
         reward_tensor_dict['gt_scores'] = verifier_reward
 
         if self.config.verifier.reward_coef!=0:
-            
             reward_metrics['verifier'] = reward_tensor_dict['gt_scores'].sum(dim=1).mean().item()
             reward_tensor += self.config.verifier.reward_coef * reward_tensor_dict['gt_scores']
 
+        # Distance reward: Gaussian kernel on minimum gripper-to-target distance.
+        # Gated by dist_reward_coef > 0 so the code path is identical to before when disabled.
+        dist_reward_coef = getattr(self.config.verifier, 'dist_reward_coef', 0.0)
+        if dist_reward_coef > 0.0 and 'min_dist' in data.batch:
+            sigma = getattr(self.config.verifier, 'dist_reward_sigma', 0.05)
+            min_dist = data.batch['min_dist'].float().to(reward_tensor.device)
+            # Gaussian kernel: r=1 at dist=0, decays to ~0 for dist >> sigma
+            r_dist = torch.exp(-min_dist ** 2 / (2.0 * sigma ** 2))
+            dist_reward = torch.zeros_like(verifier_reward)
+            for i in range(dist_reward.shape[0]):
+                dist_reward[i, valid_response_length[i] - 1] += r_dist[i]
+            reward_tensor_dict['dist_scores'] = dist_reward
+            reward_metrics['dist'] = dist_reward.sum(dim=1).mean().item()
+            reward_tensor += dist_reward_coef * dist_reward
 
         reward_tensor_dict['all'] = reward_tensor
         reward_metrics['reward_all'] = reward_tensor.sum(dim=-1).mean(dim=0).item()
