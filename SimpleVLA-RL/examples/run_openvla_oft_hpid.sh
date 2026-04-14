@@ -6,8 +6,8 @@
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=184
 #SBATCH --time=36:00:00
-#SBATCH --output=slurm/logs/oft_rl_libero_%j.out
-#SBATCH --error=slurm/logs/oft_rl_libero_%j.err
+#SBATCH --output=slurm/logs/scope_rl_libero_%j.out
+#SBATCH --error=slurm/logs/scope_rl_libero_%j.err
 # OpenVLA-OFT RL (GRPO) on LIBERO — runs inside simplevla-rl-rocm.sif (Apptainer).
 # Submit from SimpleVLA-RL root:  sbatch examples/run_openvla_oft_substep_rl_libero.sh
 
