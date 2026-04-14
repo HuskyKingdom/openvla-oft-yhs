@@ -97,6 +97,10 @@ actor_rollout_ref:
     model_family: openvla
     task_suite_name: libero_10
     num_steps_wait: 10
+    swap_objects: False
+    swap_min_distance: 0.05    # metres; only swap objects this close at curriculum start
+    swap_max_distance: 1.0     # metres; maximum swap distance at curriculum end
+    swap_curriculum_steps: 0   # training steps to reach max distance (0 = no curriculum)
     use_proprio: False
     pretrained_checkpoint: None
     center_crop: True

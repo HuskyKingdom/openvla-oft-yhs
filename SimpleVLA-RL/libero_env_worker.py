@@ -11,11 +11,75 @@ or libero.benchmark.
 """
 import gc
 import os
+import random as _random
 import numpy as np
 
 
 def _get_libero_dummy_action(model_family: str):
     return [0, 0, 0, 0, 0, 0, -1]
+
+
+def _random_swap_objects(sim, seed=None, max_distance=1e9):
+    """Randomly swap the (x, y) table positions of two moveable objects.
+
+    Only x and y are swapped; z is kept so objects remain at their original
+    height and don't fall through the table or become unreachable.
+
+    Free joints (mjJNT_FREE = 0) own a 7-value qpos block: [x, y, z, qw, qx, qy, qz].
+    Robot bodies are excluded by name prefix.
+
+    Parameters
+    ----------
+    sim          : MjSim
+    seed         : int or None
+        When provided, seeds the RNG before sampling so that all rollouts that
+        share the same (task, trial) — i.e. the GRPO n_samples group — pick the
+        same swap pair and therefore start from identical visual observations.
+    max_distance : float
+        Curriculum gate (metres).  Only pairs whose current (x, y) separation
+        is <= max_distance are eligible.  Start small and grow over training to
+        implement a swap-distance curriculum.
+    """
+    rng = _random.Random(seed)  # isolated RNG, does not affect global state
+
+    swappable = []
+    for jnt_id, jnt_type in enumerate(sim.model.jnt_type):
+        if jnt_type != 0:  # 0 = mjJNT_FREE (6-DOF)
+            continue
+        body_id = sim.model.jnt_bodyid[jnt_id]
+        body_name = sim.model.body_id2name(body_id)
+        if "robot" in body_name.lower():
+            continue
+        qpos_addr = sim.model.jnt_qposadr[jnt_id]
+        swappable.append((body_name, qpos_addr))
+
+    if len(swappable) < 2:
+        return
+
+    # Build the set of eligible pairs filtered by distance curriculum
+    eligible = []
+    for i in range(len(swappable)):
+        for j in range(i + 1, len(swappable)):
+            _, qa = swappable[i]
+            _, qb = swappable[j]
+            dx = sim.data.qpos[qa]     - sim.data.qpos[qb]
+            dy = sim.data.qpos[qa + 1] - sim.data.qpos[qb + 1]
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist <= max_distance:
+                eligible.append((swappable[i], swappable[j]))
+
+    if not eligible:
+        return  # no pair within current curriculum distance — skip swap
+
+    (_, qa), (_, qb) = rng.choice(eligible)
+
+    # Swap x and y; preserve z and orientation
+    x_a, y_a = float(sim.data.qpos[qa]),     float(sim.data.qpos[qa + 1])
+    x_b, y_b = float(sim.data.qpos[qb]),     float(sim.data.qpos[qb + 1])
+    sim.data.qpos[qa],     sim.data.qpos[qa + 1] = x_b, y_b
+    sim.data.qpos[qb],     sim.data.qpos[qb + 1] = x_a, y_a
+
+    sim.forward()  # propagate new positions to derived quantities
 
 
 def _normalize_gripper_action(action: np.ndarray, binarize: bool = True) -> np.ndarray:
@@ -41,7 +105,8 @@ def _invert_gripper_action(action: np.ndarray) -> np.ndarray:
 
 def env_worker(task_bddl_file, task_description, initial_state,
                task_name, task_id, trial_id, config,
-               input_queue, output_queue, is_valid, global_steps, max_steps):
+               input_queue, output_queue, is_valid, global_steps, max_steps,
+               do_swap=False, swap_seed=None, swap_max_distance=1e9):
     """Worker process for Libero environments (spawn-safe, no torch needed).
 
     Parameters
@@ -79,6 +144,9 @@ def env_worker(task_bddl_file, task_description, initial_state,
 
     env.reset()
     obs = env.set_init_state(initial_state)
+
+    if do_swap:
+        _random_swap_objects(env.sim, seed=swap_seed, max_distance=swap_max_distance)
 
     t = 0
     valid_images = []

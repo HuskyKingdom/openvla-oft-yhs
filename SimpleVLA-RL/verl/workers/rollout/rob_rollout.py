@@ -77,6 +77,23 @@ __all__ = ['RobHFRollout']
 # Environment initialization lock for Robotwin
 _ENV_INIT_LOCK = threading.Lock()
 
+
+def _compute_swap_max_distance(global_steps: int, config) -> float:
+    """Linear curriculum: allowed swap distance grows from min to max over training.
+
+    Config fields (all under actor_rollout_ref.rollout):
+        swap_min_distance     : metres at step 0           (default 0.05)
+        swap_max_distance     : metres at curriculum end   (default 1e9 = no limit)
+        swap_curriculum_steps : steps to reach max         (default 0 = no curriculum)
+    """
+    min_d = getattr(config, 'swap_min_distance', 0.05)
+    max_d = getattr(config, 'swap_max_distance', 1e9)
+    curriculum_steps = getattr(config, 'swap_curriculum_steps', 0)
+    if curriculum_steps <= 0:
+        return max_d
+    progress = min(global_steps / curriculum_steps, 1.0)
+    return min_d + progress * (max_d - min_d)
+
 OPENVLA_V01_SYSTEM_PROMPT = (
     "A chat between a curious user and an artificial intelligence assistant. "
     "The assistant gives helpful, detailed, and polite answers to the user's questions."
@@ -848,17 +865,38 @@ class RobHFRollout(BaseRollout):
         input_queues = []
         output_queues = []
         _spawn_ctx = mp_get_context('spawn')
+        do_swap = getattr(self.config, 'swap_objects', False)
+
+        # Curriculum: compute the allowed swap distance from the actual training step.
+        # meta_info['global_steps'] is available even for training rollouts; the local
+        # `global_steps` variable above is zeroed for training (video-logging only).
+        swap_max_distance = 1e9
+        if do_swap:
+            _gs = meta_info.get('global_steps', 0)
+            swap_max_distance = _compute_swap_max_distance(_gs, self.config)
+
+        # Pre-compute one swap seed per unique (task, task_id, trial_id) so that all
+        # n_samples rollouts in a GRPO group see the same object swap and start from
+        # identical visual observations — keeping the GRPO advantage estimate unbiased.
+        swap_seeds: dict = {}
+        if do_swap:
+            for idx in range(batch_size):
+                key = (task_suite_name[idx], task_id[idx][0].item(), trial_id[idx][0].item())
+                if key not in swap_seeds:
+                    swap_seeds[key] = random.randint(0, 2**31 - 1)
 
         for idx in range(batch_size):
             task_name = task_suite_name[idx]
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
+            swap_seed = swap_seeds.get((task_name, t_id, tr_id)) if do_swap else None
             input_q = _spawn_ctx.Queue()
             output_q = _spawn_ctx.Queue()
             p = _spawn_ctx.Process(
                 target=_libero_env_worker,
                 args=(task_bddl_files[idx], task_descriptions_pre[idx], initial_states_pre[idx],
-                      task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps)
+                      task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps,
+                      do_swap, swap_seed, swap_max_distance)
             )
             p.start()
             processes.append(p)

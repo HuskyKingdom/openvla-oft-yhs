@@ -72,6 +72,10 @@ REF_LOG_PROB_MICRO_BATCH_SIZE="${REF_LOG_PROB_MICRO_BATCH_SIZE:-32}"
 # =============================================================================
 # When True, use autoregressive generation (for SFT models trained with use_l1_regression=False)
 USE_AUTOREGRESSIVE="${USE_AUTOREGRESSIVE:-False}"
+SWAP_OBJECTS="${SWAP_OBJECTS:-False}"
+SWAP_DISTANCE_START="${SWAP_DISTANCE_START:-0.12}"
+SWAP_DISTANCE_END="${SWAP_DISTANCE_END:-0.40}"
+SWAP_CURRICULUM_STEPS="${SWAP_CURRICULUM_STEPS:-0}"
 # Reward weight: R_total = VERIFIER_REWARD_COEF * R_task
 VERIFIER_REWARD_COEF="${VERIFIER_REWARD_COEF:-5}"
 # KL penalty against reference policy; set 0 to disable
@@ -206,6 +210,10 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.name=hf \
   actor_rollout_ref.rollout.gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION \
   actor_rollout_ref.rollout.use_autoregressive=$USE_AUTOREGRESSIVE \
+  actor_rollout_ref.rollout.swap_objects=$SWAP_OBJECTS \
+  actor_rollout_ref.rollout.swap_min_distance=$SWAP_DISTANCE_START \
+  actor_rollout_ref.rollout.swap_max_distance=$SWAP_DISTANCE_END \
+  actor_rollout_ref.rollout.swap_curriculum_steps=$SWAP_CURRICULUM_STEPS \
   actor_rollout_ref.actor.use_autoregressive=$USE_AUTOREGRESSIVE \
   actor_rollout_ref.ref.log_prob_micro_batch_size=$REF_LOG_PROB_MICRO_BATCH_SIZE \
   actor_rollout_ref.ref.fsdp_config.param_offload=True \
