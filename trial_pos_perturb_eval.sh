@@ -1,5 +1,5 @@
 #!/bin/bash
-# Quick trial: compare evaluations WITH vs WITHOUT position perturbation (use_environment).
+# Quick trial: compare evaluations WITH vs WITHOUT position perturbation (use_swap).
 # Runs libero_10 only × 2 conditions, 1 trial per task (minimal smoke test).
 
 echo "=== Trial: Pos Perturbation Comparison ==================================="
@@ -52,9 +52,9 @@ echo "$LOG_NOPERTURB"
 # Round 2: WITH pos perturbation  (use_environment)
 # ---------------------------------------------------------------------------
 echo ""
-echo "--- Round 2: WITH pos perturbation (use_environment) ---------------------"
+echo "--- Round 2: WITH pos perturbation (use_swap) ----------------------------"
 bash experiments/robot/libero/LIBERO-PRO/reset_eval_config.sh $FILE_PATH
-sed -i 's/use_environment: false/use_environment: true/' $FILE_PATH
+sed -i 's/use_swap: false/use_swap: true/' $FILE_PATH
 
 LOG_PERTURB=$(python $EVAL_SCRIPT \
   --pretrained_checkpoint $PRETRAINED_CHECKPOINT \
@@ -65,7 +65,7 @@ LOG_PERTURB=$(python $EVAL_SCRIPT \
   --num_trials_per_task $NUM_TRIALS \
   --evaluation_config_path $FILE_PATH \
   --unnorm_key $SUITE \
-  --task_label ${TASK_LABEL_PREFIX}_${SUITE}_posperturb_env \
+  --task_label ${TASK_LABEL_PREFIX}_${SUITE}_posperturb_swap \
   --use_eos_detection $USE_EOS_DETECTION \
   --use_proprio $USE_PROPRIO \
   --use_l1_regression $USE_L1_REGRESSION \
