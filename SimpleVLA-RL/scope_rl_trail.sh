@@ -8,9 +8,9 @@ export HIP_VISIBLE_DEVICES="0,1,2,3,4,5,6,7"
 # Use autoregressive generation (for SFT models trained with use_l1_regression=False)
 export USE_AUTOREGRESSIVE="False"
 # Randomly swap two objects' (x,y) positions at episode start to encourage instruction grounding
-export SWAP_OBJECTS="False"
-export SWAP_DISTANCE_START="0.08"     # metres; max allowed swap distance at curriculum start
-export SWAP_DISTANCE_END="0.60"       # metres; max allowed swap distance at curriculum end
+export SWAP_OBJECTS="True"
+export SWAP_DISTANCE_START="0.14"     # metres; max allowed swap distance at curriculum start
+export SWAP_DISTANCE_END="0.40"       # metres; max allowed swap distance at curriculum end
 export SWAP_CURRICULUM_STEPS="12500"      # training steps to reach max distance (0 = no curriculum)
 
 
