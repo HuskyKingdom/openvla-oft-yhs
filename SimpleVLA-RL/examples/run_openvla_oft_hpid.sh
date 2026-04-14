@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=oft-rl-libero
+#SBATCH --job-name=scope-rl-libero
 #SBATCH --partition=mi3008xl
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
