@@ -13,9 +13,9 @@ export USE_AUTOREGRESSIVE="False"
 # Randomly swap two objects' (x,y) positions at episode start to encourage instruction grounding
 # SAGA synergises with swap: object-aware pick detection penalises spatial shortcuts
 export SWAP_OBJECTS="True"
-export SWAP_DISTANCE_START="0.14"     # metres; max allowed swap distance at curriculum start
+export SWAP_DISTANCE_START="0.08"     # metres; max allowed swap distance at curriculum start
 export SWAP_DISTANCE_END="0.40"       # metres; max allowed swap distance at curriculum end
-export SWAP_CURRICULUM_STEPS="12500"  # training steps to reach max distance (0 = no curriculum)
+export SWAP_CURRICULUM_STEPS="15000"  # training steps to reach max distance (0 = no curriculum)
 
 # Distance reward: Gaussian kernel on min gripper-to-target distance, mapped to [0,1]
 export DIST_REWARD_COEF="0.0"         # weight; 0.3 << 5.0 (success reward)
