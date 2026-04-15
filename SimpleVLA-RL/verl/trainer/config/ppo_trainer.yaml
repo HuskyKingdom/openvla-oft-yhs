@@ -107,6 +107,7 @@ actor_rollout_ref:
     max_prompt_length: 512
     num_images_in_input: 1
     use_autoregressive: false
+    saga_apd_plans_path: ${saga.apd_plans_path}
     name: vllm
     temperature: 1.0
     top_k: -1 # 0 for hf rollout, -1 for vllm rollout
@@ -233,6 +234,10 @@ reward_model:
     loss_type: ce # currently only supports ce loss
 
 
+
+saga:
+  enabled: False
+  apd_plans_path: null  # path to APD_plans_scaled.json
 
 algorithm:
   gamma: 1.0

@@ -158,6 +158,154 @@ def _min_dist_to_targets(obs, sim, target_body_ids):
     return min_d
 
 
+# ---------------------------------------------------------------------------
+# SAGA: Object-Aware Substep Tracking (lightweight, no torch dependency)
+# ---------------------------------------------------------------------------
+
+def _build_moveable_body_map(sim):
+    """Build name→body_id mapping for all free-jointed non-robot bodies."""
+    mapping = {}
+    for jnt_id, jnt_type in enumerate(sim.model.jnt_type):
+        if jnt_type != 0:  # mjJNT_FREE = 0
+            continue
+        body_id = sim.model.jnt_bodyid[jnt_id]
+        body_name = sim.model.body_id2name(body_id)
+        if "robot" in body_name.lower():
+            continue
+        mapping[body_name] = body_id
+    return mapping
+
+
+def _resolve_saga_substep_config(sim, key_steps, bddl_file):
+    """Resolve target body IDs for SAGA substep config.
+
+    Args:
+        sim: MjSim instance (after env.reset and optional swap).
+        key_steps: list of {"type": "pick"/"place", "subgoal": str}
+        bddl_file: path to BDDL file (for obj_of_interest fallback).
+
+    Returns:
+        list of {"type", "subgoal", "target_object", "target_body_id"} or None on failure.
+    """
+    body_map = _build_moveable_body_map(sim)
+    if not body_map:
+        return None
+
+    config = []
+    for step in key_steps:
+        subgoal_lower = step["subgoal"].lower()
+        target_name = None
+        target_bid = None
+        # Match body name (underscores→spaces) against subgoal text
+        for bname, bid in body_map.items():
+            natural = bname.replace("_", " ")
+            if natural in subgoal_lower:
+                target_name = bname
+                target_bid = bid
+                break
+        config.append({
+            "type": step["type"],
+            "subgoal": step["subgoal"],
+            "target_object": target_name,
+            "target_body_id": target_bid,
+        })
+    return config
+
+
+class SagaSubstepTracker:
+    """Object-aware substep tracker for SAGA.
+
+    Tracks pick/place substep completion during RL rollouts.
+    Pick detection is conditioned on the subgoal-specified target object.
+    Place detection uses the environment's native success signal.
+
+    Uses only numpy (no torch) to stay lightweight in spawned subprocesses.
+    """
+
+    def __init__(self, sim, substep_config, env,
+                 prox_thresh=0.05, grip_thresh=0.025, lift_thresh=0.02):
+        self.sim = sim
+        self.env = env
+        self.substep_config = substep_config
+        self.n_substeps = len(substep_config)
+        self.prox_thresh = prox_thresh
+        self.grip_thresh = grip_thresh
+        self.lift_thresh = lift_thresh
+
+        # Record initial z of each target for lift detection
+        self.initial_obj_z = {}
+        for k, cfg in enumerate(substep_config):
+            bid = cfg.get("target_body_id")
+            if bid is not None:
+                self.initial_obj_z[k] = float(sim.data.body_xpos[bid][2])
+
+        # Monotonic state
+        self.current_substep = 0
+        self.substep_completed = [False] * self.n_substeps
+        self.boundary_steps = [-1] * self.n_substeps
+
+    def step(self, obs, env_step):
+        """Called after each env.step(). Updates substep tracking.
+
+        Args:
+            obs: environment observation dict (has robot0_eef_pos, robot0_gripper_qpos).
+            env_step: current finish_step count (individual env steps).
+        """
+        if self.current_substep >= self.n_substeps:
+            return
+
+        cfg = self.substep_config[self.current_substep]
+
+        if cfg["type"] == "pick" and self._check_pick(obs, cfg):
+            self.substep_completed[self.current_substep] = True
+            self.boundary_steps[self.current_substep] = env_step
+            self.current_substep += 1
+        elif cfg["type"] == "place" and self._check_place():
+            self.substep_completed[self.current_substep] = True
+            self.boundary_steps[self.current_substep] = env_step
+            self.current_substep += 1
+
+    def _check_pick(self, obs, cfg):
+        """Object-aware pick detection: only checks the subgoal target."""
+        bid = cfg.get("target_body_id")
+        if bid is None:
+            return False
+
+        eef_pos = obs.get("robot0_eef_pos")
+        if eef_pos is None:
+            return False
+
+        obj_pos = self.sim.data.body_xpos[bid]
+
+        # 1) Proximity: EEF close to target object
+        if float(np.linalg.norm(eef_pos - obj_pos)) >= self.prox_thresh:
+            return False
+
+        # 2) Gripper closed
+        grip = obs.get("robot0_gripper_qpos")
+        if grip is None or float(grip[0]) >= self.grip_thresh:
+            return False
+
+        # 3) Object lifted above its initial z
+        init_z = self.initial_obj_z.get(self.current_substep, 0.0)
+        if float(obj_pos[2]) <= init_z + self.lift_thresh:
+            return False
+
+        return True
+
+    def _check_place(self):
+        """Place detection via environment's native success signal."""
+        try:
+            return self.env._check_success()
+        except Exception:
+            return False
+
+    def get_results(self):
+        """Return substep rewards and boundary steps as plain Python lists."""
+        rewards = [1.0 if c else 0.0 for c in self.substep_completed]
+        return rewards, list(self.boundary_steps)
+
+
 def _normalize_gripper_action(action: np.ndarray, binarize: bool = True) -> np.ndarray:
     normalized_action = action.copy()
     orig_low, orig_high = 0.0, 1.0
@@ -182,7 +330,8 @@ def _invert_gripper_action(action: np.ndarray) -> np.ndarray:
 def env_worker(task_bddl_file, task_description, initial_state,
                task_name, task_id, trial_id, config,
                input_queue, output_queue, is_valid, global_steps, max_steps,
-               do_swap=False, swap_seed=None, swap_max_distance=1e9):
+               do_swap=False, swap_seed=None, swap_max_distance=1e9,
+               saga_key_steps=None):
     """Worker process for Libero environments (spawn-safe, no torch needed).
 
     Parameters
@@ -227,6 +376,13 @@ def env_worker(task_bddl_file, task_description, initial_state,
 
     # Pre-compute target body IDs once for distance tracking
     target_body_ids = _get_target_body_ids(env.sim, task_bddl_file)
+
+    # SAGA: initialise object-aware substep tracker (if plan steps provided)
+    saga_tracker = None
+    if saga_key_steps:
+        saga_config = _resolve_saga_substep_config(env.sim, saga_key_steps, task_bddl_file)
+        if saga_config and any(c.get("target_body_id") is not None for c in saga_config):
+            saga_tracker = SagaSubstepTracker(env.sim, saga_config, env)
 
     t = 0
     valid_images = []
@@ -275,6 +431,10 @@ def env_worker(task_bddl_file, task_description, initial_state,
             if d < min_dist:
                 min_dist = d
 
+            # SAGA: update substep tracker after each env step
+            if saga_tracker is not None:
+                saga_tracker.step(obs, finish_step)
+
             if is_valid:
                 img = obs["agentview_image"][::-1, ::-1]
                 step_images.append(img)
@@ -289,7 +449,7 @@ def env_worker(task_bddl_file, task_description, initial_state,
                     min_dist = 0.0
                 break
 
-        output_queue.put({
+        step_result = {
             'type': 'step',
             'obs': obs,
             'active': active,
@@ -297,4 +457,12 @@ def env_worker(task_bddl_file, task_description, initial_state,
             'finish_step': finish_step,
             'min_dist': min_dist,
             'valid_images': step_images.copy() if is_valid else [],
-        })
+        }
+
+        # SAGA: attach substep tracking results to every step message
+        if saga_tracker is not None:
+            sr, sb = saga_tracker.get_results()
+            step_result['saga_substep_rewards'] = sr
+            step_result['saga_substep_boundary_steps'] = sb
+
+        output_queue.put(step_result)

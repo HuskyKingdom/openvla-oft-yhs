@@ -172,6 +172,27 @@ def compute_advantage(data: DataProto, gamma, lam, adv_estimator, config):
         data.batch['advantages'] = advantages
         data.batch['returns'] = returns
         
+    elif adv_estimator == 'saga':
+        from verl.utils.saga import compute_saga_grpo_outcome_advantage
+        token_level_rewards = data.batch['token_level_rewards']
+        index = data.non_tensor_batch['uid']
+        responses = data.batch['responses']
+        response_length = responses.size(1) * responses.size(2)
+        finish_step = data.batch['finish_step'] * config.actor_rollout_ref.model.action_token_len
+        steps = torch.arange(response_length, device=data.batch['responses'].device)
+        steps_expanded = steps.unsqueeze(0).expand(data.batch['responses'].size(0), -1)
+        response_mask = steps_expanded < finish_step.unsqueeze(1)
+        advantages, returns = compute_saga_grpo_outcome_advantage(
+            token_level_rewards=token_level_rewards,
+            eos_mask=response_mask,
+            index=index,
+            substep_rewards=data.batch['saga_substep_rewards'],
+            substep_boundary_steps=data.batch['saga_substep_boundary_steps'],
+            action_token_len=config.actor_rollout_ref.model.action_token_len,
+        )
+        data.batch['advantages'] = advantages
+        data.batch['returns'] = returns
+
     elif adv_estimator == 'reinforce_plus_plus':
         token_level_rewards = data.batch['token_level_rewards']
         responses = data.batch['responses']

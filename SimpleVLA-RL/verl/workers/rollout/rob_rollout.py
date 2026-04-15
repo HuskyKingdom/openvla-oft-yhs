@@ -483,6 +483,14 @@ class RobHFRollout(BaseRollout):
         self.processor = AutoProcessor.from_pretrained(config.pretrained_checkpoint, trust_remote_code=True)
         self.vla_preprocess()
 
+        # SAGA: load plan configs if enabled
+        self.saga_plan_configs = {}
+        saga_cfg = getattr(config, 'saga_apd_plans_path', None)
+        if saga_cfg:
+            from verl.utils.saga import load_saga_plan_configs
+            self.saga_plan_configs = load_saga_plan_configs(saga_cfg)
+            print(f"[SAGA] Loaded plan configs for {len(self.saga_plan_configs)} tasks")
+
         # Setup execution pool based on task suite
         if "robotwin" in self.config.task_suite_name:
             self.env_thread_pool = ThreadPoolExecutor(max_workers=16)
@@ -890,13 +898,15 @@ class RobHFRollout(BaseRollout):
             t_id = task_id[idx][0].item()
             tr_id = trial_id[idx][0].item()
             swap_seed = swap_seeds.get((task_name, t_id, tr_id)) if do_swap else None
+            # SAGA: look up key steps for this task's instruction
+            saga_ks = self.saga_plan_configs.get(task_descriptions_pre[idx])
             input_q = _spawn_ctx.Queue()
             output_q = _spawn_ctx.Queue()
             p = _spawn_ctx.Process(
                 target=_libero_env_worker,
                 args=(task_bddl_files[idx], task_descriptions_pre[idx], initial_states_pre[idx],
                       task_name, t_id, tr_id, self.config, input_q, output_q, is_valid, global_steps, max_steps,
-                      do_swap, swap_seed, swap_max_distance)
+                      do_swap, swap_seed, swap_max_distance, saga_ks)
             )
             p.start()
             processes.append(p)
@@ -908,6 +918,9 @@ class RobHFRollout(BaseRollout):
         task_records = []
         valid_video = defaultdict(list)
         
+        # SAGA: determine the fixed K (max substeps) for this batch
+        saga_K = 2  # pick + place
+
         for idx in range(batch_size):
             init_data = output_queues[idx].get(timeout=120)
             assert init_data['type'] == 'init'
@@ -919,6 +932,9 @@ class RobHFRollout(BaseRollout):
                 "finish_step": init_data['finish_step'],
                 "task_file_name": init_data['task_file_name'],
                 "min_dist": init_data.get('min_dist', float('inf')),
+                # SAGA: initialise with fallback values (overwritten by step results)
+                "saga_substep_rewards": [0.0] * saga_K,
+                "saga_substep_boundary_steps": [-1] * saga_K,
             })
             if is_valid:
                 valid_video[init_data['task_file_name']].extend(init_data['valid_images'])
@@ -963,6 +979,10 @@ class RobHFRollout(BaseRollout):
                 task_records[idx]['complete'] = result['complete']
                 task_records[idx]['finish_step'] = result['finish_step']
                 task_records[idx]['min_dist'] = result.get('min_dist', task_records[idx]['min_dist'])
+                # SAGA: update substep tracking (latest values are cumulative)
+                if 'saga_substep_rewards' in result:
+                    task_records[idx]['saga_substep_rewards'] = result['saga_substep_rewards']
+                    task_records[idx]['saga_substep_boundary_steps'] = result['saga_substep_boundary_steps']
                 if is_valid:
                     valid_video[task_records[idx]['task_file_name']].extend(result['valid_images'])
 
@@ -1016,6 +1036,31 @@ class RobHFRollout(BaseRollout):
         batch["min_dist"] = torch.tensor(
             [min(float(k.get("min_dist", 10.0)), 10.0) for k in task_records],
             dtype=torch.float32, device=batch['responses'].device,
+        )
+
+        # SAGA: pack substep rewards and boundary steps into batch.
+        # For tasks without SAGA tracking, fallback: both substep rewards = complete
+        # (degrades to standard GRPO — see saga.py docstring).
+        saga_K = 2
+        saga_sr = []
+        saga_bs = []
+        for k in task_records:
+            sr = k.get("saga_substep_rewards", [0.0] * saga_K)
+            bs = k.get("saga_substep_boundary_steps", [-1] * saga_K)
+            # Pad/truncate to saga_K
+            sr = (sr + [0.0] * saga_K)[:saga_K]
+            bs = (bs + [-1] * saga_K)[:saga_K]
+            # Fallback: if no SAGA data, replicate trajectory outcome for both substeps
+            if all(b == -1 for b in bs):
+                c = float(k.get("complete", False))
+                sr = [c] * saga_K
+            saga_sr.append(sr)
+            saga_bs.append(bs)
+        batch["saga_substep_rewards"] = torch.tensor(
+            saga_sr, dtype=torch.float32, device=batch['responses'].device,
+        )
+        batch["saga_substep_boundary_steps"] = torch.tensor(
+            saga_bs, dtype=torch.int64, device=batch['responses'].device,
         )
 
         output_batch = TensorDict(batch, batch_size=batch_size)
