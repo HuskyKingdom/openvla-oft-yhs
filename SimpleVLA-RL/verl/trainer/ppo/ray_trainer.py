@@ -435,7 +435,7 @@ class RayTrainer(object):
             self.use_critic = True
         elif self.config.algorithm.adv_estimator in ['rloo']:
             self.use_critic = False
-        elif self.config.algorithm.adv_estimator in ['grpo']:
+        elif self.config.algorithm.adv_estimator in ['grpo', 'saga']:
             self.use_critic = False
         elif self.config.algorithm.adv_estimator in ['reinforce_plus_plus']:
             self.use_critic = False
