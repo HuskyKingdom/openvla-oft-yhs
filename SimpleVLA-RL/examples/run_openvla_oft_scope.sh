@@ -90,6 +90,7 @@ DIST_REWARD_SIGMA="${DIST_REWARD_SIGMA:-0.05}"
 TRAINER_SAVE_FREQ="${TRAINER_SAVE_FREQ:-25}"
 TRAINER_TEST_FREQ="${TRAINER_TEST_FREQ:-4}"
 TRAINER_TOTAL_EPOCHS="${TRAINER_TOTAL_EPOCHS:-100}"
+TRAINER_INITIAL_GLOBAL_STEPS="${TRAINER_INITIAL_GLOBAL_STEPS:-0}"
 
 # =============================================================================
 # 7. RUNTIME ENVIRONMENT (NCCL, Ray, ROCm, caches, WandB)
@@ -233,6 +234,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   trainer.save_freq=$TRAINER_SAVE_FREQ \
   trainer.test_freq=$TRAINER_TEST_FREQ \
   trainer.total_epochs=$TRAINER_TOTAL_EPOCHS \
+  trainer.initial_global_steps=$TRAINER_INITIAL_GLOBAL_STEPS \
   trainer.val_only=False \
   algorithm.adv_estimator=grpo \
   algorithm.adv_params.verifier_gamma=1.0 \

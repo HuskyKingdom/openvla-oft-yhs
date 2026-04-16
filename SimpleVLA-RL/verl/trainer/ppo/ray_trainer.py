@@ -501,7 +501,7 @@ class RayTrainer(object):
                           wandb_mode=self.config.trainer.wandb_mode,
                           config=OmegaConf.to_container(self.config, resolve=True))
 
-        global_steps = 0
+        global_steps = self.config.trainer.get('initial_global_steps', 0)
         dp_size = self.actor_rollout_wg.world_size // self.config.actor_rollout_ref.rollout.tensor_model_parallel_size
         batch_size = self.config.data.train_batch_size
         n_samples = self.config.data.n_samples

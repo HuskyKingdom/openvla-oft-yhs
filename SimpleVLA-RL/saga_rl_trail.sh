@@ -24,8 +24,10 @@ export DIST_REWARD_SIGMA="0.05"       # Gaussian width in metres (~5 cm)
 # SAGA: per-substep object-aware advantage (replaces trajectory-level GRPO)
 export ADV_ESTIMATOR="saga"
 
-export DATA_TRAIN_BATCH_SIZE=8
-export ACTOR_PPO_MINI_BATCH_SIZE=32   # must be <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
-export ACTOR_TRAJ_MINI_BATCH_SIZE=8   # must be <= DATA_TRAIN_BATCH_SIZE
+export TRAINER_INITIAL_GLOBAL_STEPS="${TRAINER_INITIAL_GLOBAL_STEPS:-0}"
+
+export DATA_TRAIN_BATCH_SIZE="8"
+export ACTOR_PPO_MINI_BATCH_SIZE="32"   # must be <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
+export ACTOR_TRAJ_MINI_BATCH_SIZE="8"   # must be <= DATA_TRAIN_BATCH_SIZE
 
 sbatch examples/run_saga.sh

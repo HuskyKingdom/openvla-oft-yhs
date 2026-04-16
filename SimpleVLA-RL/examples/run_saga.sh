@@ -242,6 +242,7 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   trainer.save_freq=$TRAINER_SAVE_FREQ \
   trainer.test_freq=$TRAINER_TEST_FREQ \
   trainer.total_epochs=$TRAINER_TOTAL_EPOCHS \
+  trainer.initial_global_steps=$TRAINER_INITIAL_GLOBAL_STEPS \
   trainer.val_only=False \
   trainer.runtime_env=\"$ALIGN_PATH\" \
   trainer.wandb_mode=online \
