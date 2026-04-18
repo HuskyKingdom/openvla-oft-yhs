@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=saga-rl-libero
-#SBATCH --partition=mi3008xl
+#SBATCH --partition=mi3508xl
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=184
-#SBATCH --time=36:00:00
+#SBATCH --time=3-00:00:00
 #SBATCH --output=slurm/logs/saga_rl_libero_%j.out
 #SBATCH --error=slurm/logs/saga_rl_libero_%j.err
 # SAGA RL (GRPO + per-substep object-aware advantage) on LIBERO.
