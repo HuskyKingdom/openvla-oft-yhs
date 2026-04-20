@@ -1,4 +1,4 @@
-export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/ckpoints/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--oft_plus_discrete--150000_chkpt"
+export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/landmarked_ckpoints/oft_plus_discrete"
 export CKPT_PATH="./exp_out"
 export APD_PLANS_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/APD_plans_scaled.json"
 export DATASET_NAME="libero_4_task_suites"
