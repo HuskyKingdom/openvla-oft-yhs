@@ -8,7 +8,8 @@
       "Bash(ls /home/yuhang/.miniconda3/envs/main/lib/python*/site-packages/)",
       "Bash(find /home/yuhang/.miniconda3/envs/main -path *libero* -name *.py)",
       "Bash(conda info:*)",
-      "Bash(ls /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_openvla_oft_hpid*)"
+      "Bash(ls /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_openvla_oft_hpid*)",
+      "Bash(grep -E \"\\\\.py$\")"
     ]
   }
 }

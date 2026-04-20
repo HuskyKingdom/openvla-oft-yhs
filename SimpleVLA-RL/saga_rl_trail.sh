@@ -1,4 +1,4 @@
-export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/landmarked_ckpoints/apd_discrete_160k"
+export SFT_MODEL_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/openvla-7b+libero_4_task_suites_no_noops+b8+lr-0.0005+lora-r32+dropout-0.0--image_aug--oft_plus_discrete--150000_chkpt"
 export CKPT_PATH="./exp_out"
 export APD_PLANS_PATH="/work1/chunyilee/yuhang/openvla-oft-yhs/APD_plans_scaled.json"
 export DATASET_NAME="libero_4_task_suites"
@@ -15,7 +15,7 @@ export USE_AUTOREGRESSIVE="False"
 export SWAP_OBJECTS="True"
 export SWAP_DISTANCE_START="0.08"     # metres; max allowed swap distance at curriculum start
 export SWAP_DISTANCE_END="0.40"       # metres; max allowed swap distance at curriculum end
-export SWAP_CURRICULUM_STEPS="15000"  # training steps to reach max distance (0 = no curriculum)
+export SWAP_CURRICULUM_STEPS="12000"  # training steps to reach max distance (0 = no curriculum)
 
 # Distance reward: Gaussian kernel on min gripper-to-target distance, mapped to [0,1]
 export DIST_REWARD_COEF="0.0"         # weight; 0.3 << 5.0 (success reward)
