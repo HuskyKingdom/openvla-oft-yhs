@@ -392,7 +392,6 @@ def run_episode(
     except Exception as e:
         log_message(f"Episode error: {e}", log_file)
 
-    assert 1==2
     return success, replay_images
 
 
@@ -513,7 +512,7 @@ def eval_libero(cfg: GenerateConfig) -> float:
     # Setup logging
     log_file, local_log_filepath, run_id = setup_logging(cfg)
 
-    # Initialize LIBERO task suite
+    # Initialize LIBERO task suite*
     benchmark_dict = benchmark.get_benchmark_dict()
     task_suite = benchmark_dict[cfg.task_suite_name]()
     num_tasks = task_suite.n_tasks
