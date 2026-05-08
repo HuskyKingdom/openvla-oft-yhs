@@ -47,9 +47,9 @@ export ADV_ESTIMATOR="saga"
 
 export TRAINER_INITIAL_GLOBAL_STEPS="${TRAINER_INITIAL_GLOBAL_STEPS:-0}"
 
-export DATA_TRAIN_BATCH_SIZE="8"
-export ACTOR_PPO_MINI_BATCH_SIZE="32"   # <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
-export ACTOR_TRAJ_MINI_BATCH_SIZE="8"   # <= DATA_TRAIN_BATCH_SIZE
+export DATA_TRAIN_BATCH_SIZE="64"
+export ACTOR_PPO_MINI_BATCH_SIZE="128"   # <= DATA_TRAIN_BATCH_SIZE * n_samples (8*4=32)
+export ACTOR_TRAJ_MINI_BATCH_SIZE="16"   # <= DATA_TRAIN_BATCH_SIZE
 
 # =============================================================================
 # SLURM submit
