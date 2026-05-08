@@ -179,12 +179,13 @@ set -ex
 # /root/.libero/config.yaml was pre-created in the Dockerfile, so HOME=/root
 # makes LIBERO see existing config and skip the mkdir.
 export HOME=/root
-# wandb writes its run dir locally before syncing to the cloud. Default is
-# ./wandb (cwd) — inside the read-only image rootfs that fails. /tmp is
-# writable on the enroot tmpfs.
+# wandb writes its run dir locally before syncing to the cloud. /tmp is
+# writable on the enroot tmpfs; default ./wandb (cwd) is the read-only image
+# rootfs. Path hard-coded — \$WANDB_DIR isn't expanded in this heredoc context
+# (host shell evaluates it before INNER_CMD runs in the container).
 export WANDB_DIR=/tmp/wandb_runs
 cd "$REPO_ROOT_C/SimpleVLA-RL"
-mkdir -p slurm/logs "$NUMBA_CACHE_DIR" "$TRITON_CACHE_DIR" "$HF_HOME" "$WANDB_DIR"
+mkdir -p slurm/logs "$NUMBA_CACHE_DIR" "$TRITON_CACHE_DIR" "$HF_HOME" /tmp/wandb_runs
 
 # Patch the SFT checkpoint's vla_modeling_utils.py (same as ROCm path)
 bash examples/overwrite_vla_ckpt_utils.sh "$SFT_MODEL_PATH"
