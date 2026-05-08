@@ -13,17 +13,17 @@ export SQSH_PATH="${SQSH_PATH:-${HOME}/containers/simplevla-rl-cuda-saga.sqsh}"
 
 # Host directory containing the SFT checkpoint (e.g. oft_plus_discrete/)
 # Mounted read-only into the container.
-export HOST_SFT_MODEL_DIR="${HOST_SFT_MODEL_DIR:-${HOME}/sft_models/oft_plus_discrete}"
+export HOST_SFT_MODEL_DIR="$HOME/yuhang_workspace/landmarked_ckpoints/oft_plus_discrete"
 
 # Where checkpoints from this run will land on the host.
-export HOST_CKPT_DIR="${HOST_CKPT_DIR:-${HOME}/saga_ckpts}"
+export HOST_CKPT_DIR="${HOST_CKPT_DIR:-${HOME}/$HOME/yuhang_workspace/landmarked_ckpoints/saga_ckpts}"
 
 # Host path to APD_plans_scaled.json. Mounted read-only into the container.
-export HOST_APD_PLANS_FILE="${HOST_APD_PLANS_FILE:-${HOME}/APD_plans_scaled.json}"
+export HOST_APD_PLANS_FILE="${HOST_APD_PLANS_FILE:-${HOME}/yuhang_workspace/openvla-oft-yhs/APD_plans_scaled.json}"
 
 # Optional: bind-mount host repo over the baked-in /workspace copy for dev.
 # Leave empty to use the code baked into the image.
-export HOST_REPO_OVERRIDE="${HOST_REPO_OVERRIDE:-}"
+export HOST_REPO_OVERRIDE="$HOME/yuhang_workspace/openvla-oft-yhs"
 
 # =============================================================================
 # Run config (matches saga_rl_trail.sh)
