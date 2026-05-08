@@ -50,7 +50,11 @@ APD_PLANS_PATH_C="/mnt/apd_plans.json"
 ALIGN_PATH_C="${REPO_ROOT_C}/SimpleVLA-RL/align.json"
 
 # Build pyxis bind list. Each "host:container[:ro]" pair separated by commas.
-CONTAINER_MOUNTS="${HOST_SFT_MODEL_DIR}:${SFT_MODEL_PATH_C}:ro"
+# SFT is mounted RW because overwrite_vla_ckpt_utils.sh patches a handful of
+# prismatic files in-place (mirrors AMD's apptainer --bind default RW). The
+# host SFT dir will be modified after the first run; if you want to preserve
+# the pristine checkpoint, point HOST_SFT_MODEL_DIR at a one-time host copy.
+CONTAINER_MOUNTS="${HOST_SFT_MODEL_DIR}:${SFT_MODEL_PATH_C}"
 CONTAINER_MOUNTS+=",${HOST_CKPT_DIR}:${CKPT_PATH_C}"
 CONTAINER_MOUNTS+=",${HOST_APD_PLANS_FILE}:${APD_PLANS_PATH_C}:ro"
 if [ -n "$HOST_REPO_OVERRIDE" ]; then
