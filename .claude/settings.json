@@ -9,7 +9,16 @@
       "Bash(find /home/yuhang/.miniconda3/envs/main -path *libero* -name *.py)",
       "Bash(conda info:*)",
       "Bash(ls /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_openvla_oft_hpid*)",
-      "Bash(grep -E \"\\\\.py$\")"
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(chmod +x /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/docker/build_h100.sh)",
+      "Bash(chmod +x /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_saga_h100.sh)",
+      "Bash(chmod +x /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/saga_rl_trail_h100.sh)",
+      "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/docker/build_h100.sh)",
+      "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_saga_h100.sh)",
+      "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/saga_rl_trail_h100.sh)"
+    ],
+    "additionalDirectories": [
+      "/home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL"
     ]
   }
 }
