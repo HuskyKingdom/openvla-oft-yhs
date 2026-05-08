@@ -593,24 +593,36 @@ class RayTrainer(object):
                     # do accuracy filtering and score logging
                     with Timer(name='acc&trunc_filter', text="{name}: {seconds:.1f} seconds") as timer:
                         if self.config.data.filter_accuracy or self.config.data.filter_truncated:
-                            print(f"before filtering: {len(roll_batch)}")
                             filtered_roll_batch = self.filter(roll_batch.batch['acc'].unsqueeze(1), roll_batch, n_samples)
-                            print(f"after filtering: {len(filtered_roll_batch)}")
                     metrics['timing/acc&trunc_filter'] += timer.last
 
-                    
+
                     if self.config.data.filter_warmup:
                         raise ValueError
                         roll_batch_to_add = filtered_roll_batch if len(filtered_roll_batch) > 0 else roll_batch
                     else:
                         roll_batch_to_add = filtered_roll_batch
-                    
+
                     if len(valid_batch) == 0:
                         valid_batch = roll_batch_to_add
                     else:
                         valid_batch = DataProto.concat([valid_batch, roll_batch_to_add])
-                    print(
-                        f"collected {len(valid_batch)} / {batch_size * n_samples} rollouts and each prompt has {n_samples} responses")
+
+                    # Group-level data collector progress.
+                    # Each group = n_samples rollouts sharing one task. A group is "valid"
+                    # iff its mean accuracy lands in [accuracy_lower_bound, accuracy_upper_bound]
+                    # — saturated groups (all-success or all-fail) carry no GRPO signal and
+                    # are dropped. We need batch_size valid groups to fill one training step.
+                    _g_in     = len(roll_batch) // n_samples
+                    _g_out    = len(roll_batch_to_add) // n_samples
+                    _g_cum    = len(valid_batch) // n_samples
+                    _g_target = batch_size
+                    _surv_pct = 100.0 * _g_out / max(_g_in, 1)
+                    print(f"[collector] this iter: {_g_in} groups → {_g_out} valid "
+                          f"({_surv_pct:.0f}% survived filter) | "
+                          f"cumulative {_g_cum}/{_g_target} groups "
+                          f"({len(valid_batch)}/{batch_size*n_samples} rollouts) "
+                          f"| n_samples/group={n_samples}", flush=True)
                     
                 if len(valid_batch) < batch_size * n_samples:
                     break

@@ -951,10 +951,10 @@ class RobHFRollout(BaseRollout):
 
         step = 0
         vla_history = []
-        
+
         while step < max_steps:
             active_indices = [i for i, r in enumerate(task_records) if r['active']]
-            
+
             current_inputs = inputs
 
             vla_input = self.process_input(current_inputs, task_descriptions)
@@ -998,7 +998,7 @@ class RobHFRollout(BaseRollout):
 
             inputs = new_inputs
             step += self.config.action_chunks_len
-        
+
         for q in input_queues:
             q.put(None)
         for p in processes:
