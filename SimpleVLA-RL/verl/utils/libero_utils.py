@@ -26,13 +26,16 @@ def get_libero_env(task, model_family, resolution=256):
     task_description = task.language
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
 
-    # Force robosuite EGL onto logical device 0 — see libero_env_worker.py for
-    # the full explanation. LIBERO's kwarg forwarding doesn't carry
-    # render_gpu_device_id through reliably, so we monkey-patch the bottom-most
-    # EGL creation function instead.
+    # Force robosuite EGL onto logical device 0. See libero_env_worker.py for
+    # the full explanation — short version: robosuite writes
+    # os.environ['MUJOCO_EGL_DEVICE_ID'] from render_gpu_device_id, then the
+    # EGL factory reads that env var FIRST (overriding our device_id arg). So
+    # we wipe the env var inside our patch + pass device 0.
+    os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
     import robosuite.renderers.context.egl_context as _egl_ctx_mod
     _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
     def _patched_create_egl(device_id=None):
+        os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
         return _orig_create_egl(device_id=0)
     _egl_ctx_mod.create_initialized_egl_device_display = _patched_create_egl
 

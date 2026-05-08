@@ -345,21 +345,28 @@ def env_worker(task_bddl_file, task_description, initial_state,
     task_id           : int
     trial_id          : int
     """
-    # Force robosuite EGL contexts onto logical device 0. Under Ray's per-actor
-    # GPU isolation, CUDA_VISIBLE_DEVICES gets set to a single rank (e.g. "6"),
-    # PyTorch + EGL remap that physical GPU to logical 0, but robosuite's
-    # robot_env.py reads CUDA_VISIBLE_DEVICES literally and passes the rank
-    # straight into eglQueryDevicesEXT → "device_id must be 0..0, got 6" crash.
+    # Force robosuite EGL contexts onto logical device 0 under Ray's per-actor
+    # CUDA_VISIBLE_DEVICES masking. Three layers of override are needed because
+    # robosuite is *very* aggressive about plumbing device_id everywhere:
     #
-    # Passing render_gpu_device_id=0 in env_args alone DOESN'T work — LIBERO's
-    # wrapper chain (env_wrapper → bddl_base_domain → robosuite robot_env) does
-    # not forward this kwarg cleanly. So we monkey-patch the lowest-level EGL
-    # creation function to ignore whatever device_id is passed.
+    #   1. MjRenderContextOffscreen.__init__ writes os.environ['MUJOCO_EGL_DEVICE_ID']
+    #      from the render_gpu_device_id kwarg (e.g. '6').
+    #   2. EGLGLContext.__init__ then calls create_initialized_egl_device_display
+    #      with device_id=6.
+    #   3. create_initialized_egl_device_display reads os.environ FIRST, so even
+    #      passing device_id=0 doesn't override step 1.
+    #
+    # Fix: patch create_initialized_egl_device_display to (a) clear the polluted
+    # env var, (b) pass device 0. Belt-and-braces: also pin the env var to '0'
+    # before any robosuite import so step 1 is harmless if it runs before our
+    # patch (it doesn't here, but cheap insurance).
+    os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
     import robosuite.renderers.context.egl_context as _egl_ctx_mod
     _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
     def _patched_create_egl(device_id=None):
-        # Force device 0 — Ray + CUDA_VISIBLE_DEVICES mask makes that the only
-        # valid choice inside this worker process anyway.
+        # Wipe the env var that robosuite's MjRenderContext silently set to the
+        # Ray-assigned rank, then call the real factory with device 0.
+        os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
         return _orig_create_egl(device_id=0)
     _egl_ctx_mod.create_initialized_egl_device_display = _patched_create_egl
 
