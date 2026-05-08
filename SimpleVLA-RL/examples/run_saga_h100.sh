@@ -168,6 +168,13 @@ echo "  Mounts: $CONTAINER_MOUNTS"
 # =============================================================================
 INNER_CMD=$(cat <<EOF
 set -ex
+# Force HOME=/root inside the container. SLURM --export=ALL leaks the host
+# user's HOME into the container, but on this cluster that path is read-only
+# (or non-existent) inside the rootfs — LIBERO's __init__.py runs
+# os.makedirs(expanduser("~") + "/.libero") at import time and crashes.
+# /root/.libero/config.yaml was pre-created in the Dockerfile, so HOME=/root
+# makes LIBERO see existing config and skip the mkdir.
+export HOME=/root
 cd "$REPO_ROOT_C/SimpleVLA-RL"
 mkdir -p slurm/logs "$NUMBA_CACHE_DIR" "$TRITON_CACHE_DIR" "$HF_HOME"
 

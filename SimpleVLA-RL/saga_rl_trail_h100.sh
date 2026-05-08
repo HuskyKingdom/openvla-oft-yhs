@@ -9,14 +9,14 @@ set -e
 # Host paths — change these for your H100 environment
 # =============================================================================
 # Path to the .sqsh produced by SimpleVLA-RL/docker/build_h100.sh
-export SQSH_PATH="${SQSH_PATH:-${HOME}/yuhang_workspace/simplevla-rl-cuda-saga.sqsh}"
+export SQSH_PATH="${SQSH_PATH:-$HOME/yuhang_workspace/simplevla-rl-cuda-saga.sqsh}"
 
 # Host directory containing the SFT checkpoint (e.g. oft_plus_discrete/)
 # Mounted read-only into the container.
 export HOST_SFT_MODEL_DIR="$HOME/yuhang_workspace/landmarked_ckpoints/oft_plus_discrete"
 
 # Where checkpoints from this run will land on the host.
-export HOST_CKPT_DIR="${HOST_CKPT_DIR:-${HOME}/$HOME/yuhang_workspace/landmarked_ckpoints/saga_ckpts}"
+export HOST_CKPT_DIR="${HOST_CKPT_DIR:-$HOME/yuhang_workspace/landmarked_ckpoints/saga_ckpts}"
 
 # Host path to APD_plans_scaled.json. Mounted read-only into the container.
 export HOST_APD_PLANS_FILE="${HOST_APD_PLANS_FILE:-${HOME}/yuhang_workspace/openvla-oft-yhs/APD_plans_scaled.json}"
