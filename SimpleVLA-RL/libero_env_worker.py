@@ -347,10 +347,18 @@ def env_worker(task_bddl_file, task_description, initial_state,
     """
     from libero.libero.envs import OffScreenRenderEnv
 
+    # render_gpu_device_id=0: Ray gives each actor a single GPU via
+    # CUDA_VISIBLE_DEVICES=<rank>, after which physical GPU <rank> is remapped
+    # to logical device 0 inside this process. robosuite's robot_env.py
+    # otherwise reads CUDA_VISIBLE_DEVICES literally and passes the original
+    # rank (e.g. 7) to EGL, but EGL only sees the masked device 0 →
+    # "device_id must be 0..0, got 7" RuntimeError. Forcing 0 is correct under
+    # Ray GPU isolation.
     env_args = {
         "bddl_file_name": task_bddl_file,
         "camera_heights": 256,
         "camera_widths": 256,
+        "render_gpu_device_id": 0,
     }
 
     env = None
