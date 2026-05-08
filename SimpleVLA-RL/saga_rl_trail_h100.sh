@@ -9,7 +9,7 @@ set -e
 # Host paths — change these for your H100 environment
 # =============================================================================
 # Path to the .sqsh produced by SimpleVLA-RL/docker/build_h100.sh
-export SQSH_PATH="${SQSH_PATH:-${HOME}/containers/simplevla-rl-cuda-saga.sqsh}"
+export SQSH_PATH="${SQSH_PATH:-${HOME}/yuhang_workspace/simplevla-rl-cuda-saga.sqsh}"
 
 # Host directory containing the SFT checkpoint (e.g. oft_plus_discrete/)
 # Mounted read-only into the container.
