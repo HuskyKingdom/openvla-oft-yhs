@@ -346,26 +346,25 @@ def env_worker(task_bddl_file, task_description, initial_state,
     trial_id          : int
     """
     # Force robosuite EGL contexts onto logical device 0 under Ray's per-actor
-    # CUDA_VISIBLE_DEVICES masking. Three layers of override are needed because
-    # robosuite is *very* aggressive about plumbing device_id everywhere:
+    # CUDA_VISIBLE_DEVICES masking.
     #
-    #   1. MjRenderContextOffscreen.__init__ writes os.environ['MUJOCO_EGL_DEVICE_ID']
-    #      from the render_gpu_device_id kwarg (e.g. '6').
-    #   2. EGLGLContext.__init__ then calls create_initialized_egl_device_display
-    #      with device_id=6.
-    #   3. create_initialized_egl_device_display reads os.environ FIRST, so even
-    #      passing device_id=0 doesn't override step 1.
+    # robosuite has TWO checks that interact badly:
+    #   A. Module-level (binding_utils.py): assert MUJOCO_EGL_DEVICE_ID in CUDA_VISIBLE_DEVICES
+    #      — substring check that fires at import time. With CUDA_VISIBLE_DEVICES='6'
+    #      (Ray's per-actor mask), MUJOCO_EGL_DEVICE_ID='0' fails ('0' not in '6').
+    #      Default empty MUJOCO_EGL_DEVICE_ID passes ('' in 'anything' = True).
+    #   B. Runtime (egl_context.py:create_initialized_egl_device_display): reads
+    #      os.environ['MUJOCO_EGL_DEVICE_ID'] first, falls back to its arg. If
+    #      MjRenderContextOffscreen.__init__ wrote '6' there, our device_id=0 is
+    #      silently overridden to 6, EGL queries the masked-down 1 device and
+    #      raises "between 0 and 0, got 6".
     #
-    # Fix: patch create_initialized_egl_device_display to (a) clear the polluted
-    # env var, (b) pass device 0. Belt-and-braces: also pin the env var to '0'
-    # before any robosuite import so step 1 is harmless if it runs before our
-    # patch (it doesn't here, but cheap insurance).
-    os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
+    # Fix: do NOT set MUJOCO_EGL_DEVICE_ID before importing robosuite (let
+    # check A pass with empty value), then monkey-patch the runtime factory so
+    # check B reads '0' instead of robosuite's '6'.
     import robosuite.renderers.context.egl_context as _egl_ctx_mod
     _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
     def _patched_create_egl(device_id=None):
-        # Wipe the env var that robosuite's MjRenderContext silently set to the
-        # Ray-assigned rank, then call the real factory with device 0.
         os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
         return _orig_create_egl(device_id=0)
     _egl_ctx_mod.create_initialized_egl_device_display = _patched_create_egl

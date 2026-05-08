@@ -27,11 +27,11 @@ def get_libero_env(task, model_family, resolution=256):
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
 
     # Force robosuite EGL onto logical device 0. See libero_env_worker.py for
-    # the full explanation — short version: robosuite writes
-    # os.environ['MUJOCO_EGL_DEVICE_ID'] from render_gpu_device_id, then the
-    # EGL factory reads that env var FIRST (overriding our device_id arg). So
-    # we wipe the env var inside our patch + pass device 0.
-    os.environ['MUJOCO_EGL_DEVICE_ID'] = '0'
+    # the full explanation — short version: robosuite has a module-level
+    # `assert MUJOCO_EGL_DEVICE_ID in CUDA_VISIBLE_DEVICES` substring check, so
+    # we MUST NOT pre-set MUJOCO_EGL_DEVICE_ID='0' before its import (would
+    # fail '0' in '6'). We only set it inside our runtime patch, after
+    # robosuite has loaded and the assertion has passed with empty default.
     import robosuite.renderers.context.egl_context as _egl_ctx_mod
     _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
     def _patched_create_egl(device_id=None):
