@@ -345,20 +345,30 @@ def env_worker(task_bddl_file, task_description, initial_state,
     task_id           : int
     trial_id          : int
     """
+    # Force robosuite EGL contexts onto logical device 0. Under Ray's per-actor
+    # GPU isolation, CUDA_VISIBLE_DEVICES gets set to a single rank (e.g. "6"),
+    # PyTorch + EGL remap that physical GPU to logical 0, but robosuite's
+    # robot_env.py reads CUDA_VISIBLE_DEVICES literally and passes the rank
+    # straight into eglQueryDevicesEXT → "device_id must be 0..0, got 6" crash.
+    #
+    # Passing render_gpu_device_id=0 in env_args alone DOESN'T work — LIBERO's
+    # wrapper chain (env_wrapper → bddl_base_domain → robosuite robot_env) does
+    # not forward this kwarg cleanly. So we monkey-patch the lowest-level EGL
+    # creation function to ignore whatever device_id is passed.
+    import robosuite.renderers.context.egl_context as _egl_ctx_mod
+    _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
+    def _patched_create_egl(device_id=None):
+        # Force device 0 — Ray + CUDA_VISIBLE_DEVICES mask makes that the only
+        # valid choice inside this worker process anyway.
+        return _orig_create_egl(device_id=0)
+    _egl_ctx_mod.create_initialized_egl_device_display = _patched_create_egl
+
     from libero.libero.envs import OffScreenRenderEnv
 
-    # render_gpu_device_id=0: Ray gives each actor a single GPU via
-    # CUDA_VISIBLE_DEVICES=<rank>, after which physical GPU <rank> is remapped
-    # to logical device 0 inside this process. robosuite's robot_env.py
-    # otherwise reads CUDA_VISIBLE_DEVICES literally and passes the original
-    # rank (e.g. 7) to EGL, but EGL only sees the masked device 0 →
-    # "device_id must be 0..0, got 7" RuntimeError. Forcing 0 is correct under
-    # Ray GPU isolation.
     env_args = {
         "bddl_file_name": task_bddl_file,
         "camera_heights": 256,
         "camera_widths": 256,
-        "render_gpu_device_id": 0,
     }
 
     env = None

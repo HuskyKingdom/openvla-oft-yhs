@@ -25,13 +25,19 @@ def get_libero_env(task, model_family, resolution=256):
     # from libero.libero.envs import OffScreenRenderEnv
     task_description = task.language
     task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
-    # render_gpu_device_id=0 because Ray's per-actor CUDA_VISIBLE_DEVICES masking
-    # remaps the assigned physical GPU to logical 0 — robosuite's default reads
-    # CUDA_VISIBLE_DEVICES literally and feeds e.g. 7 into EGL, which only sees
-    # the masked device 0 and raises. See SimpleVLA-RL/libero_env_worker.py for
-    # the same fix on the multiprocessing-spawn path.
+
+    # Force robosuite EGL onto logical device 0 — see libero_env_worker.py for
+    # the full explanation. LIBERO's kwarg forwarding doesn't carry
+    # render_gpu_device_id through reliably, so we monkey-patch the bottom-most
+    # EGL creation function instead.
+    import robosuite.renderers.context.egl_context as _egl_ctx_mod
+    _orig_create_egl = _egl_ctx_mod.create_initialized_egl_device_display
+    def _patched_create_egl(device_id=None):
+        return _orig_create_egl(device_id=0)
+    _egl_ctx_mod.create_initialized_egl_device_display = _patched_create_egl
+
     env_args = {"bddl_file_name": task_bddl_file, "camera_heights": resolution,
-                "camera_widths": resolution, "render_gpu_device_id": 0}
+                "camera_widths": resolution}
     env = OffScreenRenderEnv(**env_args)
     env.seed(0)  # IMPORTANT: seed seems to affect object positions even when using fixed initial state
     return env, task_description
