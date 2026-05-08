@@ -12,6 +12,8 @@ or libero.benchmark.
 import gc
 import os
 import random as _random
+import sys
+import traceback
 import numpy as np
 
 
@@ -352,13 +354,19 @@ def env_worker(task_bddl_file, task_description, initial_state,
     }
 
     env = None
-    while True:
+    _MAX_RETRY = 5
+    for _attempt in range(_MAX_RETRY):
         try:
             env = OffScreenRenderEnv(**env_args)
             env.seed(0)
             break
-        except Exception:
-            print("*** env initialization failed ***")
+        except Exception as _exc:
+            # Print the real exception class + message + traceback. Without this
+            # the EGL/robosuite root cause is hidden and the loop just spins.
+            print(f"*** env initialization failed (attempt {_attempt+1}/{_MAX_RETRY}): "
+                  f"{type(_exc).__name__}: {_exc}", flush=True)
+            traceback.print_exc(file=sys.stdout)
+            sys.stdout.flush()
             if env is not None:
                 try:
                     env.close()
@@ -366,6 +374,13 @@ def env_worker(task_bddl_file, task_description, initial_state,
                     print(f"error when close the env: {e}")
             gc.collect()
             print("gc collect finish")
+    else:
+        # All retries exhausted — propagate so Ray surfaces the failure
+        # instead of silently busy-spinning forever.
+        raise RuntimeError(
+            f"OffScreenRenderEnv failed to initialize after {_MAX_RETRY} attempts "
+            f"(BDDL: {task_bddl_file}). See traceback above."
+        )
 
     env.reset()
     obs = env.set_init_state(initial_state)

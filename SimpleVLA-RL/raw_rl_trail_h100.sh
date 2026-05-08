@@ -22,6 +22,9 @@ export HOST_CKPT_DIR="${HOST_CKPT_DIR:-$HOME/yuhang_workspace/landmarked_ckpoint
 # Optional: bind host repo over the baked-in /workspace copy for dev iteration
 export HOST_REPO_OVERRIDE="${HOST_REPO_OVERRIDE:-$HOME/yuhang_workspace/openvla-oft-yhs}"
 
+# WandB — hard-coded (see saga_rl_trail_h100.sh for rationale)
+export WANDB_API_KEY="0bdbd99b1136358467ed2d03e9a6ba5a5b2a11a8"
+
 # =============================================================================
 # Run config (matches oftplus_trail.sh — vanilla GRPO, no SAGA/SCOPE)
 # =============================================================================

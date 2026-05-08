@@ -367,12 +367,17 @@ def env_worker(task_name, task_id, trial_id, config, input_queue, output_queue, 
     initial_state = initial_states[trial_id]
     
     env = None
-    while True:
+    import sys, traceback
+    _MAX_RETRY = 5
+    for _attempt in range(_MAX_RETRY):
         try:
             env, task_description = get_libero_env(task, config.model_family, resolution=256)
             break
-        except:
-            print(f"*** env initialization failed ***")
+        except Exception as _exc:
+            print(f"*** env initialization failed (attempt {_attempt+1}/{_MAX_RETRY}): "
+                  f"{type(_exc).__name__}: {_exc}", flush=True)
+            traceback.print_exc(file=sys.stdout)
+            sys.stdout.flush()
             if env is not None:
                 try:
                     env.close()
@@ -381,6 +386,11 @@ def env_worker(task_name, task_id, trial_id, config, input_queue, output_queue, 
             torch.cuda.empty_cache()
             gc.collect()
             print("gc collect finish")
+    else:
+        raise RuntimeError(
+            f"get_libero_env failed after {_MAX_RETRY} attempts "
+            f"(task_id={task_id}, trial_id={trial_id}). See traceback above."
+        )
     
     env.reset()
     obs = env.set_init_state(initial_state)

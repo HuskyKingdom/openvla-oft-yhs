@@ -146,8 +146,11 @@ set -ex
 # HOME=/root because pyxis leaks the host HOME into the container (RO).
 # /root/.libero/config.yaml was pre-created in the Dockerfile.
 export HOME=/root
+# wandb writes locally before syncing. /tmp is writable on enroot tmpfs;
+# default ./wandb in cwd is the read-only image rootfs.
+export WANDB_DIR=/tmp/wandb_runs
 cd "$REPO_ROOT_C/SimpleVLA-RL"
-mkdir -p slurm/logs "$NUMBA_CACHE_DIR" "$TRITON_CACHE_DIR" "$HF_HOME"
+mkdir -p slurm/logs "$NUMBA_CACHE_DIR" "$TRITON_CACHE_DIR" "$HF_HOME" "$WANDB_DIR"
 
 bash examples/overwrite_vla_ckpt_utils.sh "$SFT_MODEL_PATH"
 

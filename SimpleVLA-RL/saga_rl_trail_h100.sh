@@ -25,6 +25,12 @@ export HOST_APD_PLANS_FILE="${HOST_APD_PLANS_FILE:-${HOME}/yuhang_workspace/open
 # Leave empty to use the code baked into the image.
 export HOST_REPO_OVERRIDE="$HOME/yuhang_workspace/openvla-oft-yhs"
 
+# WandB — hard-coded so we don't depend on align.json being readable inside
+# the container, and so SBATCH env-inheritance quirks don't drop the key.
+# WANDB_DIR is set to a /tmp path INSIDE the container (in run_saga_h100.sh's
+# INNER_CMD), not here — host paths wouldn't exist inside the rootfs anyway.
+export WANDB_API_KEY="0bdbd99b1136358467ed2d03e9a6ba5a5b2a11a8"
+
 # =============================================================================
 # Run config (matches saga_rl_trail.sh)
 # =============================================================================
