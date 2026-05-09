@@ -63,8 +63,18 @@ def logprobs_from_logits(logits, labels):
 
 
 def logprobs_from_logits_flash_attn(logits, labels):
-    output = -cross_entropy_loss(logits, labels)[0]
-    return output
+    # API-compat across flash_attn versions:
+    #   flash_attn >= 2.5 → returns (losses, z_losses) tuple, [0] = losses tensor
+    #   flash_attn <= 2.4 → returns a single losses tensor, [0] indexes into it
+    #                       (gives a scalar of size 1, breaks downstream view).
+    # NGC PyTorch 24.10 ships flash_attn 2.4.2; AMD env has 2.8.0.post2. Both
+    # paths must work. Detect tuple vs tensor at call time.
+    result = cross_entropy_loss(logits, labels)
+    if isinstance(result, tuple):
+        losses = result[0]
+    else:
+        losses = result
+    return -losses
 
 
 def logprobs_from_logits_naive(logits, labels):

@@ -34,8 +34,9 @@ export PROJECT_NAME="openvla-oft-rl"
 export NUM_GPUS=8
 
 # Autoregressive vs parallel decoding — keep matching your SFT model:
-#   oft_plus_discrete (no L1 head)            → "True"
-#   oft / apd_scalled (L1 regression head)    → "False"
+#   oft_plus_discrete keeps PARALLEL decoding but uses DISCRETE tokens (no L1
+#   regression head, but still emits 8-step action chunk in one forward).
+#   So USE_AUTOREGRESSIVE="False" is correct for oft_plus_discrete.
 export USE_AUTOREGRESSIVE="False"
 
 # GRPO baseline does NOT use SAGA / SWAP / DIST reward — those are different
