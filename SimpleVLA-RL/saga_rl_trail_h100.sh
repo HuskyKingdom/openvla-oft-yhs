@@ -16,7 +16,7 @@ export SQSH_PATH="${SQSH_PATH:-$HOME/yuhang_workspace/simplevla-rl-cuda-saga.sqs
 export HOST_SFT_MODEL_DIR="$HOME/yuhang_workspace/landmarked_ckpoints/oft_plus_discrete"
 
 # Where checkpoints from this run will land on the host.
-export HOST_CKPT_DIR="${HOST_CKPT_DIR:-$HOME/yuhang_workspace/landmarked_ckpoints/saga_ckpts}"
+export HOST_CKPT_DIR="${HOST_CKPT_DIR:-$HOME/yuhang_workspace/landmarked_ckpoints/saga_ckpts_woswap}"
 
 # Host path to APD_plans_scaled.json. Mounted read-only into the container.
 export HOST_APD_PLANS_FILE="${HOST_APD_PLANS_FILE:-${HOME}/yuhang_workspace/openvla-oft-yhs/APD_plans_scaled.json}"
@@ -41,7 +41,7 @@ export NUM_GPUS=8
 
 export USE_AUTOREGRESSIVE="False"
 
-export SWAP_OBJECTS="True"
+export SWAP_OBJECTS="False"
 export SWAP_DISTANCE_START="0.08"
 export SWAP_DISTANCE_END="0.40"
 export SWAP_CURRICULUM_STEPS="12000"
