@@ -2,8 +2,8 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="chenhao01/LaST-R1"
-TASK_LABEL_PREFIX="lastrl-spatial"
+PRETRAINED_CHECKPOINT="ckpt/ckpoints/saga_h100_49"
+TASK_LABEL_PREFIX="saga_rl_step49_h100"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
 USE_PROPRIO=False
