@@ -224,23 +224,40 @@ def _detect_picked_object(
 def _parse_target_object(instruction: str, body_map: Dict[str, int]) -> Optional[str]:
     """Identify which object the instruction asks the robot to pick.
 
-    Strategy:
-      1. Match body names (underscores→spaces) against the instruction text.
-         Longer matches win (avoids "mug" matching "coffee mug_1").
-      2. Return the body name with the longest natural-language match found in
-         the instruction, or None if no match.
+    Body names like 'akita_black_bowl_1_main' are cleaned by:
+      - splitting on '_'
+      - dropping pure-digit tokens and known non-semantic suffixes
+    Then all contiguous sub-phrases of the cleaned tokens are tried against
+    the instruction text.  The body name whose longest sub-phrase appears in
+    the instruction wins.  This handles brand prefixes ("akita"), instance
+    numbers ("1","2"), and suffixes ("main","base","top").
     """
+    STRIP_TOKENS = {"main", "base", "top", "bottom", "left", "right"}
     instruction_lower = instruction.lower()
-    best_name, best_len = None, 0
+
+    # For each body, find the best (earliest, longest) phrase match in the instruction.
+    # Sort key: (first_occurrence_pos, -phrase_len) — earlier and longer wins.
+    # This correctly picks the FIRST object mentioned (the one to pick), not the
+    # destination object which tends to appear later.
+    candidates = []  # (first_pos, phrase_len, body_name)
+
     for name in body_map:
-        natural = name.replace("_", " ").lower()
-        # Remove trailing digit suffix for matching (e.g. "akita dog toy 1" → "akita dog toy")
-        natural_no_digit = re.sub(r"\s*\d+$", "", natural)
-        for candidate in [natural, natural_no_digit]:
-            if candidate and candidate in instruction_lower and len(candidate) > best_len:
-                best_len = len(candidate)
-                best_name = name
-    return best_name
+        tokens = name.lower().split("_")
+        cleaned = [t for t in tokens if t and not t.isdigit() and t not in STRIP_TOKENS]
+        if not cleaned:
+            continue
+        for start in range(len(cleaned)):
+            for end in range(len(cleaned), start, -1):
+                phrase = " ".join(cleaned[start:end])
+                pos = instruction_lower.find(phrase)
+                if pos != -1:
+                    candidates.append((pos, len(phrase), name))
+
+    if not candidates:
+        return None
+    # Earliest occurrence wins; among ties, longest phrase wins
+    candidates.sort(key=lambda x: (x[0], -x[1]))
+    return candidates[0][2]
 
 
 # ---------------------------------------------------------------------------
