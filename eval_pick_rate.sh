@@ -19,8 +19,8 @@ PROX_THRESH=0.06
 GRIP_THRESH=0.030
 LIFT_THRESH=0.015
 
-SAVE_VIDEO=False          # True → 每个 episode 保存 MP4
-COMPUTE_ATTENTION=False   # True → 视频帧上叠加 ViT patch saliency（仅 save_video=True 时生效）
+SAVE_VIDEO=True          # True → 每个 episode 保存 MP4
+COMPUTE_ATTENTION=True   # True → 视频帧上叠加 ViT patch saliency（仅 save_video=True 时生效）
 # ============================================================
 
 for TASK_SUITE_NAME in libero_spatial; do
