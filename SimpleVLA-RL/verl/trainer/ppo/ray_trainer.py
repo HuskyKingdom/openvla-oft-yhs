@@ -16,6 +16,7 @@ FSDP PPO Trainer with Ray-based single controller.
 This trainer supports model-agonistic model initialization with huggingface
 """
 
+import json
 import os
 import statistics
 from collections import defaultdict, Counter
@@ -260,9 +261,39 @@ def compute_data_metrics(batch,config):
         'critic/returns/mean': masked_mean(returns, response_mask).detach().item(),
         'critic/returns/max': torch.max(returns[response_mask.bool()]).detach().item(),
         'critic/returns/min': torch.min(returns[response_mask.bool()]).detach().item(),
-        # response length
-  
     }
+
+    # SAGA per-substep metrics (only present when adv_estimator=saga)
+    if 'saga_substep_rewards' in list(batch.batch.keys()):
+        substep_rewards = batch.batch['saga_substep_rewards'].float()  # (B, K)
+        K = substep_rewards.shape[1]
+        _names = ['pick', 'place'] + [f's{k}' for k in range(2, K)]
+        for k in range(min(K, len(_names))):
+            nm = _names[k]
+            metrics[f'saga/substep_{nm}_reward_mean'] = substep_rewards[:, k].mean().item()
+            metrics[f'saga/substep_{nm}_reward_std'] = substep_rewards[:, k].std().item()
+        # Per-substep normalized advantages — mirrors compute_saga_grpo_outcome_advantage grouping
+        _index = batch.non_tensor_batch.get('uid', None)
+        if _index is not None:
+            _id2idx = defaultdict(list)
+            for _i, _uid in enumerate(_index):
+                _id2idx[_uid].append(_i)
+            _per_adv = torch.zeros_like(substep_rewards)
+            for _uid, _idxs in _id2idx.items():
+                if len(_idxs) <= 1:
+                    continue
+                _gr = substep_rewards[_idxs]
+                _m, _s = _gr.mean(0), _gr.std(0)
+                _per_adv[_idxs] = torch.where(
+                    _s.unsqueeze(0) > 1e-6,
+                    (_gr - _m.unsqueeze(0)) / (_s.unsqueeze(0) + 1e-6),
+                    torch.zeros_like(_gr),
+                )
+            for k in range(min(K, len(_names))):
+                nm = _names[k]
+                metrics[f'saga/substep_{nm}_adv_mean'] = _per_adv[:, k].mean().item()
+                metrics[f'saga/substep_{nm}_adv_std'] = _per_adv[:, k].std().item()
+
     return metrics
 
 class RayTrainer(object):
@@ -353,6 +384,27 @@ class RayTrainer(object):
         with open_dict(self.config):
             self.config.actor_rollout_ref.actor.optim.total_training_steps = total_training_steps
             self.config.critic.optim.total_training_steps = total_training_steps
+
+    def _write_advantage_log(self, step: int, batch, data_metrics: dict) -> None:
+        """Append one JSONL record with SAGA advantage statistics to a local log file.
+
+        Written every training step when adv_estimator=saga. The log is used by
+        tools/plot_saga_advantages.py to generate offline visualizations.
+        """
+        if not hasattr(self, '_adv_log_path'):
+            log_dir = self.config.trainer.default_local_dir
+            os.makedirs(log_dir, exist_ok=True)
+            self._adv_log_path = os.path.join(log_dir, 'saga_advantage_log.jsonl')
+            print(f'[SAGA] Advantage log: {self._adv_log_path}')
+        record: dict = {'step': step}
+        for key, val in data_metrics.items():
+            if any(tok in key for tok in ('adv', 'return', 'saga', 'reward')):
+                record[key.replace('/', '_')] = float(val)
+        # Raw per-sample substep rewards (shape B×K, small enough to store)
+        if 'saga_substep_rewards' in list(batch.batch.keys()):
+            record['substep_rewards'] = batch.batch['saga_substep_rewards'].cpu().tolist()
+        with open(self._adv_log_path, 'a') as _f:
+            _f.write(json.dumps(record) + '\n')
 
     def _validate(self, global_steps=0):
         reward_tensor_lst = []
@@ -719,6 +771,9 @@ class RayTrainer(object):
                 with Timer(name='logging3', text="{name}: {seconds:.1f} seconds") as timer:
                     # TODO: make a canonical logger that supports various backend
                     logger.log(data=metrics, step=global_steps)
+
+                if self.config.algorithm.adv_estimator == 'saga':
+                    self._write_advantage_log(global_steps, batch, data_metrics)
 
                 if self.config.trainer.save_freq > 0 and (global_steps + 1) % self.config.trainer.save_freq == 0:
                     actor_local_path = os.path.join(self.config.trainer.default_local_dir, 'actor',
