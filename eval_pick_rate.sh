@@ -4,7 +4,7 @@ echo "Running Pick-Correct-Rate Evaluation (all 4 task suites) -----------------
 # ============================================================
 # 用户配置区：修改这里的变量即可
 # ============================================================
-PRETRAINED_CHECKPOINT="ckpt/ckpoints/raw_h100_24"
+PRETRAINED_CHECKPOINT="ckpt/ckpoints/saga_h100_49"
 PERTURBATION_MODE="task"                  # none | lan | task | swap | object
 
 EVALUATION_CONFIG_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
