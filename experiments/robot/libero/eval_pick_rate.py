@@ -44,6 +44,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import cv2
+import imageio
 import numpy as np
 import tqdm
 import draccus
@@ -156,6 +158,12 @@ class PickRateConfig:
     energy_alpha: float = 0.5
     num_diffusion_steps_train: int = 50
     num_diffusion_steps_inference: int = 50
+
+    # Video / visualization
+    save_video: bool = False           # save annotated MP4 per episode
+    compute_attention: bool = False    # overlay ViT patch saliency on video frames
+    video_dir: str = "./experiments/logs/videos"
+    video_fps: int = 10
 
     # Output
     task_label: str = ""
@@ -379,6 +387,132 @@ def _process_action(action, model_family):
 
 
 # ---------------------------------------------------------------------------
+# Attention / saliency helpers
+# ---------------------------------------------------------------------------
+
+def _extract_patch_saliency(model) -> Optional[np.ndarray]:
+    """Register a one-shot forward hook on model.vision_backbone to capture patch features.
+
+    Returns a context object; call .get() after a get_action() to retrieve [H_grid, W_grid]
+    saliency map (feature L2-norm per patch, normalized to [0,1]).  This approach:
+      - requires no gradients → works with bf16 / flash-attention
+      - automatically handles any ViT patch count (196 for 14×14, 256 for 16×16, etc.)
+      - uses only the FIRST image's patches for multi-image inputs
+
+    Usage:
+        ctx = _patch_saliency_ctx(model)
+        get_action(...)       # triggers the hook
+        sal = ctx.get()       # [H, W] or None
+    """
+
+    class _SaliencyCtx:
+        def __init__(self):
+            self._data = None
+            self._handle = model.vision_backbone.register_forward_hook(self._hook)
+
+        def _hook(self, module, input, output):
+            # output: [B, N_total, D]  (may include CLS token)
+            try:
+                feats = output.detach().float()  # [1, N, D]
+                n_total = feats.shape[1]
+                # Guess number of spatial patches: if N includes CLS, first token is CLS
+                # SigLIP/CLIP typically don't use CLS (N = 196 or 256 exactly)
+                # DINOv2 uses CLS (N = 197 or 257)
+                n_spatial = n_total
+                patch_feats = feats[0, :n_spatial, :]           # [N, D]
+
+                # Use only the first image's patches for multi-image inputs
+                patches_per_img = n_spatial
+                side = int(round(patches_per_img ** 0.5))
+                if side * side != patches_per_img:
+                    # Try halving (2-image input)
+                    half = n_spatial // 2
+                    side = int(round(half ** 0.5))
+                    if side * side == half:
+                        patch_feats = patch_feats[:half, :]
+                        patches_per_img = half
+
+                norms = patch_feats.norm(dim=-1).cpu().numpy()  # [N]
+                sal = norms.reshape(side, side)
+                sal = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
+                self._data = sal
+            except Exception:
+                self._data = None
+
+        def get(self) -> Optional[np.ndarray]:
+            self._handle.remove()
+            return self._data
+
+    return _SaliencyCtx()
+
+
+def _blend_saliency_on_frame(img_rgb: np.ndarray, sal: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+    """Blend a [H_grid, W_grid] saliency map (jet colormap) onto an RGB image."""
+    H, W = img_rgb.shape[:2]
+    sal_u8 = (sal * 255).astype(np.uint8)
+    sal_resized = cv2.resize(sal_u8, (W, H), interpolation=cv2.INTER_LINEAR)
+    heatmap_bgr = cv2.applyColorMap(sal_resized, cv2.COLORMAP_JET)
+    heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
+    blended = (img_rgb.astype(np.float32) * (1 - alpha) + heatmap_rgb.astype(np.float32) * alpha)
+    return np.clip(blended, 0, 255).astype(np.uint8)
+
+
+def _annotate_frame(
+    img_rgb: np.ndarray,
+    instruction: str,
+    expected_obj: Optional[str],
+    picked_obj: Optional[str],
+    step: int,
+    pick_correct: Optional[bool],
+) -> np.ndarray:
+    """Stamp text overlays onto a copy of img_rgb (RGB, uint8)."""
+    frame = img_rgb.copy()
+    H, W = frame.shape[:2]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    fs = max(0.28, W / 900)
+    th = 1
+    lh = int(16 * fs / 0.3)
+    pad = 4
+
+    lines = [
+        f"Instr: {instruction[:70]}",
+        f"Expect: {expected_obj or 'unknown'}",
+    ]
+    if picked_obj is not None:
+        status = "CORRECT" if pick_correct else "WRONG"
+        lines.append(f"Picked: {picked_obj} [{status}]")
+    lines.append(f"Step: {step}")
+
+    # Semi-transparent background box
+    box_h = lh * len(lines) + pad * 2
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, 0), (W, box_h), (0, 0, 0), -1)
+    frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
+
+    # Text
+    for i, line in enumerate(lines):
+        y = pad + lh * i + lh - 4
+        color = (255, 255, 255)
+        if i == 2 and picked_obj is not None:
+            color = (100, 255, 100) if pick_correct else (255, 100, 100)
+        cv2.putText(frame, line, (pad, y), font, fs, color, th, cv2.LINE_AA)
+
+    return frame
+
+
+def _save_episode_video(
+    frames: List[np.ndarray],
+    video_path: str,
+    fps: int = 10,
+) -> None:
+    os.makedirs(os.path.dirname(video_path), exist_ok=True)
+    writer = imageio.get_writer(video_path, fps=fps)
+    for f in frames:
+        writer.append_data(f)
+    writer.close()
+
+
+# ---------------------------------------------------------------------------
 # Episode runner
 # ---------------------------------------------------------------------------
 
@@ -394,6 +528,7 @@ def _run_episode_pick(
     proprio_projector,
     noisy_action_projector,
     initial_state,
+    trial_label: str = "",
 ) -> Tuple[Optional[str], bool]:
     """Run one episode until a pick is detected, then immediately return.
 
@@ -411,6 +546,11 @@ def _run_episode_pick(
     action_queue: deque = deque(maxlen=cfg.num_open_loop_steps)
     max_steps = TASK_MAX_STEPS.get(cfg.task_suite_name, 300)
     t = 0
+    picked_object = None
+
+    # Per-step state for video annotation
+    video_frames: List[np.ndarray] = []
+    current_saliency: Optional[np.ndarray] = None  # reused across action chunk steps
 
     while t < max_steps + cfg.num_steps_wait:
         if t < cfg.num_steps_wait:
@@ -421,6 +561,9 @@ def _run_episode_pick(
         observation = _prepare_observation(obs, resize_size)
 
         if len(action_queue) == 0:
+            # Optionally register saliency hook BEFORE get_action
+            sal_ctx = _extract_patch_saliency(model) if cfg.compute_attention else None
+
             actions = get_action(
                 cfg,
                 model,
@@ -435,15 +578,44 @@ def _run_episode_pick(
             )
             action_queue.extend(actions)
 
+            # Retrieve saliency captured during get_action forward pass
+            if sal_ctx is not None:
+                current_saliency = sal_ctx.get()
+
         action = _process_action(action_queue.popleft(), cfg.model_family)
         obs, _, done, _ = env.step(action.tolist())
+
+        # Build annotated frame for video
+        if cfg.save_video:
+            raw_img = get_libero_image(obs)          # HxWx3 RGB, already rotated
+            frame = raw_img.copy()
+            if cfg.compute_attention and current_saliency is not None:
+                frame = _blend_saliency_on_frame(frame, current_saliency)
+            frame = _annotate_frame(
+                frame, task_description, expected_object,
+                picked_object, t,
+                (picked_object == expected_object) if picked_object else None,
+            )
+            video_frames.append(frame)
 
         picked_object = _detect_picked_object(
             obs, sim, body_map, initial_z,
             cfg.prox_thresh, cfg.grip_thresh, cfg.lift_thresh,
         )
         if picked_object is not None:
-            break  # pick detected → stop immediately
+            # Annotate final frame with pick result
+            if cfg.save_video:
+                raw_img = get_libero_image(obs)
+                frame = raw_img.copy()
+                if cfg.compute_attention and current_saliency is not None:
+                    frame = _blend_saliency_on_frame(frame, current_saliency)
+                frame = _annotate_frame(
+                    frame, task_description, expected_object,
+                    picked_object, t,
+                    picked_object == expected_object if expected_object else None,
+                )
+                video_frames.append(frame)
+            break
 
         if done:
             break
@@ -457,6 +629,15 @@ def _run_episode_pick(
         and expected_object is not None
         and picked_object == expected_object
     )
+
+    # Save video
+    if cfg.save_video and video_frames:
+        correct_str = "correct" if pick_correct else ("none" if picked_object is None else "wrong")
+        safe_label = re.sub(r"[^\w\-]", "_", trial_label)[:60]
+        video_path = os.path.join(cfg.video_dir, f"{safe_label}_{correct_str}.mp4")
+        _save_episode_video(video_frames, video_path, fps=cfg.video_fps)
+        logger.info(f"  Video saved: {video_path}")
+
     return picked_object, pick_correct
 
 
@@ -541,11 +722,13 @@ def eval_pick_rate(cfg: PickRateConfig) -> None:
         ep_idx = trial_idx // len(tasks_meta)  # which initial state to use
         initial_state = meta["initial_states"][ep_idx % len(meta["initial_states"])]
 
+        trial_label = f"{label}_trial{trial_idx:03d}_task{meta['task_id']}"
         picked_obj, pick_correct = _run_episode_pick(
             cfg, meta["env"], meta["task_description"], meta["expected_object"],
             model, resize_size, processor,
             action_head, proprio_projector, noisy_action_projector,
             initial_state,
+            trial_label=trial_label,
         )
 
         meta["episodes"] += 1

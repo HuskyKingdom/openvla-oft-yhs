@@ -18,6 +18,9 @@ NUM_IMAGES_IN_INPUT=1
 PROX_THRESH=0.06
 GRIP_THRESH=0.030
 LIFT_THRESH=0.015
+
+SAVE_VIDEO=False          # True → 每个 episode 保存 MP4
+COMPUTE_ATTENTION=False   # True → 视频帧上叠加 ViT patch saliency（仅 save_video=True 时生效）
 # ============================================================
 
 for TASK_SUITE_NAME in libero_object libero_goal libero_10; do
@@ -39,6 +42,8 @@ for TASK_SUITE_NAME in libero_object libero_goal libero_10; do
     --prox_thresh $PROX_THRESH \
     --grip_thresh $GRIP_THRESH \
     --lift_thresh $LIFT_THRESH \
+    --save_video $SAVE_VIDEO \
+    --compute_attention $COMPUTE_ATTENTION \
     --task_label $TASK_LABEL
 
   echo "Done: experiments/logs/${TASK_LABEL}.json"
