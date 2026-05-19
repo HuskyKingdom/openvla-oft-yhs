@@ -509,17 +509,21 @@ def _annotate_frame(
     lh    = 18    # line height px
     pad   = 6
 
-    # Build text lines
+    # Build text lines — always 4 lines so bar height is constant across all frames
     instr_short = instruction if len(instruction) <= 72 else instruction[:69] + "..."
-    lines = [
-        ("I: " + instr_short, (220, 220, 220)),
-        ("Expect: " + (expected_obj or "unknown"), (180, 220, 255)),
-    ]
     if picked_obj is not None:
-        status_str = "CORRECT ✓" if pick_correct else "WRONG ✗"
-        color = (100, 240, 100) if pick_correct else (255, 100, 100)
-        lines.append((f"Picked: {picked_obj}  [{status_str}]", color))
-    lines.append((f"Step {step}", (160, 160, 160)))
+        status_str = "CORRECT" if pick_correct else "WRONG"
+        pick_color = (100, 240, 100) if pick_correct else (255, 100, 100)
+        pick_text = f"Picked: {picked_obj}  [{status_str}]"
+    else:
+        pick_color = (160, 160, 160)
+        pick_text = "Picked: ---"
+    lines = [
+        ("I: " + instr_short,                        (220, 220, 220)),
+        ("Expect: " + (expected_obj or "unknown"),   (180, 220, 255)),
+        (pick_text,                                   pick_color),
+        (f"Step {step}",                              (160, 160, 160)),
+    ]
 
     bar_h = pad + lh * len(lines) + pad
 
