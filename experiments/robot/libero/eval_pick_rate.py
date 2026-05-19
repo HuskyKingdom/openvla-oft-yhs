@@ -408,37 +408,40 @@ def _extract_patch_saliency(model):
         def __init__(self):
             self._cache = [None]
             self._orig_fwd = None
+            self._attn_mod = None
             try:
-                self._attn_mod = model.vision_backbone.featurizer.blocks[-2].attn
-                self._orig_fwd = self._attn_mod.forward
-                self._attn_mod.forward = self._patched_forward
+                am = model.vision_backbone.featurizer.blocks[-2].attn
+                self._attn_mod = am
+                self._orig_fwd = am.forward
+                cache = self._cache
+
+                # Plain closure — NOT a method, so 'self' binding issues don't apply
+                def _patched_forward(x):
+                    B, N, C = x.shape
+                    head_dim = C // am.num_heads
+
+                    qkv = am.qkv(x).reshape(B, N, 3, am.num_heads, head_dim).permute(2, 0, 3, 1, 4)
+                    q, k, v = qkv.unbind(0)
+
+                    if getattr(am, 'q_norm', None) is not None:
+                        q = am.q_norm(q)
+                    if getattr(am, 'k_norm', None) is not None:
+                        k = am.k_norm(k)
+
+                    scale = head_dim ** -0.5
+                    attn_w = (q * scale) @ k.transpose(-2, -1)   # [B, heads, N, N]
+                    attn_w = attn_w.softmax(dim=-1)
+                    cache[0] = attn_w.detach().float()            # save before dropout
+
+                    attn_w = am.attn_drop(attn_w)
+                    out = (attn_w @ v).transpose(1, 2).reshape(B, N, C)
+                    out = am.proj(out)
+                    out = am.proj_drop(out)
+                    return out
+
+                am.forward = _patched_forward
             except (AttributeError, IndexError):
-                self._attn_mod = None
-
-        def _patched_forward(self_mod, x):
-            B, N, C = x.shape
-            am = self_mod  # alias for the attn module
-            head_dim = C // am.num_heads
-
-            qkv = am.qkv(x).reshape(B, N, 3, am.num_heads, head_dim).permute(2, 0, 3, 1, 4)
-            q, k, v = qkv.unbind(0)
-
-            # Optional Q/K norm (SigLIP uses these)
-            if getattr(am, 'q_norm', None) is not None:
-                q = am.q_norm(q)
-            if getattr(am, 'k_norm', None) is not None:
-                k = am.k_norm(k)
-
-            scale = head_dim ** -0.5
-            attn_w = (q * scale) @ k.transpose(-2, -1)   # [B, heads, N, N]
-            attn_w = attn_w.softmax(dim=-1)
-            self._cache[0] = attn_w.detach().float()      # save before dropout
-
-            attn_w = am.attn_drop(attn_w)
-            out = (attn_w @ v).transpose(1, 2).reshape(B, N, C)
-            out = am.proj(out)
-            out = am.proj_drop(out)
-            return out
+                pass
 
         def get(self) -> Optional[np.ndarray]:
             # Restore original forward

@@ -720,9 +720,6 @@ class RayTrainer(object):
                     # TODO: make a canonical logger that supports various backend
                     logger.log(data=metrics, step=global_steps)
 
-                if self.config.algorithm.adv_estimator == 'saga':
-                    self._write_advantage_log(global_steps, batch, data_metrics)
-
                 if self.config.trainer.save_freq > 0 and (global_steps + 1) % self.config.trainer.save_freq == 0:
                     actor_local_path = os.path.join(self.config.trainer.default_local_dir, 'actor',
                                                     f'global_step_{global_steps}')
