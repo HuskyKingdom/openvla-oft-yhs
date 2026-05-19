@@ -394,13 +394,12 @@ def _run_episode_pick(
     proprio_projector,
     noisy_action_projector,
     initial_state,
-) -> Tuple[bool, Optional[str], bool]:
-    """Run one episode and detect the first pick.
+) -> Tuple[Optional[str], bool]:
+    """Run one episode until a pick is detected, then immediately return.
 
     Returns:
-        success          – environment success signal
-        picked_object    – body name of first object picked (or None)
-        pick_correct     – True if picked_object matches expected_object
+        picked_object – body name of first object picked (None if never picked)
+        pick_correct  – True if picked_object matches expected_object
     """
     env.reset()
     obs = env.set_init_state(initial_state)
@@ -411,9 +410,6 @@ def _run_episode_pick(
 
     action_queue: deque = deque(maxlen=cfg.num_open_loop_steps)
     max_steps = TASK_MAX_STEPS.get(cfg.task_suite_name, 300)
-
-    picked_object: Optional[str] = None
-    success = False
     t = 0
 
     while t < max_steps + cfg.num_steps_wait:
@@ -440,26 +436,28 @@ def _run_episode_pick(
             action_queue.extend(actions)
 
         action = _process_action(action_queue.popleft(), cfg.model_family)
-        obs, reward, done, info = env.step(action.tolist())
+        obs, _, done, _ = env.step(action.tolist())
 
-        # Pick detection (only track first pick)
-        if picked_object is None:
-            picked_object = _detect_picked_object(
-                obs, sim, body_map, initial_z,
-                cfg.prox_thresh, cfg.grip_thresh, cfg.lift_thresh,
-            )
+        picked_object = _detect_picked_object(
+            obs, sim, body_map, initial_z,
+            cfg.prox_thresh, cfg.grip_thresh, cfg.lift_thresh,
+        )
+        if picked_object is not None:
+            break  # pick detected → stop immediately
 
         if done:
-            success = True
             break
         t += 1
+
+    else:
+        picked_object = None
 
     pick_correct = (
         picked_object is not None
         and expected_object is not None
         and picked_object == expected_object
     )
-    return success, picked_object, pick_correct
+    return picked_object, pick_correct
 
 
 # ---------------------------------------------------------------------------
@@ -502,94 +500,102 @@ def eval_pick_rate(cfg: PickRateConfig) -> None:
         log_file.write(msg + "\n")
         log_file.flush()
 
-    log(f"Checkpoint : {cfg.pretrained_checkpoint}")
-    log(f"Task suite : {cfg.task_suite_name}")
-    log(f"Perturbation: {cfg.perturbation_mode}")
-    log(f"Trials/task: {cfg.num_trials_per_task}")
+    # num_trials_per_task is repurposed as total_trials here
+    total_trials = cfg.num_trials_per_task
 
-    # Aggregate stats
-    all_results = []  # list of per-task dicts
-    total_episodes = total_successes = total_picks = total_correct_picks = 0
+    log(f"Checkpoint   : {cfg.pretrained_checkpoint}")
+    log(f"Task suite   : {cfg.task_suite_name}")
+    log(f"Perturbation : {cfg.perturbation_mode}")
+    log(f"Total trials : {total_trials}  (cycled across {num_tasks} tasks)")
 
-    task_ids = [cfg.single_task_id] if cfg.single_task_id >= 0 else range(num_tasks)
-
-    for task_id in tqdm.tqdm(task_ids):
+    # Pre-load all task metadata (descriptions, body maps, envs) once
+    task_ids = [cfg.single_task_id] if cfg.single_task_id >= 0 else list(range(num_tasks))
+    tasks_meta = []
+    for task_id in task_ids:
         task = task_suite.get_task(task_id)
         initial_states = task_suite.get_task_init_states(task_id)
         env, task_description = get_libero_env(task, cfg.model_family, resolution=cfg.env_img_res)
-
         if bddl_descriptions:
             task_description = bddl_descriptions[task_id]
-
-        # Identify the expected target object from the instruction
-        # We need the body map — spin up env temporarily to get sim
         env.reset()
         body_map = _build_moveable_body_map(env.sim)
         expected_object = _parse_target_object(task_description, body_map)
-
-        log(f"\n--- Task {task_id}: {task_description}")
-        log(f"    Expected pick object: {expected_object}  (from body map: {list(body_map.keys())})")
-
-        task_episodes = task_successes_n = task_picks = task_correct_picks = 0
-
-        for ep_idx in tqdm.tqdm(range(cfg.num_trials_per_task), leave=False):
-            initial_state = initial_states[ep_idx]
-
-            success, picked_obj, pick_correct = _run_episode_pick(
-                cfg, env, task_description, expected_object,
-                model, resize_size, processor,
-                action_head, proprio_projector, noisy_action_projector,
-                initial_state,
-            )
-
-            task_episodes += 1
-            if success:
-                task_successes_n += 1
-            if picked_obj is not None:
-                task_picks += 1
-            if pick_correct:
-                task_correct_picks += 1
-
-            log(
-                f"  ep {ep_idx:3d} | success={success} | picked={picked_obj} | "
-                f"expected={expected_object} | correct={pick_correct}"
-            )
-
-        env.close()
-
-        pick_rate = task_correct_picks / task_episodes if task_episodes > 0 else 0.0
-        pick_any_rate = task_picks / task_episodes if task_episodes > 0 else 0.0
-        success_rate = task_successes_n / task_episodes if task_episodes > 0 else 0.0
-
-        log(f"  Task SR: {success_rate:.3f}  |  Pick-any rate: {pick_any_rate:.3f}  |  Pick-correct rate: {pick_rate:.3f}")
-
-        task_result = {
+        log(f"  Task {task_id}: {task_description}")
+        log(f"    Expected: {expected_object}  bodies: {list(body_map.keys())}")
+        tasks_meta.append({
             "task_id": task_id,
             "task_description": task_description,
             "expected_object": expected_object,
-            "episodes": task_episodes,
-            "successes": task_successes_n,
-            "picks": task_picks,
-            "correct_picks": task_correct_picks,
-            "success_rate": success_rate,
-            "pick_any_rate": pick_any_rate,
-            "pick_correct_rate": pick_rate,
-        }
-        all_results.append(task_result)
+            "initial_states": initial_states,
+            "env": env,
+            "picks": 0,
+            "correct_picks": 0,
+            "episodes": 0,
+        })
 
-        total_episodes += task_episodes
-        total_successes += task_successes_n
-        total_picks += task_picks
-        total_correct_picks += task_correct_picks
+    # Distribute total_trials across tasks (round-robin)
+    total_episodes = total_picks = total_correct_picks = 0
+
+    for trial_idx in tqdm.tqdm(range(total_trials)):
+        meta = tasks_meta[trial_idx % len(tasks_meta)]
+        ep_idx = trial_idx // len(tasks_meta)  # which initial state to use
+        initial_state = meta["initial_states"][ep_idx % len(meta["initial_states"])]
+
+        picked_obj, pick_correct = _run_episode_pick(
+            cfg, meta["env"], meta["task_description"], meta["expected_object"],
+            model, resize_size, processor,
+            action_head, proprio_projector, noisy_action_projector,
+            initial_state,
+        )
+
+        meta["episodes"] += 1
+        if picked_obj is not None:
+            meta["picks"] += 1
+        if pick_correct:
+            meta["correct_picks"] += 1
+
+        total_episodes += 1
+        if picked_obj is not None:
+            total_picks += 1
+        if pick_correct:
+            total_correct_picks += 1
+
+        log(
+            f"  trial {trial_idx:3d} | task={meta['task_id']} | "
+            f"picked={picked_obj} | expected={meta['expected_object']} | correct={pick_correct}"
+        )
+
+    # Close all envs
+    for meta in tasks_meta:
+        meta["env"].close()
+
+    # Per-task summary
+    all_results = []
+    for meta in tasks_meta:
+        n = meta["episodes"]
+        pick_rate = meta["correct_picks"] / n if n > 0 else 0.0
+        pick_any = meta["picks"] / n if n > 0 else 0.0
+        log(
+            f"  Task {meta['task_id']} ({meta['episodes']} trials) | "
+            f"pick-any: {pick_any:.2f} | pick-correct: {pick_rate:.2f}"
+        )
+        all_results.append({
+            "task_id": meta["task_id"],
+            "task_description": meta["task_description"],
+            "expected_object": meta["expected_object"],
+            "episodes": n,
+            "picks": meta["picks"],
+            "correct_picks": meta["correct_picks"],
+            "pick_any_rate": pick_any,
+            "pick_correct_rate": pick_rate,
+        })
 
     # Final summary
-    overall_sr = total_successes / total_episodes if total_episodes > 0 else 0.0
     overall_pick_any = total_picks / total_episodes if total_episodes > 0 else 0.0
     overall_pick_correct = total_correct_picks / total_episodes if total_episodes > 0 else 0.0
 
     log("\n========== FINAL RESULTS ==========")
-    log(f"Total episodes   : {total_episodes}")
-    log(f"Success rate     : {overall_sr:.4f} ({overall_sr*100:.1f}%)")
+    log(f"Total trials     : {total_episodes}")
     log(f"Pick-any rate    : {overall_pick_any:.4f} ({overall_pick_any*100:.1f}%)")
     log(f"Pick-correct rate: {overall_pick_correct:.4f} ({overall_pick_correct*100:.1f}%)")
 
@@ -598,9 +604,8 @@ def eval_pick_rate(cfg: PickRateConfig) -> None:
         "checkpoint": str(cfg.pretrained_checkpoint),
         "task_suite_name": cfg.task_suite_name,
         "perturbation_mode": cfg.perturbation_mode,
-        "num_trials_per_task": cfg.num_trials_per_task,
+        "total_trials": total_trials,
         "overall": {
-            "success_rate": overall_sr,
             "pick_any_rate": overall_pick_any,
             "pick_correct_rate": overall_pick_correct,
         },
