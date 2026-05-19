@@ -46,6 +46,16 @@ export SWAP_CURRICULUM_STEPS="10"    # reach max quickly in 10 steps
 export DIST_REWARD_COEF="0.0"
 export DIST_REWARD_SIGMA="0.05"
 
+# ── Accuracy filter — DISABLED for smoke test ────────────────────────────────
+# The model starts with ~0% success rate on libero_4_task_suites.
+# With filter_accuracy=True and lower_bound=0.1, all rollout groups are
+# rejected (acc=0 < 0.1) so valid_batch never fills and no training step runs.
+# Disabling the filter lets cold-start rollouts through; GRPO normalises within
+# each group so all-fail groups produce 0-advantage (no false gradient).
+export FILTER_ACCURACY="False"
+export ACCURACY_LOWER_BOUND="0.0"
+export ACCURACY_UPPER_BOUND="1.0"
+
 # ── Batch sizes (smaller for smoke speed) ────────────────────────────────────
 export DATA_TRAIN_BATCH_SIZE="8"
 export ACTOR_PPO_MINI_BATCH_SIZE="32"

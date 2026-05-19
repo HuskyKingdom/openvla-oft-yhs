@@ -55,6 +55,10 @@ DATA_TRAIN_BATCH_SIZE="${DATA_TRAIN_BATCH_SIZE:-64}"
 DATA_VAL_BATCH_SIZE="${DATA_VAL_BATCH_SIZE:-496}"
 DATA_MAX_PROMPT_LENGTH="${DATA_MAX_PROMPT_LENGTH:-256}"
 DATA_MAX_RESPONSE_LENGTH="${DATA_MAX_RESPONSE_LENGTH:-128}"
+# Accuracy filter: set FILTER_ACCURACY=False for smoke tests (model cold-start → 0% SR → all batches dropped)
+FILTER_ACCURACY="${FILTER_ACCURACY:-True}"
+ACCURACY_LOWER_BOUND="${ACCURACY_LOWER_BOUND:-0.1}"
+ACCURACY_UPPER_BOUND="${ACCURACY_UPPER_BOUND:-0.9}"
 
 # =============================================================================
 # 4. ACTOR / ROLLOUT / REF CONFIG (Hydra actor_rollout_ref.*)
@@ -170,9 +174,9 @@ HYDRA_FULL_ERROR=1 python -u -m verl.trainer.main_ppo \
   data.task_suite_name='$DATASET_NAME' \
   data.num_trials_per_task=$DATA_NUM_TRIALS_PER_TASK \
   data.n_samples=$DATA_N_SAMPLES \
-  data.filter_accuracy=True \
-  data.accuracy_lower_bound=0.1 \
-  data.accuracy_upper_bound=0.9 \
+  data.filter_accuracy=$FILTER_ACCURACY \
+  data.accuracy_lower_bound=$ACCURACY_LOWER_BOUND \
+  data.accuracy_upper_bound=$ACCURACY_UPPER_BOUND \
   data.oversample_factor=1 \
   data.train_batch_size=$DATA_TRAIN_BATCH_SIZE \
   data.val_batch_size=$DATA_VAL_BATCH_SIZE \
