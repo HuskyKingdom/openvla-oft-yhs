@@ -15,7 +15,9 @@
       "Bash(chmod +x /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/saga_rl_trail_h100.sh)",
       "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/docker/build_h100.sh)",
       "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/examples/run_saga_h100.sh)",
-      "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/saga_rl_trail_h100.sh)"
+      "Bash(bash -n /home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL/saga_rl_trail_h100.sh)",
+      "Bash(python3 -c \"from libero.libero.envs import OffScreenRenderEnv; import inspect; print\\(inspect.getfile\\(OffScreenRenderEnv\\)\\)\")",
+      "Bash(python3 -c ' *)"
     ],
     "additionalDirectories": [
       "/home/yuhang/Desktop/oft-workspace/openvla-oft-yhs/SimpleVLA-RL"
