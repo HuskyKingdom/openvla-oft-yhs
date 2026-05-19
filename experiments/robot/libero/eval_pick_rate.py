@@ -390,70 +390,103 @@ def _process_action(action, model_family):
 # Attention / saliency helpers
 # ---------------------------------------------------------------------------
 
-def _extract_patch_saliency(model) -> Optional[np.ndarray]:
-    """Register a one-shot forward hook on model.vision_backbone to capture patch features.
+def _extract_patch_saliency(model):
+    """Monkey-patch the ViT's second-to-last block attention to capture attention maps.
 
-    Returns a context object; call .get() after a get_action() to retrieve [H_grid, W_grid]
-    saliency map (feature L2-norm per patch, normalized to [0,1]).  This approach:
-      - requires no gradients → works with bf16 / flash-attention
-      - automatically handles any ViT patch count (196 for 14×14, 256 for 16×16, etc.)
-      - uses only the FIRST image's patches for multi-image inputs
+    Works without gradients (no bf16/flash-attn issues).
+    Returns a context object; call .get() after a get_action() to retrieve [side, side] saliency.
 
-    Usage:
-        ctx = _patch_saliency_ctx(model)
-        get_action(...)       # triggers the hook
-        sal = ctx.get()       # [H, W] or None
+    Method — "attention received" per patch:
+      attn_weights[B, heads, N, N]: row i = query patch i's attention to all other patches.
+      For non-CLS SigLIP ViTs, there is no global summary token, so we compute
+      how much attention EACH patch j receives from all other patches:
+          received_j = mean_over_heads( mean_over_queries( attn[:, :, :, j] ) )
+      Semantically salient patches (objects, gripper target) receive consistently high
+      attention from their neighbourhood → hot-spots land on objects, not edges.
     """
-
-    class _SaliencyCtx:
+    class _AttnCtx:
         def __init__(self):
-            self._data = None
-            self._handle = model.vision_backbone.register_forward_hook(self._hook)
-
-        def _hook(self, module, input, output):
-            # output: [B, N_total, D]  (may include CLS token)
+            self._cache = [None]
+            self._orig_fwd = None
             try:
-                feats = output.detach().float()  # [1, N, D]
-                n_total = feats.shape[1]
-                # Guess number of spatial patches: if N includes CLS, first token is CLS
-                # SigLIP/CLIP typically don't use CLS (N = 196 or 256 exactly)
-                # DINOv2 uses CLS (N = 197 or 257)
-                n_spatial = n_total
-                patch_feats = feats[0, :n_spatial, :]           # [N, D]
+                self._attn_mod = model.vision_backbone.featurizer.blocks[-2].attn
+                self._orig_fwd = self._attn_mod.forward
+                self._attn_mod.forward = self._patched_forward
+            except (AttributeError, IndexError):
+                self._attn_mod = None
 
-                # Use only the first image's patches for multi-image inputs
-                patches_per_img = n_spatial
-                side = int(round(patches_per_img ** 0.5))
-                if side * side != patches_per_img:
-                    # Try halving (2-image input)
-                    half = n_spatial // 2
-                    side = int(round(half ** 0.5))
-                    if side * side == half:
-                        patch_feats = patch_feats[:half, :]
-                        patches_per_img = half
+        def _patched_forward(self_mod, x):
+            B, N, C = x.shape
+            am = self_mod  # alias for the attn module
+            head_dim = C // am.num_heads
 
-                norms = patch_feats.norm(dim=-1).cpu().numpy()  # [N]
-                sal = norms.reshape(side, side)
-                sal = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
-                self._data = sal
-            except Exception:
-                self._data = None
+            qkv = am.qkv(x).reshape(B, N, 3, am.num_heads, head_dim).permute(2, 0, 3, 1, 4)
+            q, k, v = qkv.unbind(0)
+
+            # Optional Q/K norm (SigLIP uses these)
+            if getattr(am, 'q_norm', None) is not None:
+                q = am.q_norm(q)
+            if getattr(am, 'k_norm', None) is not None:
+                k = am.k_norm(k)
+
+            scale = head_dim ** -0.5
+            attn_w = (q * scale) @ k.transpose(-2, -1)   # [B, heads, N, N]
+            attn_w = attn_w.softmax(dim=-1)
+            self._cache[0] = attn_w.detach().float()      # save before dropout
+
+            attn_w = am.attn_drop(attn_w)
+            out = (attn_w @ v).transpose(1, 2).reshape(B, N, C)
+            out = am.proj(out)
+            out = am.proj_drop(out)
+            return out
 
         def get(self) -> Optional[np.ndarray]:
-            self._handle.remove()
-            return self._data
+            # Restore original forward
+            if self._attn_mod is not None and self._orig_fwd is not None:
+                self._attn_mod.forward = self._orig_fwd
+            if self._cache[0] is None:
+                return None
 
-    return _SaliencyCtx()
+            attn = self._cache[0]          # [1, heads, N, N]
+            # Average over batch & heads → [N, N]
+            attn_avg = attn[0].mean(dim=0).cpu().numpy()
+
+            # Check for CLS token: if N is a perfect square + 1, assume CLS at index 0
+            N = attn_avg.shape[0]
+            side_sq = int(round((N - 1) ** 0.5))
+            if side_sq * side_sq == N - 1:          # CLS present (e.g. DINOv2)
+                # CLS→patch attention: how much CLS cares about each patch
+                received = attn_avg[0, 1:]           # [N-1]
+                side = side_sq
+            else:                                    # No CLS (SigLIP)
+                # "Attention received": how much each patch is attended to on average
+                received = attn_avg.mean(axis=0)     # [N]
+                side = int(round(N ** 0.5))
+                if side * side != N:
+                    # Multi-image: use only first half
+                    half = N // 2
+                    s2 = int(round(half ** 0.5))
+                    if s2 * s2 == half:
+                        received = attn_avg.mean(axis=0)[:half]
+                        side = s2
+                    else:
+                        return None
+
+            sal = received.reshape(side, side)
+            sal = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
+            return sal
+
+    return _AttnCtx()
 
 
-def _blend_saliency_on_frame(img_rgb: np.ndarray, sal: np.ndarray, alpha: float = 0.45) -> np.ndarray:
+def _blend_saliency_on_frame(img_rgb: np.ndarray, sal: np.ndarray, alpha: float = 0.50) -> np.ndarray:
     """Blend a [H_grid, W_grid] saliency map (jet colormap) onto an RGB image."""
     H, W = img_rgb.shape[:2]
     sal_u8 = (sal * 255).astype(np.uint8)
     sal_resized = cv2.resize(sal_u8, (W, H), interpolation=cv2.INTER_LINEAR)
     heatmap_bgr = cv2.applyColorMap(sal_resized, cv2.COLORMAP_JET)
     heatmap_rgb = cv2.cvtColor(heatmap_bgr, cv2.COLOR_BGR2RGB)
-    blended = (img_rgb.astype(np.float32) * (1 - alpha) + heatmap_rgb.astype(np.float32) * alpha)
+    blended = img_rgb.astype(np.float32) * (1 - alpha) + heatmap_rgb.astype(np.float32) * alpha
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
@@ -465,39 +498,37 @@ def _annotate_frame(
     step: int,
     pick_correct: Optional[bool],
 ) -> np.ndarray:
-    """Stamp text overlays onto a copy of img_rgb (RGB, uint8)."""
-    frame = img_rgb.copy()
-    H, W = frame.shape[:2]
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    fs = max(0.28, W / 900)
-    th = 1
-    lh = int(16 * fs / 0.3)
-    pad = 4
+    """Add an info bar ABOVE the image (canvas expansion) so text never overlaps the scene."""
+    H, W = img_rgb.shape[:2]
+    font  = cv2.FONT_HERSHEY_SIMPLEX
+    fs    = 0.42
+    th    = 1
+    lh    = 18    # line height px
+    pad   = 6
 
+    # Build text lines
+    instr_short = instruction if len(instruction) <= 72 else instruction[:69] + "..."
     lines = [
-        f"Instr: {instruction[:70]}",
-        f"Expect: {expected_obj or 'unknown'}",
+        ("I: " + instr_short, (220, 220, 220)),
+        ("Expect: " + (expected_obj or "unknown"), (180, 220, 255)),
     ]
     if picked_obj is not None:
-        status = "CORRECT" if pick_correct else "WRONG"
-        lines.append(f"Picked: {picked_obj} [{status}]")
-    lines.append(f"Step: {step}")
+        status_str = "CORRECT ✓" if pick_correct else "WRONG ✗"
+        color = (100, 240, 100) if pick_correct else (255, 100, 100)
+        lines.append((f"Picked: {picked_obj}  [{status_str}]", color))
+    lines.append((f"Step {step}", (160, 160, 160)))
 
-    # Semi-transparent background box
-    box_h = lh * len(lines) + pad * 2
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (0, 0), (W, box_h), (0, 0, 0), -1)
-    frame = cv2.addWeighted(overlay, 0.55, frame, 0.45, 0)
+    bar_h = pad + lh * len(lines) + pad
 
-    # Text
-    for i, line in enumerate(lines):
-        y = pad + lh * i + lh - 4
-        color = (255, 255, 255)
-        if i == 2 and picked_obj is not None:
-            color = (100, 255, 100) if pick_correct else (255, 100, 100)
-        cv2.putText(frame, line, (pad, y), font, fs, color, th, cv2.LINE_AA)
+    # Create canvas: black bar on top + original image below
+    canvas = np.zeros((bar_h + H, W, 3), dtype=np.uint8)
+    canvas[bar_h:, :] = img_rgb
 
-    return frame
+    for i, (text, color) in enumerate(lines):
+        y = pad + lh * i + lh - 3
+        cv2.putText(canvas, text, (pad, y), font, fs, color, th, cv2.LINE_AA)
+
+    return canvas
 
 
 def _save_episode_video(
