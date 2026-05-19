@@ -4,7 +4,7 @@ echo "Running Pick-Correct-Rate Evaluation ------------------------------"
 # ============================================================
 # 用户配置区：修改这里的变量即可
 # ============================================================
-PRETRAINED_CHECKPOINT="ckpt/SimpleVLA-RL/exp_out/openvla-oft-rl/oft_plus-rl/actor/global_step_24/"
+PRETRAINED_CHECKPOINT="ckpt/ckpoints/raw_h100_24"
 TASK_SUITE_NAME="libero_spatial"         # libero_spatial | libero_object | libero_goal | libero_10
 PERTURBATION_MODE="task"                  # none | lan | task | swap | object
 TASK_LABEL="pick_rate_${TASK_SUITE_NAME}_${PERTURBATION_MODE}"
