@@ -149,6 +149,14 @@ class PickRateConfig:
     grip_thresh: float = 0.030            # gripper closed if qpos < this
     lift_thresh: float = 0.015            # object lifted above initial z by this
 
+    # Required by get_vla_action / get_action internals (keep defaults, don't expose to user)
+    remove_wrap: bool = False
+    h_decoding: bool = False
+    e_decoding: bool = False
+    energy_alpha: float = 0.5
+    num_diffusion_steps_train: int = 50
+    num_diffusion_steps_inference: int = 50
+
     # Output
     task_label: str = ""
     local_log_dir: str = "./experiments/logs"
