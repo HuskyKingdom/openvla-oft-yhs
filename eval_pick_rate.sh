@@ -23,7 +23,7 @@ SAVE_VIDEO=False          # True → 每个 episode 保存 MP4
 COMPUTE_ATTENTION=False   # True → 视频帧上叠加 ViT patch saliency（仅 save_video=True 时生效）
 # ============================================================
 
-for TASK_SUITE_NAME in libero_object libero_goal libero_10; do
+for TASK_SUITE_NAME in libero_spatial; do
   TASK_LABEL="pick_rate_${TASK_SUITE_NAME}_${PERTURBATION_MODE}"
   echo ""
   echo ">>> Task suite: $TASK_SUITE_NAME"
