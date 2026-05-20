@@ -474,23 +474,37 @@ def _extract_patch_saliency(model):
                     # Attention path: data is [1, heads, N, N]
                     attn_avg = data[0].mean(dim=0).cpu().numpy()  # [N, N]
                     N = attn_avg.shape[0]
-                    # CLS detection: N-1 is a perfect square → CLS at row/col 0
-                    side_m1 = int(round((N - 1) ** 0.5))
-                    if side_m1 * side_m1 == N - 1:   # CLS present
-                        received = attn_avg[0, 1:]    # CLS→patch [N-1]
-                        side = side_m1
-                    else:                             # No CLS (SigLIP)
-                        received = attn_avg.mean(axis=0)  # [N]
-                        side = int(round(N ** 0.5))
-                        if side * side != N:
-                            half = N // 2
-                            s2 = int(round(half ** 0.5))
-                            if s2 * s2 == half:
-                                received = attn_avg.mean(axis=0)[:half]
-                                side = s2
-                            else:
-                                logger.debug(f"[ATTN] N={N} is not a perfect square or half")
-                                return None
+
+                    # Find the token layout by trying common ViT token structures:
+                    #   pure spatial:      N = side²            (SigLIP, no CLS)
+                    #   CLS + spatial:     N = 1 + side²        (standard ViT)
+                    #   CLS + regs + spatial: N = 1 + R + side² (DINOv2-with-registers, R=4 typical)
+                    # For attention map we use CLS→spatial attention (row 0, skipping non-spatial tokens).
+                    spatial_start = None
+                    side = None
+                    for num_prefix in [0, 1, 2, 4, 5, 8]:   # 0=no prefix, 1=CLS, 1+4=CLS+4regs, etc.
+                        n_spatial = N - num_prefix
+                        if n_spatial <= 0:
+                            continue
+                        s = int(round(n_spatial ** 0.5))
+                        if s * s == n_spatial:
+                            spatial_start = num_prefix
+                            side = s
+                            break
+
+                    if spatial_start is None:
+                        logger.warning(f"[ATTN] Cannot parse N={N} into a spatial grid; skip")
+                        return None
+
+                    logger.warning(f"[ATTN] N={N}: prefix={spatial_start} + {side}×{side} spatial patches")
+
+                    if spatial_start == 0:
+                        # No CLS: "attention received" — how much each patch is attended to
+                        received = attn_avg.mean(axis=0)   # [N]
+                    else:
+                        # CLS→spatial: which patches does the CLS token attend to?
+                        received = attn_avg[0, spatial_start:]  # [side²]
+
                     sal = received.reshape(side, side)
 
                 sal = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
