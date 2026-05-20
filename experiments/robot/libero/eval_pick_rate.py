@@ -407,14 +407,17 @@ def _extract_patch_saliency(model):
         def __init__(self):
             self._cache = [None]
             self._handle = None
+            self._fallback = False
             cache = self._cache
             try:
                 am = model.vision_backbone.featurizer.blocks[-2].attn
+                logger.warning(f"[ATTN] registering hook on {type(am).__name__} (blocks[-2].attn)")
 
                 def _hook(module, inp, output):
                     # inp[0]: [B, N, C] — patch tokens fed into attention
+                    # Keep original dtype (bf16) to match module weights; cast to float32 only at end
                     try:
-                        x = inp[0].detach().float()
+                        x = inp[0].detach()          # keep bf16 — matches qkv.weight dtype
                         B, N, C = x.shape
                         num_heads = module.num_heads
                         head_dim = C // num_heads
@@ -427,42 +430,41 @@ def _extract_patch_saliency(model):
                                 q = module.q_norm(q)
                             if getattr(module, 'k_norm', None) is not None:
                                 k = module.k_norm(k)
-                            attn_w = (q * scale) @ k.transpose(-2, -1)  # [B, heads, N, N]
+                            attn_w = (q.float() * scale) @ k.float().transpose(-2, -1)  # cast here
                             attn_w = attn_w.softmax(dim=-1)
-                        cache[0] = attn_w.cpu().float()
+                        cache[0] = attn_w.cpu()      # already float32 from the cast above
+                        logger.warning(f"[ATTN hook] captured shape={tuple(attn_w.shape)}")
                     except Exception as e:
-                        logger.debug(f"[ATTN hook] {e}")
+                        logger.warning(f"[ATTN hook] error: {type(e).__name__}: {e}")
 
                 self._handle = am.register_forward_hook(_hook)
-                logger.debug(f"[ATTN] hook registered on {type(am).__name__}")
             except (AttributeError, IndexError) as e:
-                logger.warning(f"[ATTN] Could not find ViT attn module: {e}; falling back to feature norm")
-                # Fallback: hook vision_backbone output and use feature L2 norm
+                logger.warning(f"[ATTN] blocks[-2].attn not found ({e}); falling back to L2-norm")
+                self._fallback = True
                 try:
                     def _norm_hook(module, inp, output):
                         try:
                             feats = output.detach().float()  # [1, N, D]
                             norms = feats[0].norm(dim=-1)    # [N]
-                            cache[0] = norms.unsqueeze(0).unsqueeze(0)  # fake [1,1,N,N] flag
-                        except Exception:
-                            pass
+                            cache[0] = norms                 # 1-D tensor
+                        except Exception as e2:
+                            logger.warning(f"[ATTN norm hook] {e2}")
                     self._handle = model.vision_backbone.register_forward_hook(_norm_hook)
-                    self._fallback = True
-                except Exception:
+                except Exception as e2:
+                    logger.warning(f"[ATTN] fallback hook also failed: {e2}")
                     self._handle = None
-            self._fallback = getattr(self, '_fallback', False)
 
         def get(self) -> Optional[np.ndarray]:
             if self._handle is not None:
                 self._handle.remove()
             if self._cache[0] is None:
-                logger.debug("[ATTN] cache is None — hook did not fire")
+                logger.warning("[ATTN] cache is None — hook did not fire")
                 return None
             try:
                 data = self._cache[0]
                 if self._fallback:
-                    # Feature norm path: data is [1, 1, N, 1] encoded
-                    norms = data[0, 0].cpu().numpy()  # [N]
+                    # L2-norm fallback: data is 1-D [N]
+                    norms = data.cpu().numpy()
                     N = norms.shape[0]
                     side = int(round(N ** 0.5))
                     if side * side != N:
@@ -511,19 +513,39 @@ def _blend_saliency_on_frame(img_rgb: np.ndarray, sal: np.ndarray, alpha: float 
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
-def _wrap_text(text: str, max_chars: int) -> List[str]:
-    """Wrap text to lines of at most max_chars, splitting on word boundaries."""
+def _wrap_text_px(text: str, font, fs: float, th: int, max_px: int) -> List[str]:
+    """Word-wrap text so each line fits within max_px pixels (measured with cv2.getTextSize)."""
     words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        if cur and len(cur) + 1 + len(w) > max_chars:
-            lines.append(cur)
-            cur = w
+    lines: List[str] = []
+    cur: List[str] = []
+    for word in words:
+        candidate = " ".join(cur + [word])
+        (w, _), _ = cv2.getTextSize(candidate, font, fs, th)
+        if w <= max_px:
+            cur.append(word)
         else:
-            cur = (cur + " " + w).strip() if cur else w
+            if cur:
+                lines.append(" ".join(cur))
+                cur = [word]
+            else:
+                # Single word wider than max — truncate character-by-character
+                trunc = word
+                while trunc:
+                    (w, _), _ = cv2.getTextSize(trunc, font, fs, th)
+                    if w <= max_px:
+                        break
+                    trunc = trunc[:-1]
+                lines.append(trunc or word[:4])
+                cur = []
     if cur:
-        lines.append(cur)
+        lines.append(" ".join(cur))
     return lines or [""]
+
+
+# Pre-compute a fixed BAR_HEIGHT once so every call to _annotate_frame
+# produces the same canvas height (required for MP4 streams).
+# We define N_LINES=5, and compute lh from a reference font scale.
+_ANNOT_N_LINES = 5
 
 
 def _annotate_frame(
@@ -534,56 +556,70 @@ def _annotate_frame(
     step: int,
     pick_correct: Optional[bool],
 ) -> np.ndarray:
-    """Add a fixed-height info bar ABOVE the image so text never overlaps the scene.
+    """Add a fixed-height info bar ABOVE the image.
 
-    Bar height is always 5 lines (2 for instruction wrap + expect + picked + step),
-    ensuring all frames in a video have identical dimensions.
+    Always renders exactly 5 lines regardless of content, so all frames in a video
+    have the same height.  Total height is padded to be divisible by 16 (avoids
+    ffmpeg macro-block warnings).
     """
     H, W = img_rgb.shape[:2]
     font = cv2.FONT_HERSHEY_SIMPLEX
     pad  = 4
+    th   = 1
 
-    # Scale font to image width: target ~14px char width at reference W=640
-    fs = max(0.30, min(0.55, W / 640 * 0.45))
-    th = 1
-    # Estimate char width from font scale (HERSHEY_SIMPLEX: ~17px per char at fs=1.0)
-    char_w = max(1, int(fs * 14))
-    max_chars = max(10, (W - 2 * pad) // char_w)
-    lh = int(fs * 38)   # line height proportional to font size
+    # Font scale: choose so a typical 30-char line fits in the image width
+    # Start from a target, then reduce until "M"*30 fits.
+    fs = 0.45
+    ref_text = "M" * 28
+    while fs > 0.20:
+        (tw, _), _ = cv2.getTextSize(ref_text, font, fs, th)
+        if tw <= W - 2 * pad:
+            break
+        fs -= 0.02
+    fs = round(fs, 2)
 
-    # Instruction: wrap to at most 2 lines
-    instr_lines = _wrap_text(instruction, max_chars)[:2]
-    while len(instr_lines) < 2:                     # always pad to 2
+    lh = max(14, int(cv2.getTextSize("Ag", font, fs, th)[0][1] * 2.2))  # line height
+
+    max_px = W - 2 * pad
+
+    # Instruction: wrap to at most 2 lines (pixel-accurate)
+    instr_lines = _wrap_text_px(instruction, font, fs, th, max_px)[:2]
+    while len(instr_lines) < 2:
         instr_lines.append("")
 
-    # Other lines (always present)
+    # Picked line
     if picked_obj is not None:
         status_str = "CORRECT" if pick_correct else "WRONG"
         pick_color = (100, 240, 100) if pick_correct else (255, 100, 100)
-        pick_text = f"Pick: {picked_obj} [{status_str}]"
+        pick_text = f"Pick:{picked_obj[:22]} [{status_str}]"
     else:
-        pick_color = (150, 150, 150)
+        pick_color = (140, 140, 140)
         pick_text = "Pick: ---"
 
     # Fixed 5-line layout
     text_lines = [
         (instr_lines[0],                           (220, 220, 220)),
-        (instr_lines[1],                           (200, 200, 200)),
-        ("Exp: " + (expected_obj or "unknown"),    (150, 210, 255)),
+        (instr_lines[1],                           (195, 195, 195)),
+        ("Exp: " + (expected_obj or "?")[:30],     (140, 205, 255)),
         (pick_text,                                 pick_color),
-        (f"Step {step}",                            (130, 130, 130)),
+        (f"Step {step}",                            (120, 120, 120)),
     ]
+    assert len(text_lines) == _ANNOT_N_LINES
 
-    N_LINES = len(text_lines)
-    bar_h = pad + lh * N_LINES + pad
+    bar_h = pad + lh * _ANNOT_N_LINES + pad
 
-    canvas = np.zeros((bar_h + H, W, 3), dtype=np.uint8)
-    canvas[bar_h:, :] = img_rgb
+    # Pad total height to multiple of 16 (avoids ffmpeg macro-block resize)
+    total_h = bar_h + H
+    padded_h = ((total_h + 15) // 16) * 16
+    extra = padded_h - total_h        # black rows added at bottom of image
+
+    canvas = np.zeros((padded_h, W, 3), dtype=np.uint8)
+    canvas[bar_h: bar_h + H, :] = img_rgb  # image sits after bar; bottom extra rows stay black
 
     for i, (text, color) in enumerate(text_lines):
         if not text:
             continue
-        y = pad + lh * i + lh - 2
+        y = pad + lh * i + lh - 3
         cv2.putText(canvas, text, (pad, y), font, fs, color, th, cv2.LINE_AA)
 
     return canvas
