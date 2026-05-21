@@ -90,6 +90,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 class FinetuneRealWorldConfig:
     # fmt: off
     vla_path: str = "openvla/openvla-7b"            # HF Hub path or local path to base VLA
+    processor_path: Optional[str] = None            # If set, load processor from here instead of vla_path.
+                                                     # Needed when vla_path is a veRL/RL checkpoint that lacks
+                                                     # processing_prismatic.py (set to the SFT base checkpoint).
 
     # Dataset
     hf_repo_id: str = "christian0420/so101-poker-yellow-task"  # HuggingFace dataset repo id
@@ -469,7 +472,10 @@ def finetune(cfg: FinetuneRealWorldConfig) -> None:
         check_model_logic_mismatch(cfg.vla_path)
     dist.barrier()
 
-    processor = AutoProcessor.from_pretrained(cfg.vla_path, trust_remote_code=True)
+    # processor_path lets RL checkpoints (which lack processing_prismatic.py) borrow
+    # the processor from their SFT base checkpoint
+    _proc_path = cfg.processor_path if cfg.processor_path else cfg.vla_path
+    processor = AutoProcessor.from_pretrained(_proc_path, trust_remote_code=True)
     vla = AutoModelForVision2Seq.from_pretrained(
         cfg.vla_path, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True, trust_remote_code=True,
     ).to(device_id)
