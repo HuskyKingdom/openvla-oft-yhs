@@ -4,6 +4,7 @@ Important constants for VLA training and evaluation.
 Attempts to automatically identify the correct constants to set based on the Python command used to launch
 training or evaluation. If it is unclear, defaults to using the LIBERO simulation benchmark constants.
 """
+import os
 import sys
 from enum import Enum
 
@@ -44,17 +45,30 @@ BRIDGE_CONSTANTS = {
     "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS_Q99,
 }
 
+SO101_CONSTANTS = {
+    "NUM_ACTIONS_CHUNK": 10,
+    "ACTION_DIM": 6,   # 6-DOF joint positions: shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper
+    "PROPRIO_DIM": 6,
+    "ACTION_PROPRIO_NORMALIZATION_TYPE": NormalizationType.BOUNDS_Q99,
+}
 
-# Function to detect robot platform from command line arguments
+
+# Function to detect robot platform from command line arguments or ROBOT_PLATFORM env var
 def detect_robot_platform():
-    cmd_args = " ".join(sys.argv).lower()
+    # Environment variable takes priority (set by real-world finetune scripts before imports)
+    env_platform = os.environ.get("ROBOT_PLATFORM", "").upper()
+    if env_platform in ("LIBERO", "ALOHA", "BRIDGE", "SO101"):
+        return env_platform
 
+    cmd_args = " ".join(sys.argv).lower()
     if "libero" in cmd_args:
         return "LIBERO"
     elif "aloha" in cmd_args:
         return "ALOHA"
     elif "bridge" in cmd_args:
         return "BRIDGE"
+    elif "so101" in cmd_args or "real_world" in cmd_args:
+        return "SO101"
     else:
         # Default to LIBERO if unclear
         return "LIBERO"
@@ -70,6 +84,8 @@ elif ROBOT_PLATFORM == "ALOHA":
     constants = ALOHA_CONSTANTS
 elif ROBOT_PLATFORM == "BRIDGE":
     constants = BRIDGE_CONSTANTS
+elif ROBOT_PLATFORM == "SO101":
+    constants = SO101_CONSTANTS
 
 # Assign constants to global variables
 NUM_ACTIONS_CHUNK = constants["NUM_ACTIONS_CHUNK"]

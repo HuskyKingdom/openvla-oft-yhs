@@ -1,0 +1,290 @@
+"""
+hf_lerobot_dataset.py
+
+PyTorch Dataset for HuggingFace LeRobot-format robot manipulation datasets.
+Reads parquet metadata + chunked mp4 videos, preloads frames, normalizes
+actions/proprio, and applies RLDSBatchTransform — producing batches compatible
+with the OpenVLA-OFT training pipeline.
+
+Dataset format (e.g. christian0420/so101-poker-yellow-task):
+  data/chunk-{N:03d}/file-000.parquet   — frame metadata
+  videos/observation.images.{cam}/chunk-{N:03d}/file-000.mp4  — video frames
+
+Global frame index i  →  chunk i // VIDEO_CHUNK_SIZE, position i % VIDEO_CHUNK_SIZE.
+
+Extra dependencies (not in pyproject.toml):
+    pip install opencv-python-headless pandas pyarrow
+"""
+
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+import pandas as pd
+import torch
+from huggingface_hub import snapshot_download
+from torch.utils.data import Dataset
+
+from prismatic.vla.constants import ACTION_PROPRIO_NORMALIZATION_TYPE, NormalizationType
+from prismatic.vla.datasets.datasets import RLDSBatchTransform
+
+VIDEO_CHUNK_SIZE = 1000  # LeRobot default: 1000 frames per video file
+
+
+class LeRobotHFDataset(Dataset):
+    """
+    Dataset for HuggingFace LeRobot-format demonstrations.
+
+    On first use, decodes all video frames into numpy arrays cached on disk
+    (at preload_resolution × preload_resolution) so subsequent runs are fast.
+    Actions and proprio are normalized to [-1, 1] using the dataset's own
+    statistics before being passed to batch_transform.
+    """
+
+    def __init__(
+        self,
+        repo_id: str,
+        batch_transform: RLDSBatchTransform,
+        chunk_size: int = 10,
+        task_instruction: str = "pick up the yellow poker chip",
+        cache_dir: Optional[str] = None,
+        preload_resolution: int = 256,
+        train: bool = True,
+        val_split: float = 0.1,
+    ):
+        self.repo_id = repo_id
+        self.batch_transform = batch_transform
+        self.chunk_size = chunk_size
+        self.task_instruction_bytes = task_instruction.encode()
+        self.dataset_name = repo_id.split("/")[-1].replace("-", "_")
+        self.preload_resolution = preload_resolution
+
+        print(f"Locating dataset {repo_id} ...")
+        self.dataset_dir = Path(
+            snapshot_download(repo_id=repo_id, repo_type="dataset", cache_dir=cache_dir)
+        )
+        print(f"  dataset dir: {self.dataset_dir}")
+
+        self._load_metadata()
+        self._preload_frames()
+        self.dataset_statistics = self._compute_statistics()
+        self._setup_normalization()
+        self._build_samples(train, val_split)
+
+    # ------------------------------------------------------------------
+    # Initialization helpers
+    # ------------------------------------------------------------------
+
+    def _load_metadata(self) -> None:
+        """Load all parquet shards, sort by global index, and build fast numpy arrays."""
+        data_dir = self.dataset_dir / "data"
+        parquet_files = sorted(data_dir.glob("**/*.parquet"))
+        if not parquet_files:
+            raise RuntimeError(f"No parquet files found in {data_dir}")
+
+        dfs = [pd.read_parquet(f) for f in parquet_files]
+        df = pd.concat(dfs).sort_values("index").reset_index(drop=True)
+
+        # Verify global index is a contiguous range 0..N-1 (LeRobot convention)
+        expected = list(range(len(df)))
+        actual = df["index"].tolist()
+        if actual != expected:
+            raise ValueError(
+                f"Global frame index is not contiguous 0..{len(df)-1}. "
+                "Cannot use direct array indexing."
+            )
+
+        self.df = df
+        self.n_frames = len(df)
+
+        # Pre-extract action and state arrays for O(1) access in __getitem__
+        self.all_actions = np.stack(df["action"].tolist()).astype(np.float32)   # (N, action_dim)
+        self.all_states = np.stack(df["observation.state"].tolist()).astype(np.float32)  # (N, state_dim)
+
+        n_ep = df["episode_index"].nunique()
+        print(f"  metadata: {self.n_frames} frames, {n_ep} episodes")
+
+    def _preload_frames(self) -> None:
+        """
+        Decode all video frames and store as uint8 numpy arrays.
+        Results are cached to disk so subsequent runs skip decoding.
+        """
+        res = self.preload_resolution
+        cache_top = self.dataset_dir / f"_cache_top_{res}.npy"
+        cache_wrist = self.dataset_dir / f"_cache_wrist_{res}.npy"
+
+        if cache_top.exists() and cache_wrist.exists():
+            print("  loading cached frames ...")
+            self.top_frames = np.load(str(cache_top))
+            self.wrist_frames = np.load(str(cache_wrist))
+            assert len(self.top_frames) == self.n_frames, "Cached frame count mismatch — delete cache files."
+            return
+
+        print(f"  decoding video frames at {res}×{res} (first-run, may take ~1 min) ...")
+        self.top_frames = np.zeros((self.n_frames, res, res, 3), dtype=np.uint8)
+        self.wrist_frames = np.zeros((self.n_frames, res, res, 3), dtype=np.uint8)
+
+        for camera, arr in [("top", self.top_frames), ("wrist", self.wrist_frames)]:
+            video_root = self.dataset_dir / "videos" / f"observation.images.{camera}"
+            video_files = sorted(video_root.glob("**/*.mp4"))
+            if not video_files:
+                raise RuntimeError(f"No mp4 files found under {video_root}")
+            global_idx = 0
+            for vf in video_files:
+                cap = cv2.VideoCapture(str(vf))
+                while True:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame = cv2.resize(frame, (res, res), interpolation=cv2.INTER_AREA)
+                    arr[global_idx] = frame
+                    global_idx += 1
+                cap.release()
+            print(f"    {camera}: {global_idx} frames decoded")
+
+        np.save(str(cache_top), self.top_frames)
+        np.save(str(cache_wrist), self.wrist_frames)
+        print("  frames cached to disk.")
+
+    def _compute_statistics(self) -> Dict:
+        """
+        Compute per-dim statistics (mean, std, min, max, q01, q99) for
+        actions and proprio over the full dataset.
+
+        The returned dict follows the same schema as RLDS dataset_statistics.json
+        so it can be saved with save_dataset_statistics() and used during eval.
+        """
+
+        def _stats(arr: np.ndarray) -> Dict:
+            return {
+                "mean": arr.mean(axis=0),
+                "std": np.maximum(arr.std(axis=0), 1e-8),
+                "min": arr.min(axis=0),
+                "max": arr.max(axis=0),
+                "q01": np.quantile(arr, 0.01, axis=0),
+                "q99": np.quantile(arr, 0.99, axis=0),
+                "num_trajectories": int(self.df["episode_index"].nunique()),
+                "num_transitions": int(self.n_frames),
+            }
+
+        return {
+            self.dataset_name: {
+                "action": _stats(self.all_actions),
+                "proprio": _stats(self.all_states),
+            }
+        }
+
+    def _setup_normalization(self) -> None:
+        """Cache normalization bounds as float32 arrays for fast per-sample use."""
+        stats = self.dataset_statistics[self.dataset_name]
+        norm = ACTION_PROPRIO_NORMALIZATION_TYPE
+
+        if norm == NormalizationType.BOUNDS_Q99:
+            self._act_lo = stats["action"]["q01"].astype(np.float32)
+            self._act_hi = stats["action"]["q99"].astype(np.float32)
+            self._pro_lo = stats["proprio"]["q01"].astype(np.float32)
+            self._pro_hi = stats["proprio"]["q99"].astype(np.float32)
+        elif norm == NormalizationType.BOUNDS:
+            self._act_lo = stats["action"]["min"].astype(np.float32)
+            self._act_hi = stats["action"]["max"].astype(np.float32)
+            self._pro_lo = stats["proprio"]["min"].astype(np.float32)
+            self._pro_hi = stats["proprio"]["max"].astype(np.float32)
+        else:  # NORMAL
+            self._act_lo = None  # signal to use z-score
+            self._act_mean = stats["action"]["mean"].astype(np.float32)
+            self._act_std = stats["action"]["std"].astype(np.float32)
+            self._pro_mean = stats["proprio"]["mean"].astype(np.float32)
+            self._pro_std = stats["proprio"]["std"].astype(np.float32)
+
+        self._norm_type = norm
+
+    def _build_samples(self, train: bool, val_split: float) -> None:
+        """
+        Partition episodes into train / val and build a flat list of
+        (episode_id, position_within_episode) tuples.
+        """
+        episode_ids = sorted(self.df["episode_index"].unique().tolist())
+        n_val = max(1, round(len(episode_ids) * val_split))
+        target_ids = set(episode_ids[:-n_val] if train else episode_ids[-n_val:])
+
+        # Map episode_id → sorted list of global frame indices
+        self._ep_global_idxs: Dict[int, List[int]] = {}
+        for ep_id, grp in self.df.groupby("episode_index"):
+            if ep_id in target_ids:
+                self._ep_global_idxs[int(ep_id)] = grp.sort_values("frame_index")["index"].tolist()
+
+        self.samples: List[Tuple[int, int]] = [
+            (ep_id, pos)
+            for ep_id, idxs in self._ep_global_idxs.items()
+            for pos in range(len(idxs))
+        ]
+
+        split = "train" if train else "val"
+        print(f"  {split} samples: {len(self.samples)} from {len(self._ep_global_idxs)} episodes")
+
+    # ------------------------------------------------------------------
+    # Normalization
+    # ------------------------------------------------------------------
+
+    def _normalize(self, values: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+        scale = np.maximum(hi - lo, 1e-8)
+        return np.clip(2.0 * (values - lo) / scale - 1.0, -1.0, 1.0)
+
+    def _norm_action(self, actions: np.ndarray) -> np.ndarray:
+        if self._norm_type == NormalizationType.NORMAL:
+            return (actions - self._act_mean) / self._act_std
+        return self._normalize(actions, self._act_lo, self._act_hi)
+
+    def _norm_proprio(self, state: np.ndarray) -> np.ndarray:
+        if self._norm_type == NormalizationType.NORMAL:
+            return (state - self._pro_mean) / self._pro_std
+        return self._normalize(state, self._pro_lo, self._pro_hi)
+
+    # ------------------------------------------------------------------
+    # Dataset interface
+    # ------------------------------------------------------------------
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, idx: int) -> Dict:
+        ep_id, pos = self.samples[idx]
+        global_idxs = self._ep_global_idxs[ep_id]
+        n_ep = len(global_idxs)
+
+        # Action chunk: [pos, pos+chunk_size), pad last action if near episode end
+        end = min(pos + self.chunk_size, n_ep)
+        chunk_global = global_idxs[pos:end]
+        actions = self.all_actions[chunk_global].copy()  # (actual_len, action_dim)
+        if len(actions) < self.chunk_size:
+            pad = np.tile(actions[-1:], (self.chunk_size - len(actions), 1))
+            actions = np.concatenate([actions, pad], axis=0)
+
+        # Current proprio
+        cur_g = global_idxs[pos]
+        proprio = self.all_states[cur_g].copy()  # (proprio_dim,)
+
+        # Normalize to [-1, 1]
+        actions = self._norm_action(actions)
+        proprio = self._norm_proprio(proprio)
+
+        # Images (preloaded uint8 numpy, shape (H, W, 3))
+        top_img = self.top_frames[cur_g]
+        wrist_img = self.wrist_frames[cur_g]
+
+        # Build the dict that RLDSBatchTransform.__call__ expects
+        rlds_batch = {
+            "dataset_name": self.dataset_name,
+            "action": actions,                             # (chunk_size, action_dim)
+            "observation": {
+                "image_primary": top_img[np.newaxis],      # (1, H, W, 3)
+                "image_wrist": wrist_img[np.newaxis],      # (1, H, W, 3) — key contains "wrist"
+                "proprio": proprio,                        # (proprio_dim,)
+            },
+            "task": {
+                "language_instruction": self.task_instruction_bytes,
+            },
+        }
+        return self.batch_transform(rlds_batch)
