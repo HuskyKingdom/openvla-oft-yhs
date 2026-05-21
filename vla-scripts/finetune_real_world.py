@@ -608,81 +608,92 @@ def finetune(cfg: FinetuneRealWorldConfig) -> None:
     }
 
     # Training loop
+    # Unlike RLDSDataset (IterableDataset that loops forever), LeRobotHFDataset is a
+    # regular Dataset that exhausts after one epoch. We wrap the dataloader in a
+    # while-loop so training continues across epochs until max_steps is reached.
     with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
         vla.train()
         optimizer.zero_grad()
-        for batch_idx, batch in enumerate(dataloader):
-            compute_diffusion_l1 = cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0
-            loss, metrics = run_forward_pass(
-                vla=vla, action_head=action_head,
-                noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
-                proprio_projector=proprio_projector if cfg.use_proprio else None,
-                batch=batch, action_tokenizer=action_tokenizer,
-                device_id=device_id,
-                use_l1_regression=cfg.use_l1_regression,
-                use_diffusion=cfg.use_diffusion,
-                use_proprio=cfg.use_proprio, use_film=cfg.use_film,
-                num_patches=NUM_PATCHES, compute_diffusion_l1=compute_diffusion_l1,
-                num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
-            )
+        global_batch_idx = 0   # monotonically increasing across epochs
+        training_done = False
 
-            (loss / cfg.grad_accumulation_steps).backward()
+        while not training_done:
+            for batch in dataloader:
+                batch_idx = global_batch_idx
+                global_batch_idx += 1
 
-            for k, v in metrics.items():
-                if k in recent_metrics:
-                    recent_metrics[k].append(v)
-
-            gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
-            log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
-
-            if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
-                _log_wandb(_smoothen(recent_metrics), "VLA Train", log_step, wandb)
-
-            if cfg.lr_warmup_steps > 0:
-                lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)
-                for pg in optimizer.param_groups:
-                    pg["lr"] = original_lr * (0.1 + 0.9 * lr_progress)
-
-            if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
-                wandb.log({"VLA Train/Learning Rate": scheduler.get_last_lr()[0]}, step=log_step)
-
-            if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
-                grad_ok = all(torch.isfinite(p.grad).all() for p in trainable_params if p.grad is not None)
-                if not grad_ok:
-                    if distributed_state.is_main_process:
-                        print(f"[Grad NaN] step {log_step}, skipping optimizer step")
-                        wandb.log({"VLA Train/Grad NaN Skipped": 1}, step=log_step)
-                    optimizer.zero_grad()
-                else:
-                    optimizer.step()
-                    scheduler.step()
-                    optimizer.zero_grad()
-                progress.update()
-
-            if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
-                save_checkpoint(
-                    cfg=cfg, run_dir=run_dir, log_step=log_step, vla=vla,
-                    processor=processor, proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
-                    action_head=action_head if (cfg.use_l1_regression or cfg.use_diffusion) else None,
-                    train_dataset=train_dataset, distributed_state=distributed_state,
-                )
-
-            if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
-                run_validation(
+                compute_diffusion_l1 = cfg.use_diffusion and batch_idx % cfg.diffusion_sample_freq == 0
+                loss, metrics = run_forward_pass(
                     vla=vla, action_head=action_head,
                     noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
                     proprio_projector=proprio_projector if cfg.use_proprio else None,
-                    val_dataloader=val_dataloader, action_tokenizer=action_tokenizer,
-                    device_id=device_id, cfg=cfg, num_patches=NUM_PATCHES,
-                    log_step=log_step, distributed_state=distributed_state,
-                    val_time_limit=cfg.val_time_limit,
+                    batch=batch, action_tokenizer=action_tokenizer,
+                    device_id=device_id,
+                    use_l1_regression=cfg.use_l1_regression,
+                    use_diffusion=cfg.use_diffusion,
+                    use_proprio=cfg.use_proprio, use_film=cfg.use_film,
+                    num_patches=NUM_PATCHES, compute_diffusion_l1=compute_diffusion_l1,
+                    num_diffusion_steps_train=cfg.num_diffusion_steps_train if cfg.use_diffusion else None,
                 )
-                vla.train()
 
-            if log_step == cfg.max_steps:
-                print(f"Reached max_steps={cfg.max_steps}. Stopping.")
-                break
+                (loss / cfg.grad_accumulation_steps).backward()
+
+                for k, v in metrics.items():
+                    if k in recent_metrics:
+                        recent_metrics[k].append(v)
+
+                gradient_step_idx = batch_idx // cfg.grad_accumulation_steps
+                log_step = gradient_step_idx if not cfg.resume else cfg.resume_step + gradient_step_idx
+
+                if distributed_state.is_main_process and log_step % cfg.wandb_log_freq == 0:
+                    _log_wandb(_smoothen(recent_metrics), "VLA Train", log_step, wandb)
+
+                if cfg.lr_warmup_steps > 0:
+                    lr_progress = min((gradient_step_idx + 1) / cfg.lr_warmup_steps, 1.0)
+                    for pg in optimizer.param_groups:
+                        pg["lr"] = original_lr * (0.1 + 0.9 * lr_progress)
+
+                if distributed_state.is_main_process and gradient_step_idx % cfg.wandb_log_freq == 0:
+                    wandb.log({"VLA Train/Learning Rate": scheduler.get_last_lr()[0]}, step=log_step)
+
+                if (batch_idx + 1) % cfg.grad_accumulation_steps == 0:
+                    grad_ok = all(torch.isfinite(p.grad).all() for p in trainable_params if p.grad is not None)
+                    if not grad_ok:
+                        if distributed_state.is_main_process:
+                            print(f"[Grad NaN] step {log_step}, skipping optimizer step")
+                            wandb.log({"VLA Train/Grad NaN Skipped": 1}, step=log_step)
+                        optimizer.zero_grad()
+                    else:
+                        optimizer.step()
+                        scheduler.step()
+                        optimizer.zero_grad()
+                    progress.update()
+
+                if gradient_step_idx > 0 and log_step % cfg.save_freq == 0:
+                    save_checkpoint(
+                        cfg=cfg, run_dir=run_dir, log_step=log_step, vla=vla,
+                        processor=processor, proprio_projector=proprio_projector if cfg.use_proprio else None,
+                        noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
+                        action_head=action_head if (cfg.use_l1_regression or cfg.use_diffusion) else None,
+                        train_dataset=train_dataset, distributed_state=distributed_state,
+                    )
+
+                if cfg.use_val_set and log_step > 0 and log_step % cfg.val_freq == 0:
+                    run_validation(
+                        vla=vla, action_head=action_head,
+                        noisy_action_projector=noisy_action_projector if cfg.use_diffusion else None,
+                        proprio_projector=proprio_projector if cfg.use_proprio else None,
+                        val_dataloader=val_dataloader, action_tokenizer=action_tokenizer,
+                        device_id=device_id, cfg=cfg, num_patches=NUM_PATCHES,
+                        log_step=log_step, distributed_state=distributed_state,
+                        val_time_limit=cfg.val_time_limit,
+                    )
+                    vla.train()
+
+                if log_step >= cfg.max_steps:
+                    print(f"Reached max_steps={cfg.max_steps}. Stopping.")
+                    training_done = True
+                    break
 
 
 if __name__ == "__main__":
