@@ -109,44 +109,85 @@ class LeRobotHFDataset(Dataset):
         """
         Decode all video frames and store as uint8 numpy arrays.
         Results are cached to disk so subsequent runs skip decoding.
+
+        Uses an exclusive file lock (fcntl.flock) so that multiple DDP processes
+        running simultaneously do not corrupt the cache by writing concurrently.
+        The first process to acquire the lock decodes and writes; subsequent
+        processes find the cache already built and just load it.
         """
+        import fcntl
+
         res = self.preload_resolution
         cache_top = self.dataset_dir / f"_cache_top_{res}.npy"
         cache_wrist = self.dataset_dir / f"_cache_wrist_{res}.npy"
+        lock_path = self.dataset_dir / f"_frame_cache_{res}.lock"
 
-        if cache_top.exists() and cache_wrist.exists():
+        expected_shape = (self.n_frames, res, res, 3)
+
+        def _try_load() -> bool:
+            """Return True and populate self.*_frames if cache is valid."""
+            if not (cache_top.exists() and cache_wrist.exists()):
+                return False
+            try:
+                top = np.load(str(cache_top))
+                wrist = np.load(str(cache_wrist))
+                assert top.shape == expected_shape, f"top shape {top.shape} != {expected_shape}"
+                assert wrist.shape == expected_shape, f"wrist shape {wrist.shape} != {expected_shape}"
+                self.top_frames = top
+                self.wrist_frames = wrist
+                return True
+            except Exception as e:
+                print(f"  cache invalid ({e}), will rebuild ...")
+                cache_top.unlink(missing_ok=True)
+                cache_wrist.unlink(missing_ok=True)
+                return False
+
+        # Fast path: if cache is already valid, skip locking entirely
+        if _try_load():
             print("  loading cached frames ...")
-            self.top_frames = np.load(str(cache_top))
-            self.wrist_frames = np.load(str(cache_wrist))
-            assert len(self.top_frames) == self.n_frames, "Cached frame count mismatch — delete cache files."
             return
 
-        print(f"  decoding video frames at {res}×{res} (first-run, may take ~1 min) ...")
-        self.top_frames = np.zeros((self.n_frames, res, res, 3), dtype=np.uint8)
-        self.wrist_frames = np.zeros((self.n_frames, res, res, 3), dtype=np.uint8)
+        # Slow path: acquire exclusive lock, then build (or load if another
+        # process already built while we were waiting for the lock)
+        with open(lock_path, "w") as lf:
+            fcntl.flock(lf, fcntl.LOCK_EX)   # blocks until we own the lock
 
-        for camera, arr in [("top", self.top_frames), ("wrist", self.wrist_frames)]:
-            video_root = self.dataset_dir / "videos" / f"observation.images.{camera}"
-            video_files = sorted(video_root.glob("**/*.mp4"))
-            if not video_files:
-                raise RuntimeError(f"No mp4 files found under {video_root}")
-            global_idx = 0
-            for vf in video_files:
-                cap = cv2.VideoCapture(str(vf))
-                while True:
-                    ret, frame = cap.read()
-                    if not ret:
-                        break
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    frame = cv2.resize(frame, (res, res), interpolation=cv2.INTER_AREA)
-                    arr[global_idx] = frame
-                    global_idx += 1
-                cap.release()
-            print(f"    {camera}: {global_idx} frames decoded")
+            if _try_load():   # another process may have built it while we waited
+                print("  loading cached frames (built by peer process) ...")
+                return
 
-        np.save(str(cache_top), self.top_frames)
-        np.save(str(cache_wrist), self.wrist_frames)
-        print("  frames cached to disk.")
+            print(f"  decoding video frames at {res}×{res} (first-run, may take ~1 min) ...")
+            self.top_frames = np.zeros(expected_shape, dtype=np.uint8)
+            self.wrist_frames = np.zeros(expected_shape, dtype=np.uint8)
+
+            for camera, arr in [("top", self.top_frames), ("wrist", self.wrist_frames)]:
+                video_root = self.dataset_dir / "videos" / f"observation.images.{camera}"
+                video_files = sorted(video_root.glob("**/*.mp4"))
+                if not video_files:
+                    raise RuntimeError(f"No mp4 files found under {video_root}")
+                global_idx = 0
+                for vf in video_files:
+                    cap = cv2.VideoCapture(str(vf))
+                    while True:
+                        ret, frame = cap.read()
+                        if not ret:
+                            break
+                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        frame = cv2.resize(frame, (res, res), interpolation=cv2.INTER_AREA)
+                        arr[global_idx] = frame
+                        global_idx += 1
+                    cap.release()
+                print(f"    {camera}: {global_idx} frames decoded")
+
+            # Atomic write via tmp → rename to avoid partial files
+            tmp_top = cache_top.with_suffix(".npy.tmp")
+            tmp_wrist = cache_wrist.with_suffix(".npy.tmp")
+            np.save(str(tmp_top), self.top_frames)
+            np.save(str(tmp_wrist), self.wrist_frames)
+            tmp_top.rename(cache_top)
+            tmp_wrist.rename(cache_wrist)
+            print("  frames cached to disk.")
+        # lock released here
 
     def _compute_statistics(self) -> Dict:
         """
