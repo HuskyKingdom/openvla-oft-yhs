@@ -32,6 +32,40 @@ from prismatic.vla.datasets.datasets import RLDSBatchTransform
 VIDEO_CHUNK_SIZE = 1000  # LeRobot default: 1000 frames per video file
 
 
+def _decode_video(video_path: str, arr: np.ndarray, start_idx: int, res: int) -> int:
+    """
+    Decode all frames from a video file into arr[start_idx:], resized to res×res RGB.
+    Tries PyAV first (supports AV1/H.265/H.264); falls back to OpenCV.
+    Returns the next free index (start_idx + number of frames decoded).
+    """
+    try:
+        import av  # pip install av
+        idx = start_idx
+        with av.open(video_path) as container:
+            for frame in container.decode(video=0):
+                img = frame.to_ndarray(format="rgb24")
+                img = cv2.resize(img, (res, res), interpolation=cv2.INTER_AREA)
+                arr[idx] = img
+                idx += 1
+        return idx
+    except ImportError:
+        pass
+
+    # OpenCV fallback (does NOT support AV1 in most builds)
+    cap = cv2.VideoCapture(video_path)
+    idx = start_idx
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame = cv2.resize(frame, (res, res), interpolation=cv2.INTER_AREA)
+        arr[idx] = frame
+        idx += 1
+    cap.release()
+    return idx
+
+
 class LeRobotHFDataset(Dataset):
     """
     Dataset for HuggingFace LeRobot-format demonstrations.
@@ -167,16 +201,12 @@ class LeRobotHFDataset(Dataset):
                     raise RuntimeError(f"No mp4 files found under {video_root}")
                 global_idx = 0
                 for vf in video_files:
-                    cap = cv2.VideoCapture(str(vf))
-                    while True:
-                        ret, frame = cap.read()
-                        if not ret:
-                            break
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        frame = cv2.resize(frame, (res, res), interpolation=cv2.INTER_AREA)
-                        arr[global_idx] = frame
-                        global_idx += 1
-                    cap.release()
+                    global_idx = _decode_video(str(vf), arr, global_idx, res)
+                if global_idx != self.n_frames:
+                    raise RuntimeError(
+                        f"{camera}: decoded {global_idx} frames but expected {self.n_frames}. "
+                        "OpenCV likely cannot decode the video codec (e.g. AV1). Install PyAV: pip install av"
+                    )
                 print(f"    {camera}: {global_idx} frames decoded")
 
             # Atomic write via tmp → rename to avoid partial files
