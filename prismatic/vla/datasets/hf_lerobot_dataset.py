@@ -209,9 +209,10 @@ class LeRobotHFDataset(Dataset):
                     )
                 print(f"    {camera}: {global_idx} frames decoded")
 
-            # Atomic write via tmp → rename to avoid partial files
-            tmp_top = cache_top.with_suffix(".npy.tmp")
-            tmp_wrist = cache_wrist.with_suffix(".npy.tmp")
+            # Atomic write via tmp → rename to avoid partial files.
+            # Names must end in .npy so numpy does NOT auto-append the extension.
+            tmp_top = cache_top.with_name(f"_cache_top_{res}_tmp.npy")
+            tmp_wrist = cache_wrist.with_name(f"_cache_wrist_{res}_tmp.npy")
             np.save(str(tmp_top), self.top_frames)
             np.save(str(tmp_wrist), self.wrist_frames)
             tmp_top.rename(cache_top)
