@@ -13,7 +13,7 @@ Dataset format (e.g. christian0420/so101-poker-yellow-task):
 Global frame index i  →  chunk i // VIDEO_CHUNK_SIZE, position i % VIDEO_CHUNK_SIZE.
 
 Extra dependencies (not in pyproject.toml):
-    pip install opencv-python-headless pandas pyarrow
+    pip install av opencv-python-headless pandas pyarrow
 """
 
 from pathlib import Path
@@ -74,6 +74,9 @@ class LeRobotHFDataset(Dataset):
     (at preload_resolution × preload_resolution) so subsequent runs are fast.
     Actions and proprio are normalized to [-1, 1] using the dataset's own
     statistics before being passed to batch_transform.
+
+    Camera names are auto-detected from videos/observation.images.* directories.
+    The first camera becomes image_primary; the second (if present) becomes image_wrist.
     """
 
     def __init__(
@@ -101,6 +104,7 @@ class LeRobotHFDataset(Dataset):
         print(f"  dataset dir: {self.dataset_dir}")
 
         self._load_metadata()
+        self._detect_cameras()
         self._preload_frames()
         self.dataset_statistics = self._compute_statistics()
         self._setup_normalization()
@@ -139,9 +143,21 @@ class LeRobotHFDataset(Dataset):
         n_ep = df["episode_index"].nunique()
         print(f"  metadata: {self.n_frames} frames, {n_ep} episodes")
 
+    def _detect_cameras(self) -> None:
+        """Auto-detect camera names from videos/observation.images.* directories."""
+        videos_dir = self.dataset_dir / "videos"
+        cam_dirs = sorted(
+            d for d in videos_dir.iterdir()
+            if d.is_dir() and d.name.startswith("observation.images.")
+        )
+        if not cam_dirs:
+            raise RuntimeError(f"No observation.images.* directories found in {videos_dir}")
+        self.cameras: List[str] = [d.name.split("observation.images.", 1)[1] for d in cam_dirs]
+        print(f"  cameras detected: {self.cameras}")
+
     def _preload_frames(self) -> None:
         """
-        Decode all video frames and store as uint8 numpy arrays.
+        Decode all video frames and store as uint8 numpy arrays keyed by camera name.
         Results are cached to disk so subsequent runs skip decoding.
 
         Uses an exclusive file lock (fcntl.flock) so that multiple DDP processes
@@ -152,28 +168,25 @@ class LeRobotHFDataset(Dataset):
         import fcntl
 
         res = self.preload_resolution
-        cache_top = self.dataset_dir / f"_cache_top_{res}.npy"
-        cache_wrist = self.dataset_dir / f"_cache_wrist_{res}.npy"
+        cache_paths = {cam: self.dataset_dir / f"_cache_{cam}_{res}.npy" for cam in self.cameras}
         lock_path = self.dataset_dir / f"_frame_cache_{res}.lock"
-
         expected_shape = (self.n_frames, res, res, 3)
 
         def _try_load() -> bool:
-            """Return True and populate self.*_frames if cache is valid."""
-            if not (cache_top.exists() and cache_wrist.exists()):
+            if not all(p.exists() for p in cache_paths.values()):
                 return False
             try:
-                top = np.load(str(cache_top))
-                wrist = np.load(str(cache_wrist))
-                assert top.shape == expected_shape, f"top shape {top.shape} != {expected_shape}"
-                assert wrist.shape == expected_shape, f"wrist shape {wrist.shape} != {expected_shape}"
-                self.top_frames = top
-                self.wrist_frames = wrist
+                frames = {}
+                for cam, path in cache_paths.items():
+                    arr = np.load(str(path))
+                    assert arr.shape == expected_shape, f"{cam} shape {arr.shape} != {expected_shape}"
+                    frames[cam] = arr
+                self.all_cam_frames = frames
                 return True
             except Exception as e:
                 print(f"  cache invalid ({e}), will rebuild ...")
-                cache_top.unlink(missing_ok=True)
-                cache_wrist.unlink(missing_ok=True)
+                for p in cache_paths.values():
+                    p.unlink(missing_ok=True)
                 return False
 
         # Fast path: if cache is already valid, skip locking entirely
@@ -191,11 +204,11 @@ class LeRobotHFDataset(Dataset):
                 return
 
             print(f"  decoding video frames at {res}×{res} (first-run, may take ~1 min) ...")
-            self.top_frames = np.zeros(expected_shape, dtype=np.uint8)
-            self.wrist_frames = np.zeros(expected_shape, dtype=np.uint8)
+            frames = {cam: np.zeros(expected_shape, dtype=np.uint8) for cam in self.cameras}
 
-            for camera, arr in [("top", self.top_frames), ("wrist", self.wrist_frames)]:
-                video_root = self.dataset_dir / "videos" / f"observation.images.{camera}"
+            for cam in self.cameras:
+                arr = frames[cam]
+                video_root = self.dataset_dir / "videos" / f"observation.images.{cam}"
                 video_files = sorted(video_root.glob("**/*.mp4"))
                 if not video_files:
                     raise RuntimeError(f"No mp4 files found under {video_root}")
@@ -204,19 +217,20 @@ class LeRobotHFDataset(Dataset):
                     global_idx = _decode_video(str(vf), arr, global_idx, res)
                 if global_idx != self.n_frames:
                     raise RuntimeError(
-                        f"{camera}: decoded {global_idx} frames but expected {self.n_frames}. "
+                        f"{cam}: decoded {global_idx} frames but expected {self.n_frames}. "
                         "OpenCV likely cannot decode the video codec (e.g. AV1). Install PyAV: pip install av"
                     )
-                print(f"    {camera}: {global_idx} frames decoded")
+                print(f"    {cam}: {global_idx} frames decoded")
 
             # Atomic write via tmp → rename to avoid partial files.
             # Names must end in .npy so numpy does NOT auto-append the extension.
-            tmp_top = cache_top.with_name(f"_cache_top_{res}_tmp.npy")
-            tmp_wrist = cache_wrist.with_name(f"_cache_wrist_{res}_tmp.npy")
-            np.save(str(tmp_top), self.top_frames)
-            np.save(str(tmp_wrist), self.wrist_frames)
-            tmp_top.rename(cache_top)
-            tmp_wrist.rename(cache_wrist)
+            tmp_paths = {cam: self.dataset_dir / f"_cache_{cam}_{res}_tmp.npy" for cam in self.cameras}
+            for cam in self.cameras:
+                np.save(str(tmp_paths[cam]), frames[cam])
+            for cam in self.cameras:
+                tmp_paths[cam].rename(cache_paths[cam])
+
+            self.all_cam_frames = frames
             print("  frames cached to disk.")
         # lock released here
 
@@ -342,19 +356,20 @@ class LeRobotHFDataset(Dataset):
         actions = self._norm_action(actions)
         proprio = self._norm_proprio(proprio)
 
-        # Images (preloaded uint8 numpy, shape (H, W, 3))
-        top_img = self.top_frames[cur_g]
-        wrist_img = self.wrist_frames[cur_g]
+        # cameras[0] → image_primary, cameras[1] → image_wrist (if present)
+        primary_img = self.all_cam_frames[self.cameras[0]][cur_g]
+        observation = {
+            "image_primary": primary_img[np.newaxis],  # (1, H, W, 3)
+            "proprio": proprio,
+        }
+        if len(self.cameras) > 1:
+            wrist_img = self.all_cam_frames[self.cameras[1]][cur_g]
+            observation["image_wrist"] = wrist_img[np.newaxis]  # (1, H, W, 3)
 
-        # Build the dict that RLDSBatchTransform.__call__ expects
         rlds_batch = {
             "dataset_name": self.dataset_name,
-            "action": actions,                             # (chunk_size, action_dim)
-            "observation": {
-                "image_primary": top_img[np.newaxis],      # (1, H, W, 3)
-                "image_wrist": wrist_img[np.newaxis],      # (1, H, W, 3) — key contains "wrist"
-                "proprio": proprio,                        # (proprio_dim,)
-            },
+            "action": actions,
+            "observation": observation,
             "task": {
                 "language_instruction": self.task_instruction_bytes,
             },
