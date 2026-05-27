@@ -86,7 +86,7 @@ def call_server(endpoint: str, payload: dict, timeout: float) -> np.ndarray:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--server-url", default="http://localhost:8777")
-    p.add_argument("--robot-port", default="/dev/ttyACM0")
+    p.add_argument("--robot-port", default="/dev/ttyACM1")
     p.add_argument("--top-camera", type=int, default=0)
     p.add_argument("--wrist-camera", type=int, default=1)
     p.add_argument("--camera-width", type=int, default=640)
