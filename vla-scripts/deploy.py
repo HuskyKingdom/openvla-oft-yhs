@@ -2,6 +2,9 @@
 deploy.py
 
 Starts VLA server which the client can query to get robot actions.
+
+docker run --gpus all -it --rm   -p 8777:8777   -v /home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs:/workspace   -v /home/yuhang/Warehouse/Yuhangworkspace/openvla-oft-yhs/ckpt/landmarked_ckpoints/apd_discrete_160k:/workspace/checkpoints/openvla-so101   -w /workspace   christianlin0420/openvla-apd:latest bash
+
 """
 
 import os.path
@@ -144,6 +147,13 @@ class DeployConfig:
     #################################################################################################################
     seed: int = 7                                    # Random Seed (for reproducibility)
     # fmt: on
+
+    remove_wrap: bool = False
+    h_decoding: bool = False
+    e_decoding: bool = False
+    energy_alpha: float = 0.5
+    num_diffusion_steps_train: int = 50
+    num_diffusion_steps_inference: int = 50
 
 
 @draccus.wrap()
