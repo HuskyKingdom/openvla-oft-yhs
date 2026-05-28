@@ -20,6 +20,9 @@ COMPUTE_ATTENTION=True   # True → overlay ViT CLS-attention heatmap on video
 VIDEO_DIR="./experiments/logs/videos"
 VIDEO_FPS=10
 
+# Task selection: -1 = all tasks in the suite; set to 0,1,2,... to run a single task ID
+SINGLE_TASK_ID=1
+
 
 
 echo "Evaluating SUBSTEP ------------------------------"
