@@ -14,7 +14,8 @@ from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
+import cv2
 import torch
 import torch.nn as nn
 import draccus
@@ -137,6 +138,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import shared visualization helpers from run_libero_pro_eval
+try:
+    from experiments.robot.libero.run_libero_pro_eval import (
+        _vit_attn_ctx,
+        _blend_attn,
+        _annotate_frame_vis,
+        _save_vis_video,
+    )
+    _VIS_AVAILABLE = True
+except Exception as _vis_err:
+    logger.warning(f"[VIS] Could not import visualization helpers: {_vis_err}")
+    _VIS_AVAILABLE = False
+
 
 def remove_ddp_prefix_from_checkpoint(state_dict: dict) -> dict:
     """
@@ -235,6 +249,11 @@ class GenerateConfig:
 
     # Single-task selection (for quick trials)
     single_task_id: int = -1                         # If >= 0, only evaluate this task index (ignores all others)
+
+    # Visualization
+    compute_attention: bool = False                  # If True, overlays ViT CLS-attention heatmap on saved video frames
+    video_dir: str = "./experiments/logs/videos"     # Directory for annotated MP4s (only used when save_video=True)
+    video_fps: int = 10
 
     # fmt: on
 
@@ -735,6 +754,10 @@ def run_episode(
     substep_info_list = []  # Track substep info for each frame
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
 
+    # Visualization state
+    vis_frames: List[np.ndarray] = []
+    current_saliency = None
+
     # Drawing Utils
     actions_accum = []
     flag = 0
@@ -952,6 +975,8 @@ def run_episode(
                 actions_accum.append(actions)
             else:
                 # Standard action query without EOS detection
+                attn_ctx = (_vit_attn_ctx(model)
+                            if cfg.compute_attention and _VIS_AVAILABLE else None)
                 actions = get_action(
                     cfg,
                     model,
@@ -965,7 +990,8 @@ def run_episode(
                     h_head=head,
                     auto_regression=cfg.auto_regression,
                 )
-                
+                if attn_ctx is not None:
+                    current_saliency = attn_ctx.get()
                 action_queue.extend(actions)
                 actions_accum.append(actions)
  
@@ -978,8 +1004,21 @@ def run_episode(
 
         # Execute action in environment
         obs, reward, done, info = env.step(action.tolist())
+
+        # Collect annotated visualization frame
+        if cfg.save_video and cfg.compute_attention and _VIS_AVAILABLE:
+            raw = get_libero_image(obs)
+            frame = _blend_attn(raw, current_saliency) if current_saliency is not None else raw.copy()
+            frame = _annotate_frame_vis(frame, task_description, t, success=None)
+            vis_frames.append(frame)
+
         if done:
             success = True
+            if cfg.save_video and cfg.compute_attention and _VIS_AVAILABLE:
+                raw = get_libero_image(obs)
+                frame = _blend_attn(raw, current_saliency) if current_saliency is not None else raw.copy()
+                frame = _annotate_frame_vis(frame, task_description, t, success=True)
+                vis_frames.append(frame)
             break
         t += 1
 
@@ -995,7 +1034,7 @@ def run_episode(
             log_file
         )
 
-    return success, replay_images, substep_info_list
+    return success, replay_images, substep_info_list, vis_frames
 
 
 def run_task(
@@ -1133,7 +1172,7 @@ def run_task(
 
 
         # Run episode
-        success, replay_images, substep_info_list = run_episode(
+        success, replay_images, substep_info_list, vis_frames = run_episode(
             cfg,
             env,
             task_description,
@@ -1160,10 +1199,18 @@ def run_task(
             task_successes += 1
             total_successes += 1
 
-        # Save replay video with substep annotations
+        # Save replay video
         if cfg.save_video:
-            if cfg.use_substep_decomposition and substep_info_list:
-                # Use enhanced video with substep info
+            if cfg.compute_attention and _VIS_AVAILABLE and vis_frames:
+                # Attention heatmap video (overrides other modes)
+                safe_desc = task_description.lower().replace(" ", "_")[:40]
+                vid_path = os.path.join(
+                    cfg.video_dir,
+                    f"ep{total_episodes:04d}_{safe_desc}_{'ok' if success else 'fail'}.mp4",
+                )
+                _save_vis_video(vis_frames, vid_path, fps=cfg.video_fps)
+                log_message(f"Saved attention video: {vid_path}", log_file)
+            elif cfg.use_substep_decomposition and substep_info_list:
                 save_rollout_video_with_substep_info(
                     replay_images,
                     substep_info_list,
@@ -1173,7 +1220,6 @@ def run_task(
                     log_file=log_file
                 )
             else:
-                # Use original video saving (fallback)
                 from experiments.robot.libero.libero_utils import save_rollout_video
                 save_rollout_video(
                     replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file

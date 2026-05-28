@@ -92,7 +92,7 @@ def main():
     p.add_argument("--camera-width", type=int, default=640)
     p.add_argument("--camera-height", type=int, default=480)
     p.add_argument("--camera-fps", type=int, default=30)
-    p.add_argument("--max-steps", type=int, default=1000)
+    p.add_argument("--max-steps", type=int, default=100000)
     p.add_argument(
         "--chunk-steps",
         type=int,

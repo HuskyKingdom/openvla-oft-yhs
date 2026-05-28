@@ -14,7 +14,9 @@ from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
+import cv2
+import imageio
 import torch
 import torch.nn as nn
 import draccus
@@ -196,7 +198,161 @@ class GenerateConfig:
     # Task description source
     use_bddl_language: bool = False                  # If True, reads task description from bddl file content (:language field) instead of filename
 
+    # Visualization
+    compute_attention: bool = False                  # If True, overlays ViT CLS-attention heatmap on saved video frames
+    video_dir: str = "./experiments/logs/videos"     # Directory for annotated MP4s (only used when save_video=True)
+    video_fps: int = 10
+
     # fmt: on
+
+
+# ---------------------------------------------------------------------------
+# Attention / video visualization helpers (shared with eval_pick_rate.py)
+# ---------------------------------------------------------------------------
+
+def _vit_attn_ctx(model):
+    """Register a forward hook on ViT blocks[-2].attn to capture CLS-attention.
+
+    Usage:
+        ctx = _vit_attn_ctx(model)
+        get_action(...)          # forward pass fires the hook
+        sal = ctx.get()          # [H_grid, W_grid] or None; hook is removed
+    """
+    class _Ctx:
+        def __init__(self):
+            self._cache = [None]
+            self._handle = None
+            cache = self._cache
+            try:
+                am = model.vision_backbone.featurizer.blocks[-2].attn
+
+                def _hook(module, inp, output):
+                    try:
+                        x = inp[0].detach()
+                        B, N, C = x.shape
+                        num_heads = module.num_heads
+                        head_dim = C // num_heads
+                        scale = head_dim ** -0.5
+                        with torch.no_grad():
+                            qkv = module.qkv(x).reshape(B, N, 3, num_heads, head_dim).permute(2, 0, 3, 1, 4)
+                            q, k, _ = qkv.unbind(0)
+                            if getattr(module, 'q_norm', None) is not None:
+                                q = module.q_norm(q)
+                            if getattr(module, 'k_norm', None) is not None:
+                                k = module.k_norm(k)
+                            attn_w = (q.float() * scale) @ k.float().transpose(-2, -1)
+                            attn_w = attn_w.softmax(dim=-1)
+                        cache[0] = attn_w.cpu()
+                    except Exception as e:
+                        logger.debug(f"[ATTN hook] {e}")
+
+                self._handle = am.register_forward_hook(_hook)
+            except (AttributeError, IndexError) as e:
+                logger.debug(f"[ATTN] hook setup failed: {e}")
+
+        def get(self) -> Optional[np.ndarray]:
+            if self._handle is not None:
+                self._handle.remove()
+            if self._cache[0] is None:
+                return None
+            try:
+                attn = self._cache[0]              # [1, heads, N, N]
+                attn_avg = attn[0].mean(dim=0).cpu().numpy()  # [N, N]
+                N = attn_avg.shape[0]
+                # Detect token layout: try prefix sizes 0,1,2,4,5 before spatial patches
+                for num_prefix in [0, 1, 2, 4, 5, 8]:
+                    n_spatial = N - num_prefix
+                    if n_spatial <= 0:
+                        continue
+                    s = int(round(n_spatial ** 0.5))
+                    if s * s == n_spatial:
+                        if num_prefix == 0:
+                            received = attn_avg.mean(axis=0)
+                        else:
+                            received = attn_avg[0, num_prefix:]  # CLS→spatial
+                        sal = received.reshape(s, s)
+                        sal = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
+                        return sal
+                return None
+            except Exception as e:
+                logger.debug(f"[ATTN] get() error: {e}")
+                return None
+
+    return _Ctx()
+
+
+def _blend_attn(img_rgb: np.ndarray, sal: np.ndarray, alpha: float = 0.50) -> np.ndarray:
+    H, W = img_rgb.shape[:2]
+    sal_u8 = (sal * 255).astype(np.uint8)
+    sal_r = cv2.resize(sal_u8, (W, H), interpolation=cv2.INTER_LINEAR)
+    heat_bgr = cv2.applyColorMap(sal_r, cv2.COLORMAP_JET)
+    heat_rgb = cv2.cvtColor(heat_bgr, cv2.COLOR_BGR2RGB)
+    return np.clip(img_rgb.astype(np.float32) * (1 - alpha) + heat_rgb.astype(np.float32) * alpha, 0, 255).astype(np.uint8)
+
+
+def _annotate_frame_vis(img_rgb: np.ndarray, task_description: str, step: int, success: Optional[bool]) -> np.ndarray:
+    """Add info bar above the image. Height is always 3 lines (constant across episode)."""
+    H, W = img_rgb.shape[:2]
+    font, pad, th = cv2.FONT_HERSHEY_SIMPLEX, 4, 1
+    # Auto-scale font so reference 28 chars fits width
+    fs = 0.45
+    while fs > 0.20:
+        (tw, _), _ = cv2.getTextSize("M" * 28, font, fs, th)
+        if tw <= W - 2 * pad:
+            break
+        fs -= 0.02
+    lh = max(14, int(cv2.getTextSize("Ag", font, fs, th)[0][1] * 2.2))
+    max_px = W - 2 * pad
+
+    # word-wrap instruction to 2 lines
+    words = task_description.split()
+    lines_instr: List[str] = []
+    cur: List[str] = []
+    for w in words:
+        cand = " ".join(cur + [w])
+        if cv2.getTextSize(cand, font, fs, th)[0][0] <= max_px:
+            cur.append(w)
+        else:
+            if cur:
+                lines_instr.append(" ".join(cur))
+            cur = [w]
+    if cur:
+        lines_instr.append(" ".join(cur))
+    lines_instr = lines_instr[:2]
+    while len(lines_instr) < 2:
+        lines_instr.append("")
+
+    if success is None:
+        status_text, status_color = f"Step {step}", (130, 130, 130)
+    else:
+        status_text = f"Step {step}  [{'SUCCESS' if success else 'FAIL'}]"
+        status_color = (100, 240, 100) if success else (255, 100, 100)
+
+    text_lines = [
+        (lines_instr[0], (220, 220, 220)),
+        (lines_instr[1], (195, 195, 195)),
+        (status_text,    status_color),
+    ]
+    bar_h = pad + lh * len(text_lines) + pad
+    total_h = ((bar_h + H + 15) // 16) * 16   # pad to multiple of 16
+
+    canvas = np.zeros((total_h, W, 3), dtype=np.uint8)
+    canvas[bar_h: bar_h + H, :] = img_rgb
+    for i, (text, color) in enumerate(text_lines):
+        if text:
+            cv2.putText(canvas, text, (pad, pad + lh * i + lh - 3), font, fs, color, th, cv2.LINE_AA)
+    return canvas
+
+
+def _save_vis_video(frames: List[np.ndarray], path: str, fps: int = 10) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    writer = imageio.get_writer(path, fps=fps)
+    for f in frames:
+        writer.append_data(f)
+    writer.close()
+
+
+# ---------------------------------------------------------------------------
 
 
 def extract_task_from_bddl(bddl_file_path, task_suite=None):
@@ -395,54 +551,40 @@ def run_episode(
     noisy_action_projector=None,
     initial_state=None,
     log_file=None,
-    head = None,
+    head=None,
 ):
     """Run a single episode in the environment."""
-    # Reset environment
     env.reset()
-
-    # Set initial state if provided
     if initial_state is not None:
         obs = env.set_init_state(initial_state)
     else:
         obs = env.get_observation()
 
-    # Initialize action queue
     if cfg.num_open_loop_steps != NUM_ACTIONS_CHUNK:
-        print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match the NUM_ACTIONS_CHUNK "
-              f"({NUM_ACTIONS_CHUNK}) constant defined in prismatic.vla.constants! For best performance (in terms of "
-               "both speed and success rate), we recommend executing the full action chunk.")
+        print(f"WARNING: cfg.num_open_loop_steps ({cfg.num_open_loop_steps}) does not match NUM_ACTIONS_CHUNK "
+              f"({NUM_ACTIONS_CHUNK}). Recommend executing the full action chunk.")
     action_queue = deque(maxlen=cfg.num_open_loop_steps)
 
-    # Setup
     t = 0
-    replay_images = []
+    replay_images = []           # raw images (for original save_rollout_video path)
+    vis_frames: List[np.ndarray] = []   # annotated+heatmap frames (for compute_attention path)
     max_steps = TASK_MAX_STEPS[cfg.task_suite_name]
+    current_saliency: Optional[np.ndarray] = None
 
-    # Drawing Utils
-    actions_accum = []
-    flag = 0
-
-  
-
-
-    # Run episode
     success = False
-    # try:
     while t < max_steps + cfg.num_steps_wait:
-        # Do nothing for the first few timesteps to let objects stabilize
         if t < cfg.num_steps_wait:
-            obs, reward, done, info = env.step(get_libero_dummy_action(cfg.model_family))
+            obs, _, _, _ = env.step(get_libero_dummy_action(cfg.model_family))
             t += 1
             continue
 
-        # Prepare observation
         observation, img = prepare_observation(obs, resize_size)
         replay_images.append(img)
 
-        # If action queue is empty, requery model
         if len(action_queue) == 0:
-            # Query model to get action
+            # Capture attention during get_action forward pass
+            attn_ctx = _vit_attn_ctx(model) if cfg.compute_attention else None
+
             actions = get_action(
                 cfg,
                 model,
@@ -457,27 +599,34 @@ def run_episode(
                 auto_regression=cfg.auto_regression,
             )
             action_queue.extend(actions)
-            actions_accum.append(actions)
- 
 
-        # Get action from queue
+            if attn_ctx is not None:
+                current_saliency = attn_ctx.get()
+
         action = action_queue.popleft()
-
-        # Process action
         action = process_action(action, cfg.model_family)
-
-        # Execute action in environment
         obs, reward, done, info = env.step(action.tolist())
+
+        # Build annotated visualization frame
+        if cfg.save_video and cfg.compute_attention:
+            raw = get_libero_image(obs)
+            frame = _blend_attn(raw, current_saliency) if current_saliency is not None else raw.copy()
+            frame = _annotate_frame_vis(frame, task_description, t, success=None)
+            vis_frames.append(frame)
+
         if done:
             success = True
             break
         t += 1
 
-    # except Exception as e:
-    #     log_message(f"Episode error: {e}", log_file) 要画轨迹多帧累积：将历史若干帧的末端投影点连线，使用第三人称agentview_image绘制，需要物理上正确的投影
+    # Append a final annotated frame with success status
+    if cfg.save_video and cfg.compute_attention and vis_frames:
+        raw = get_libero_image(obs)
+        frame = _blend_attn(raw, current_saliency) if current_saliency is not None else raw.copy()
+        frame = _annotate_frame_vis(frame, task_description, t, success=success)
+        vis_frames.append(frame)
 
-
-    return success, replay_images
+    return success, replay_images, vis_frames
 
 
 def run_task(
@@ -552,7 +701,7 @@ def run_task(
 
 
         # Run episode
-        success, replay_images = run_episode(
+        success, replay_images, vis_frames = run_episode(
             cfg,
             env,
             task_description,
@@ -576,9 +725,20 @@ def run_task(
 
         # Save replay video
         if cfg.save_video:
-            save_rollout_video(
-                replay_images, total_episodes, success=success, task_description=task_description, log_file=log_file
-            )
+            if cfg.compute_attention and vis_frames:
+                # Use annotated frames with attention heatmap
+                safe_desc = task_description.lower().replace(" ", "_")[:40]
+                vid_path = os.path.join(
+                    cfg.video_dir,
+                    f"ep{total_episodes:04d}_{safe_desc}_{'ok' if success else 'fail'}.mp4",
+                )
+                _save_vis_video(vis_frames, vid_path, fps=cfg.video_fps)
+                log_message(f"Saved attention video: {vid_path}", log_file)
+            else:
+                save_rollout_video(
+                    replay_images, total_episodes, success=success,
+                    task_description=task_description, log_file=log_file,
+                )
 
         # Log results
         log_message(f"Success: {success}", log_file)
