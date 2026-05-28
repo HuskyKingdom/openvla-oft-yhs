@@ -21,7 +21,7 @@ VIDEO_DIR="./experiments/logs/raw_videos"
 VIDEO_FPS=10
 
 # Task selection: -1 = all tasks in the suite; set to 0,1,2,... to run a single task ID
-SINGLE_TASK_ID=1
+SINGLE_TASK_ID=2
 
 
 
