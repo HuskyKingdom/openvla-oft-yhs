@@ -2,7 +2,7 @@
 echo "Running Evaluations Automatically ------------------------------"
 FARM_USER=sgyson10
 FILE_PATH="experiments/robot/libero/LIBERO-PRO/evaluation_config.yaml"
-PRETRAINED_CHECKPOINT="ckpt/SimpleVLA-RL/exp_out/openvla-oft-rl/oft_plus-rl/actor/global_step_24/"
+PRETRAINED_CHECKPOINT="ckpt/SimpleVLA-RL/exp_out/openvla-oft-rl/saga-rl-libero/actor/global_step_24/"
 TASK_LABEL_PREFIX="saga_rl_step49_h100"
 USE_EOS_DETECTION=False
 EVAL_SCRIPT="experiments/robot/libero/run_libero_pro_eval_substep.py"
@@ -17,7 +17,7 @@ SUBSTEP_COMPLETION_THRESHOLD=0.03
 # Visualization (requires save_video=True to take effect)
 SAVE_VIDEO=True          # True → save annotated MP4 per episode
 COMPUTE_ATTENTION=True   # True → overlay ViT CLS-attention heatmap on video
-VIDEO_DIR="./experiments/logs/raw_videos"
+VIDEO_DIR="./experiments/logs/videos"
 VIDEO_FPS=10
 
 # Task selection: -1 = all tasks in the suite; set to 0,1,2,... to run a single task ID
